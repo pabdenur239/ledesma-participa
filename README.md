@@ -29,3 +29,16 @@ python3 run.py
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+## Recolección real: RSS de Prensa Jujuy
+
+Existe un collector real para el RSS oficial de Prensa Jujuy
+(configurado en `config/fuentes.json`). Requiere acceso normal a
+internet desde el entorno donde se ejecute:
+
+```bash
+python3 run.py --fuente rss-prensa-jujuy
+```
+
+Las pruebas automáticas no acceden a este feed: usan un fixture XML
+local (`data/fixtures/prensa_jujuy_rss_prueba.xml`).

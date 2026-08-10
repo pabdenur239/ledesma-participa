@@ -1,0 +1,6 @@
+{
+  "prensa_jujuy": {
+    "nombre_fuente": "Prensa Jujuy (Gobierno de Jujuy)",
+    "url_rss": "https://prensa.jujuy.gob.ar/rss/ultimas-noticias.xml"
+  }
+}

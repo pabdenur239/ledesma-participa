@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Prensa Jujuy - Últimas noticias (fixture de prueba)</title>
+    <link>https://prensa.jujuy.gob.ar/</link>
+    <description>Fixture offline para pruebas. No proviene del feed real.</description>
+    <item>
+      <title>Se inauguró una nueva plaza en Libertador General San Martín</title>
+      <link>https://prensa.jujuy.gob.ar/nota/plaza-libertador-2026</link>
+      <pubDate>Mon, 03 Aug 2026 10:00:00 -0300</pubDate>
+      <description>&lt;p&gt;El Gobierno de Jujuy, junto al municipio de Libertador General San Martín, inauguró una nueva plaza para la comunidad.&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>El Gobierno de Jujuy presentó el balance turístico provincial</title>
+      <link>https://prensa.jujuy.gob.ar/nota/balance-turistico-2026</link>
+      <pubDate>Mon, 03 Aug 2026 09:00:00 -0300</pubDate>
+      <description>&lt;p&gt;La provincia de Jujuy presentó el balance de la temporada turística en todo su territorio.&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Se inauguró una nueva plaza en Libertador General San Martín</title>
+      <link>https://prensa.jujuy.gob.ar/nota/plaza-libertador-2026?utm_source=facebook</link>
+      <pubDate>Mon, 03 Aug 2026 10:00:00 -0300</pubDate>
+      <description>&lt;p&gt;El Gobierno de Jujuy, junto al municipio de Libertador General San Martín, inauguró una nueva plaza para la comunidad.&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

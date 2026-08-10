@@ -20,6 +20,7 @@ def normalizar_noticia(cruda: dict) -> Noticia:
         fecha_recoleccion=datetime.now(timezone.utc).isoformat(),
         estado=Estado.ENCONTRADA.value,
         hash_contenido="",
+        localidad=cruda.get("localidad") or None,
     )
 
 
@@ -27,7 +28,9 @@ def procesar_noticia(db: Database, noticia: Noticia, redactor: Redactor) -> Tupl
     noticia.url_normalizada = normalizar_url(noticia.url_fuente)
     noticia.hash_contenido = hash_contenido(noticia.titulo_original, noticia.texto_original)
 
-    resultado = clasificar_relevancia(noticia.titulo_original, noticia.texto_original)
+    resultado = clasificar_relevancia(
+        noticia.titulo_original, noticia.texto_original, localidad=noticia.localidad
+    )
     noticia.relevancia_local = resultado["relevante"]
     noticia.motivo_relevancia = resultado["motivo"]
     noticia.localidad = resultado["localidad"]

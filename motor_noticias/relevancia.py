@@ -23,8 +23,30 @@ def _contiene_alguna(texto_norm: str, terminos: list) -> Optional[str]:
     return None
 
 
-def clasificar_relevancia(titulo: str, texto: str, config: Optional[dict] = None) -> dict:
+def clasificar_relevancia(
+    titulo: str, texto: str, localidad: Optional[str] = None, config: Optional[dict] = None
+) -> dict:
     config = config or cargar_config()
+
+    if localidad:
+        localidad_norm = _sin_acentos(localidad)
+
+        match = _contiene_alguna(localidad_norm, config["maxima_prioridad"])
+        if match:
+            return {
+                "relevante": True,
+                "motivo": f"Fuente institucional de '{match}' (máxima prioridad geográfica)",
+                "localidad": match,
+            }
+
+        match = _contiene_alguna(localidad_norm, config["prioridad_alta"])
+        if match:
+            return {
+                "relevante": True,
+                "motivo": f"Fuente institucional de '{match}' (Departamento Ledesma, prioridad alta)",
+                "localidad": match,
+            }
+
     contenido = _sin_acentos(f"{titulo} {texto}")
 
     match = _contiene_alguna(contenido, config["maxima_prioridad"])

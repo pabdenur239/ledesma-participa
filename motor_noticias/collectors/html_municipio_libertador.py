@@ -26,6 +26,7 @@ VOID_TAGS = {
     "input", "link", "meta", "param", "source", "track", "wbr",
 }
 LONGITUD_MINIMA_RESUMEN = 15
+LONGITUD_MAXIMA_TITULO = 90
 PATRONES_EXCLUSION = (
     "domicilio",
     "teléfono",
@@ -153,10 +154,19 @@ class _ParserPaginaMunicipal(html.parser.HTMLParser):
         self._flush_texto()
 
 
-def extraer_actividades(html_crudo: str, url_base: str, nombre_fuente: str) -> List[dict]:
+def extraer_actividades(
+    html_crudo: str, url_base: str, nombre_fuente: str, localidad: Optional[str] = None
+) -> List[dict]:
     """Decodifica el contenido HTML escapado embebido en la página y extrae
     las actividades listadas a continuación del bloque
-    "Actividades sr. Intendente Ing. Oscar Jayat"."""
+    "Actividades sr. Intendente Ing. Oscar Jayat".
+
+    El sitio no distingue de forma confiable títulos de texto descriptivo:
+    ambos pueden aparecer en etiquetas de encabezado (h1-h4). Se trata como
+    título a un encabezado corto (<= LONGITUD_MAXIMA_TITULO caracteres); un
+    encabezado o bloque de texto más largo que aparezca a continuación se
+    asocia como resumen de esa actividad en lugar de crear una nueva.
+    """
     contenido_decodificado = html.unescape(html_crudo)
 
     parser = _ParserPaginaMunicipal()
@@ -174,43 +184,34 @@ def extraer_actividades(html_crudo: str, url_base: str, nombre_fuente: str) -> L
 
     actividades = []
     fragmentos_usados = set()
-    indice = inicio
-    while indice < len(eventos):
-        tipo, texto = eventos[indice]
-        if tipo != "h":
-            indice += 1
-            continue
-        if _es_texto_excluido(texto):
-            indice += 1
+    for tipo, texto in eventos[inicio:]:
+        if texto == MARCADOR_BLOQUE or _es_texto_excluido(texto):
             continue
 
-        titulo = texto
-        resumen = ""
-        siguiente = indice + 1
-        if siguiente < len(eventos) and eventos[siguiente][0] == "t":
-            texto_siguiente = eventos[siguiente][1]
-            if len(texto_siguiente) >= LONGITUD_MINIMA_RESUMEN and not _es_texto_excluido(texto_siguiente):
-                resumen = texto_siguiente
-                siguiente += 1
+        es_titulo = tipo == "h" and len(texto) <= LONGITUD_MAXIMA_TITULO
+        if es_titulo:
+            fragmento = _fragmento_estable(texto)
+            fragmento_final = fragmento
+            sufijo = 2
+            while fragmento_final in fragmentos_usados:
+                fragmento_final = f"{fragmento}-{sufijo}"
+                sufijo += 1
+            fragmentos_usados.add(fragmento_final)
 
-        fragmento = _fragmento_estable(titulo)
-        fragmento_final = fragmento
-        sufijo = 2
-        while fragmento_final in fragmentos_usados:
-            fragmento_final = f"{fragmento}-{sufijo}"
-            sufijo += 1
-        fragmentos_usados.add(fragmento_final)
+            actividades.append(
+                {
+                    "titulo": texto,
+                    "texto": "",
+                    "url": f"{url_base}#{fragmento_final}",
+                    "fuente": nombre_fuente,
+                    "fecha": "",
+                    "localidad": localidad,
+                }
+            )
+            continue
 
-        actividades.append(
-            {
-                "titulo": titulo,
-                "texto": resumen,
-                "url": f"{url_base}#{fragmento_final}",
-                "fuente": nombre_fuente,
-                "fecha": "",
-            }
-        )
-        indice = siguiente
+        if actividades and len(texto) >= LONGITUD_MINIMA_RESUMEN and not actividades[-1]["texto"]:
+            actividades[-1]["texto"] = texto
 
     return actividades
 
@@ -226,12 +227,14 @@ class MunicipioLibertadorHTMLCollector(Collector):
         self,
         url: Optional[str] = None,
         nombre_fuente: Optional[str] = None,
+        localidad: Optional[str] = None,
         timeout: int = 20,
         config_path: Optional[Path] = None,
     ):
         config = _cargar_config(config_path)
         self.url = url or config["url"]
         self.nombre_fuente = nombre_fuente or config["nombre_fuente"]
+        self.localidad = localidad or config.get("localidad")
         self.timeout = timeout
 
     def recolectar(self) -> List[dict]:
@@ -248,4 +251,4 @@ class MunicipioLibertadorHTMLCollector(Collector):
                 f"No se pudo conectar al Municipio Libertador ({self.url}): {error.reason}"
             ) from error
         html_crudo = contenido.decode("utf-8", errors="replace")
-        return extraer_actividades(html_crudo, self.url, self.nombre_fuente)
+        return extraer_actividades(html_crudo, self.url, self.nombre_fuente, self.localidad)

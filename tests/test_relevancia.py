@@ -29,6 +29,15 @@ class TestRelevancia(unittest.TestCase):
         self.assertFalse(r["relevante"])
         self.assertIsNotNone(r["motivo"])
 
+    def test_localidad_de_fuente_institucional_es_relevante_sin_mencion_en_el_texto(self):
+        r = clasificar_relevancia(
+            "Ing. Oscar Jayat nuevo Presidente del BRIPAEM",
+            "En una asamblea extraordinaria realizada en la ciudad de Buenos Aires, "
+            "asumió como Presidente del BRIPAEM por el periodo 2026-2028.",
+            localidad="Libertador General San Martín",
+        )
+        self.assertTrue(r["relevante"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,9 @@ FIXTURE_PATH = (
 )
 NOMBRE_FUENTE = "Municipalidad de Libertador General San Martín"
 URL_BASE = "https://municipiolgsmjujuy.gob.ar/actividades-intendente"
+LOCALIDAD = "Libertador General San Martín"
 
+MARCADOR_BLOQUE = "Actividades sr. Intendente Ing. Oscar Jayat"
 TITULO_BRIPAEM = "Ing. Oscar Jayat nuevo Presidente del BRIPAEM"
 RESUMEN_BRIPAEM = (
     "En una asamblea extraordinaria realizada en la ciudad de Buenos Aires, "
@@ -40,7 +42,7 @@ class ColectorHTMLDePrueba:
         self.contenido = contenido
 
     def recolectar(self):
-        return extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        return extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
 
 
 class TestExtraerActividades(unittest.TestCase):
@@ -48,31 +50,49 @@ class TestExtraerActividades(unittest.TestCase):
         self.contenido = FIXTURE_PATH.read_text(encoding="utf-8")
 
     def test_decodifica_html_escapado_y_encuentra_la_primera_actividad(self):
-        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
         titulos = [a["titulo"] for a in actividades]
         self.assertIn(TITULO_BRIPAEM, titulos)
 
-    def test_asocia_correctamente_el_resumen(self):
-        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        actividad = next(a for a in actividades if a["titulo"] == TITULO_BRIPAEM)
-        self.assertEqual(actividad["texto"], RESUMEN_BRIPAEM)
+    def test_el_encabezado_del_bloque_no_genera_actividad(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
+        titulos = [a["titulo"] for a in actividades]
+        self.assertNotIn(MARCADOR_BLOQUE, titulos)
+
+    def test_el_resumen_bripaem_no_genera_actividad_independiente(self):
+        # el resumen real está envuelto en un h4 (no un <p>), que es
+        # exactamente el patrón que en producción se coló como noticia.
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
+        titulos = [a["titulo"] for a in actividades]
+        self.assertNotIn(RESUMEN_BRIPAEM, titulos)
+
+    def test_titulo_y_resumen_bripaem_forman_un_unico_registro(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
+        coincidencias = [a for a in actividades if a["titulo"] == TITULO_BRIPAEM]
+        self.assertEqual(len(coincidencias), 1)
+        self.assertEqual(coincidencias[0]["texto"], RESUMEN_BRIPAEM)
 
     def test_encuentra_las_otras_actividades(self):
-        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
         titulos = [a["titulo"] for a in actividades]
         self.assertIn(TITULO_POLIDEPORTIVO, titulos)
         self.assertIn(TITULO_CONVENIO, titulos)
         self.assertEqual(len(actividades), 3)
 
+    def test_todas_las_actividades_tienen_la_localidad_del_municipio(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
+        for actividad in actividades:
+            self.assertEqual(actividad["localidad"], LOCALIDAD)
+
     def test_ignora_navegacion_pie_de_pagina_y_datos_de_contacto(self):
-        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
         titulos = [a["titulo"] for a in actividades]
         for texto_no_deseado in (
             "Inicio",
             "Turismo",
             "Contacto",
             "Prensa",
-            "Actividades sr. Intendente Ing. Oscar Jayat",
+            MARCADOR_BLOQUE,
         ):
             self.assertNotIn(texto_no_deseado, titulos)
         for actividad in actividades:
@@ -81,14 +101,14 @@ class TestExtraerActividades(unittest.TestCase):
             self.assertNotIn("@", actividad["texto"])
 
     def test_genera_identificadores_estables_y_distintos(self):
-        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
         urls = [a["url"] for a in actividades]
 
         self.assertEqual(len(urls), len(set(urls)))
         for url in urls:
             self.assertTrue(url.startswith(f"{URL_BASE}#"))
 
-        otra_pasada = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        otra_pasada = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE, LOCALIDAD)
         self.assertEqual(urls, [a["url"] for a in otra_pasada])
 
 
@@ -103,11 +123,13 @@ class TestPipelineConFixtureHTML(unittest.TestCase):
         self.db.close()
         self.tmpdir.cleanup()
 
-    def test_pipeline_y_sqlite_funcionan_sin_falsos_duplicados_por_pagina_compartida(self):
+    def test_actividades_municipales_quedan_preparadas_por_su_localidad(self):
         resultados = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
         self.assertEqual(len(resultados), 3)
-        for _, resultado in resultados:
-            self.assertIn(resultado, ("preparada", "descartada"))
+        for noticia, resultado in resultados:
+            self.assertEqual(resultado, "preparada")
+            self.assertEqual(noticia.localidad, LOCALIDAD)
+            self.assertTrue(noticia.relevancia_local)
         # las tres actividades comparten la misma URL de página; ninguna debe
         # perderse por ser confundida con un duplicado de otra.
         self.assertEqual(len(self.db.listar()), 3)

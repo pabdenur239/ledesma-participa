@@ -1,8 +1,9 @@
 import argparse
+import sys
 from pathlib import Path
 
 from .collectors.fixtures import FixtureCollector
-from .collectors.rss_prensa_jujuy import PrensaJujuyRSSCollector
+from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
 from .db import Database
 from .pipeline import ejecutar_pipeline
 from .redaccion.mock import RedactorMock
@@ -31,7 +32,12 @@ def main():
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
     redactor = RedactorMock()
 
-    resultados = ejecutar_pipeline(db, collector, redactor)
+    try:
+        resultados = ejecutar_pipeline(db, collector, redactor)
+    except ErrorRecoleccionRSS as error:
+        db.close()
+        print(f"Error al recolectar noticias: {error}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Base de datos: {args.db}")
     print(f"Noticias procesadas: {len(resultados)}")

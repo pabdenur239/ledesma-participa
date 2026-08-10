@@ -1,5 +1,6 @@
 import json
 import re
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -8,6 +9,15 @@ from typing import List, Optional, Union
 from .base import Collector
 
 CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent.parent / "config" / "fuentes.json"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; LedesmaParticipa/1.0; RSS Reader)",
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+}
+
+
+class ErrorRecoleccionRSS(RuntimeError):
+    """Error controlado al recolectar el RSS de Prensa Jujuy."""
 
 
 def _cargar_config(path: Optional[Path] = None) -> dict:
@@ -65,6 +75,16 @@ class PrensaJujuyRSSCollector(Collector):
         self.timeout = timeout
 
     def recolectar(self) -> List[dict]:
-        with urllib.request.urlopen(self.url, timeout=self.timeout) as respuesta:
-            contenido = respuesta.read()
+        peticion = urllib.request.Request(self.url, headers=HEADERS)
+        try:
+            with urllib.request.urlopen(peticion, timeout=self.timeout) as respuesta:
+                contenido = respuesta.read()
+        except urllib.error.HTTPError as error:
+            raise ErrorRecoleccionRSS(
+                f"Prensa Jujuy respondió HTTP {error.code} ({error.reason}) al pedir {self.url}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise ErrorRecoleccionRSS(
+                f"No se pudo conectar a Prensa Jujuy ({self.url}): {error.reason}"
+            ) from error
         return parsear_rss(contenido, self.nombre_fuente)

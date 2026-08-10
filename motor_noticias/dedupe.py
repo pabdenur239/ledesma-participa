@@ -22,7 +22,7 @@ def normalizar_url(url: str) -> str:
     query = sorted(
         (k, v) for k, v in parse_qsl(partes.query) if k not in PARAMETROS_TRACKING
     )
-    return urlunsplit(("https", netloc, path, urlencode(query), ""))
+    return urlunsplit(("https", netloc, path, urlencode(query), partes.fragment))
 
 
 def hash_contenido(titulo: str, texto: str) -> str:

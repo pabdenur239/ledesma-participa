@@ -1,10 +1,13 @@
+import hashlib
+import html
 import html.parser
 import json
+import re
+import unicodedata
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import List, Optional, Union
-from urllib.parse import urljoin
+from typing import List, Optional
 
 from .base import Collector
 
@@ -15,9 +18,27 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-CONTENEDOR_TAG = "main"
-CONTENEDOR_ID = "contenido-principal"
-ARTICULO_TAG = "article"
+MARCADOR_BLOQUE = "Actividades sr. Intendente Ing. Oscar Jayat"
+ENCABEZADO_TAGS = ("h1", "h2", "h3", "h4")
+TAGS_EXCLUIDOS = {"nav", "footer", "header", "script", "style", "iframe", "noscript"}
+VOID_TAGS = {
+    "area", "base", "br", "col", "embed", "hr", "img",
+    "input", "link", "meta", "param", "source", "track", "wbr",
+}
+LONGITUD_MINIMA_RESUMEN = 15
+PATRONES_EXCLUSION = (
+    "domicilio",
+    "teléfono",
+    "telefono",
+    "tel:",
+    "e-mail",
+    "email",
+    "correo electrónico",
+    "correo electronico",
+    "@",
+    "todos los derechos reservados",
+    "copyright",
+)
 
 
 class ErrorRecoleccionHTML(RuntimeError):
@@ -29,112 +50,169 @@ def _cargar_config(path: Optional[Path] = None) -> dict:
         return json.load(f)["municipio_libertador"]
 
 
-def _atributo(attrs, nombre):
-    for clave, valor in attrs:
-        if clave == nombre:
-            return valor
-    return None
+def _limpiar_espacios(texto: str) -> str:
+    return re.sub(r"\s+", " ", texto).strip()
 
 
-class _ParserActividades(html.parser.HTMLParser):
-    """Extrae publicaciones dentro del contenedor principal de la página,
-    ignorando cualquier enlace de navegación, encabezado o pie de página."""
+def _es_texto_excluido(texto: str) -> bool:
+    texto_normalizado = texto.lower()
+    return any(patron in texto_normalizado for patron in PATRONES_EXCLUSION)
 
-    def __init__(self, url_base: str):
+
+def _normalizar_para_hash(texto: str) -> str:
+    normalizado = unicodedata.normalize("NFKD", texto.lower())
+    sin_acentos = "".join(c for c in normalizado if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "-", sin_acentos).strip("-")
+
+
+def _fragmento_estable(titulo: str) -> str:
+    normalizado = _normalizar_para_hash(titulo)
+    hash_corto = hashlib.sha1(normalizado.encode("utf-8")).hexdigest()[:10]
+    return f"lp-{hash_corto}"
+
+
+class _ParserPaginaMunicipal(html.parser.HTMLParser):
+    """Recorre la página ya decodificada (sin HTML escapado) y produce una
+    secuencia lineal de eventos: encabezados ("h") y bloques de texto ("t").
+
+    Ignora el contenido de navegación, encabezado de sitio, pie de página,
+    scripts, estilos e iframes (videos embebidos)."""
+
+    def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.url_base = url_base
-        self.items: List[dict] = []
+        self.eventos: List[tuple] = []
 
-        self._pila = []
-        self._dentro_contenedor = False
-        self._profundidad_contenedor = 0
+        self._pila: List[str] = []
+        self._omitir_desde: Optional[int] = None
 
-        self._en_articulo = False
-        self._profundidad_articulo = 0
-        self._articulo_actual = None
-        self._en_titulo = False
-        self._capturando_enlace_titulo = False
-        self._en_parrafo = False
+        self._en_encabezado = False
+        self._profundidad_encabezado = 0
+        self._buffer_encabezado: List[str] = []
+        self._buffer_texto: List[str] = []
 
     def handle_starttag(self, tag, attrs):
+        if tag in VOID_TAGS:
+            return
         self._pila.append(tag)
 
-        if not self._dentro_contenedor:
-            if tag == CONTENEDOR_TAG and _atributo(attrs, "id") == CONTENEDOR_ID:
-                self._dentro_contenedor = True
-                self._profundidad_contenedor = len(self._pila)
+        if self._omitir_desde is not None:
             return
 
-        if not self._en_articulo:
-            if tag == ARTICULO_TAG:
-                self._en_articulo = True
-                self._profundidad_articulo = len(self._pila)
-                self._articulo_actual = {"titulo": "", "url": None, "fecha": "", "texto": ""}
+        if tag in TAGS_EXCLUIDOS:
+            self._omitir_desde = len(self._pila)
             return
 
-        if tag in ("h1", "h2", "h3") and not self._articulo_actual["titulo"]:
-            self._en_titulo = True
-        elif tag == "a" and self._en_titulo and not self._articulo_actual["url"]:
-            href = _atributo(attrs, "href")
-            if href:
-                self._articulo_actual["url"] = urljoin(self.url_base, href)
-            self._capturando_enlace_titulo = True
-        elif tag == "time":
-            fecha = _atributo(attrs, "datetime")
-            if fecha:
-                self._articulo_actual["fecha"] = fecha
-        elif tag == "p" and not self._articulo_actual["texto"]:
-            self._en_parrafo = True
+        if not self._en_encabezado and tag in ENCABEZADO_TAGS:
+            self._flush_texto()
+            self._en_encabezado = True
+            self._profundidad_encabezado = len(self._pila)
+            self._buffer_encabezado = []
+
+    def handle_startendtag(self, tag, attrs):
+        return
 
     def handle_endtag(self, tag):
-        if self._pila and self._pila[-1] == tag:
-            self._pila.pop()
+        if not self._pila or self._pila[-1] != tag:
+            return
+        self._pila.pop()
 
-        if self._dentro_contenedor and len(self._pila) < self._profundidad_contenedor:
-            self._dentro_contenedor = False
+        if self._omitir_desde is not None:
+            if len(self._pila) < self._omitir_desde:
+                self._omitir_desde = None
+            return
 
-        if self._en_articulo:
-            if tag in ("h1", "h2", "h3"):
-                self._en_titulo = False
-            elif tag == "a":
-                self._capturando_enlace_titulo = False
-            elif tag == "p":
-                self._en_parrafo = False
-            elif tag == ARTICULO_TAG and len(self._pila) < self._profundidad_articulo:
-                self._en_articulo = False
-                if self._articulo_actual["titulo"] and self._articulo_actual["url"]:
-                    self.items.append(self._articulo_actual)
-                self._articulo_actual = None
+        if self._en_encabezado and len(self._pila) < self._profundidad_encabezado:
+            self._cerrar_encabezado()
 
     def handle_data(self, data):
-        if not self._en_articulo or self._articulo_actual is None:
+        if self._omitir_desde is not None:
             return
         texto = data.strip()
         if not texto:
             return
-        if self._capturando_enlace_titulo:
-            actual = self._articulo_actual["titulo"]
-            self._articulo_actual["titulo"] = f"{actual} {texto}".strip() if actual else texto
-        elif self._en_parrafo:
-            actual = self._articulo_actual["texto"]
-            self._articulo_actual["texto"] = f"{actual} {texto}".strip() if actual else texto
+        if self._en_encabezado:
+            self._buffer_encabezado.append(texto)
+        else:
+            self._buffer_texto.append(texto)
+
+    def _cerrar_encabezado(self):
+        texto = _limpiar_espacios(" ".join(self._buffer_encabezado))
+        if texto:
+            self.eventos.append(("h", texto))
+        self._en_encabezado = False
+        self._buffer_encabezado = []
+
+    def _flush_texto(self):
+        texto = _limpiar_espacios(" ".join(self._buffer_texto))
+        if texto:
+            self.eventos.append(("t", texto))
+        self._buffer_texto = []
+
+    def close(self):
+        super().close()
+        self._flush_texto()
 
 
-def parsear_html(contenido: Union[str, bytes], url_base: str, nombre_fuente: str) -> List[dict]:
-    if isinstance(contenido, bytes):
-        contenido = contenido.decode("utf-8", errors="replace")
-    parser = _ParserActividades(url_base)
-    parser.feed(contenido)
-    return [
-        {
-            "titulo": item["titulo"],
-            "texto": item["texto"],
-            "url": item["url"],
-            "fuente": nombre_fuente,
-            "fecha": item["fecha"],
-        }
-        for item in parser.items
-    ]
+def extraer_actividades(html_crudo: str, url_base: str, nombre_fuente: str) -> List[dict]:
+    """Decodifica el contenido HTML escapado embebido en la página y extrae
+    las actividades listadas a continuación del bloque
+    "Actividades sr. Intendente Ing. Oscar Jayat"."""
+    contenido_decodificado = html.unescape(html_crudo)
+
+    parser = _ParserPaginaMunicipal()
+    parser.feed(contenido_decodificado)
+    parser.close()
+    eventos = parser.eventos
+
+    inicio = None
+    for indice, (tipo, texto) in enumerate(eventos):
+        if tipo == "h" and texto == MARCADOR_BLOQUE:
+            inicio = indice + 1
+            break
+    if inicio is None:
+        return []
+
+    actividades = []
+    fragmentos_usados = set()
+    indice = inicio
+    while indice < len(eventos):
+        tipo, texto = eventos[indice]
+        if tipo != "h":
+            indice += 1
+            continue
+        if _es_texto_excluido(texto):
+            indice += 1
+            continue
+
+        titulo = texto
+        resumen = ""
+        siguiente = indice + 1
+        if siguiente < len(eventos) and eventos[siguiente][0] == "t":
+            texto_siguiente = eventos[siguiente][1]
+            if len(texto_siguiente) >= LONGITUD_MINIMA_RESUMEN and not _es_texto_excluido(texto_siguiente):
+                resumen = texto_siguiente
+                siguiente += 1
+
+        fragmento = _fragmento_estable(titulo)
+        fragmento_final = fragmento
+        sufijo = 2
+        while fragmento_final in fragmentos_usados:
+            fragmento_final = f"{fragmento}-{sufijo}"
+            sufijo += 1
+        fragmentos_usados.add(fragmento_final)
+
+        actividades.append(
+            {
+                "titulo": titulo,
+                "texto": resumen,
+                "url": f"{url_base}#{fragmento_final}",
+                "fuente": nombre_fuente,
+                "fecha": "",
+            }
+        )
+        indice = siguiente
+
+    return actividades
 
 
 class MunicipioLibertadorHTMLCollector(Collector):
@@ -169,4 +247,5 @@ class MunicipioLibertadorHTMLCollector(Collector):
             raise ErrorRecoleccionHTML(
                 f"No se pudo conectar al Municipio Libertador ({self.url}): {error.reason}"
             ) from error
-        return parsear_html(contenido, self.url, self.nombre_fuente)
+        html_crudo = contenido.decode("utf-8", errors="replace")
+        return extraer_actividades(html_crudo, self.url, self.nombre_fuente)

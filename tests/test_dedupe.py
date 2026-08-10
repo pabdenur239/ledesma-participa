@@ -14,6 +14,13 @@ class TestDedupe(unittest.TestCase):
         b = normalizar_url("https://ejemplo.test/nota/1")
         self.assertEqual(a, b)
 
+    def test_normalizar_url_conserva_el_fragmento(self):
+        a = normalizar_url("https://ejemplo.test/pagina#actividad-1")
+        b = normalizar_url("https://ejemplo.test/pagina#actividad-2")
+        c = normalizar_url("https://www.ejemplo.test/pagina/#actividad-1")
+        self.assertNotEqual(a, b)
+        self.assertEqual(a, c)
+
     def test_hash_contenido_igual_para_texto_equivalente(self):
         h1 = hash_contenido("Título", "Texto de la noticia.")
         h2 = hash_contenido("título", "texto   de la noticia.")

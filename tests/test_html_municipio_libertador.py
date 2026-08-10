@@ -9,7 +9,7 @@ from motor_noticias.collectors.html_municipio_libertador import (
     HEADERS,
     ErrorRecoleccionHTML,
     MunicipioLibertadorHTMLCollector,
-    parsear_html,
+    extraer_actividades,
 )
 from motor_noticias.db import Database
 from motor_noticias.pipeline import ejecutar_pipeline
@@ -24,6 +24,14 @@ FIXTURE_PATH = (
 NOMBRE_FUENTE = "Municipalidad de Libertador General San Martín"
 URL_BASE = "https://municipiolgsmjujuy.gob.ar/actividades-intendente"
 
+TITULO_BRIPAEM = "Ing. Oscar Jayat nuevo Presidente del BRIPAEM"
+RESUMEN_BRIPAEM = (
+    "En una asamblea extraordinaria realizada en la ciudad de Buenos Aires, "
+    "asumió como Presidente del BRIPAEM por el periodo 2026-2028."
+)
+TITULO_POLIDEPORTIVO = "Reinauguración Polideportivo del Barrio 18 de Noviembre"
+TITULO_CONVENIO = "Firma de Convenio Etapa 2 Techado del Predio Ferial Municipal"
+
 
 class ColectorHTMLDePrueba:
     """Envuelve el fixture HTML local. No realiza ninguna conexión de red."""
@@ -32,31 +40,56 @@ class ColectorHTMLDePrueba:
         self.contenido = contenido
 
     def recolectar(self):
-        return parsear_html(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        return extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
 
 
-class TestParsearHTML(unittest.TestCase):
+class TestExtraerActividades(unittest.TestCase):
     def setUp(self):
         self.contenido = FIXTURE_PATH.read_text(encoding="utf-8")
 
-    def test_extrae_las_publicaciones_de_la_seccion_principal(self):
-        noticias = parsear_html(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        self.assertEqual(len(noticias), 3)
+    def test_decodifica_html_escapado_y_encuentra_la_primera_actividad(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        titulos = [a["titulo"] for a in actividades]
+        self.assertIn(TITULO_BRIPAEM, titulos)
 
-    def test_extrae_los_campos_minimos(self):
-        noticias = parsear_html(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        primera = noticias[0]
-        self.assertIn("entrega de viviendas", primera["titulo"])
-        self.assertTrue(primera["url"].startswith("https://municipiolgsmjujuy.gob.ar/"))
-        self.assertEqual(primera["fuente"], NOMBRE_FUENTE)
-        self.assertEqual(primera["fecha"], "2026-08-01")
-        self.assertTrue(primera["texto"])
+    def test_asocia_correctamente_el_resumen(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        actividad = next(a for a in actividades if a["titulo"] == TITULO_BRIPAEM)
+        self.assertEqual(actividad["texto"], RESUMEN_BRIPAEM)
 
-    def test_no_captura_enlaces_de_navegacion_ni_pie_de_pagina(self):
-        noticias = parsear_html(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        titulos = [n["titulo"] for n in noticias]
-        for titulo_navegacion in ("Inicio", "Turismo", "Contacto", "Prensa"):
-            self.assertNotIn(titulo_navegacion, titulos)
+    def test_encuentra_las_otras_actividades(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        titulos = [a["titulo"] for a in actividades]
+        self.assertIn(TITULO_POLIDEPORTIVO, titulos)
+        self.assertIn(TITULO_CONVENIO, titulos)
+        self.assertEqual(len(actividades), 3)
+
+    def test_ignora_navegacion_pie_de_pagina_y_datos_de_contacto(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        titulos = [a["titulo"] for a in actividades]
+        for texto_no_deseado in (
+            "Inicio",
+            "Turismo",
+            "Contacto",
+            "Prensa",
+            "Actividades sr. Intendente Ing. Oscar Jayat",
+        ):
+            self.assertNotIn(texto_no_deseado, titulos)
+        for actividad in actividades:
+            self.assertNotIn("Domicilio", actividad["texto"])
+            self.assertNotIn("Teléfono", actividad["texto"])
+            self.assertNotIn("@", actividad["texto"])
+
+    def test_genera_identificadores_estables_y_distintos(self):
+        actividades = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        urls = [a["url"] for a in actividades]
+
+        self.assertEqual(len(urls), len(set(urls)))
+        for url in urls:
+            self.assertTrue(url.startswith(f"{URL_BASE}#"))
+
+        otra_pasada = extraer_actividades(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        self.assertEqual(urls, [a["url"] for a in otra_pasada])
 
 
 class TestPipelineConFixtureHTML(unittest.TestCase):
@@ -64,21 +97,29 @@ class TestPipelineConFixtureHTML(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db = Database(Path(self.tmpdir.name) / "test.db")
         self.redactor = RedactorMock()
-        self.collector = ColectorHTMLDePrueba(FIXTURE_PATH.read_text(encoding="utf-8"))
+        self.contenido = FIXTURE_PATH.read_text(encoding="utf-8")
 
     def tearDown(self):
         self.db.close()
         self.tmpdir.cleanup()
 
-    def test_pipeline_offline_sobre_fixture_html(self):
-        resultados = ejecutar_pipeline(self.db, self.collector, self.redactor)
+    def test_pipeline_y_sqlite_funcionan_sin_falsos_duplicados_por_pagina_compartida(self):
+        resultados = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
         self.assertEqual(len(resultados), 3)
+        for _, resultado in resultados:
+            self.assertIn(resultado, ("preparada", "descartada"))
+        # las tres actividades comparten la misma URL de página; ninguna debe
+        # perderse por ser confundida con un duplicado de otra.
+        self.assertEqual(len(self.db.listar()), 3)
 
-        self.assertEqual(resultados[0][1], "preparada")
-        self.assertEqual(resultados[1][1], "preparada")
-        self.assertEqual(resultados[2][1], "duplicado")
+    def test_segunda_ejecucion_detecta_duplicados(self):
+        ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
+        self.assertEqual(len(self.db.listar()), 3)
 
-        self.assertEqual(len(self.db.listar()), 2)
+        segunda = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
+        for _, resultado in segunda:
+            self.assertEqual(resultado, "duplicado")
+        self.assertEqual(len(self.db.listar()), 3)
 
 
 class TestPeticionHTTP(unittest.TestCase):
@@ -99,7 +140,7 @@ class TestPeticionHTTP(unittest.TestCase):
         urlopen_mock.return_value = self._respuesta_falsa(self.contenido_fixture)
         collector = MunicipioLibertadorHTMLCollector()
 
-        noticias = collector.recolectar()
+        actividades = collector.recolectar()
 
         urlopen_mock.assert_called_once()
         peticion_enviada = urlopen_mock.call_args.args[0]
@@ -107,7 +148,7 @@ class TestPeticionHTTP(unittest.TestCase):
         self.assertEqual(peticion_enviada.full_url, collector.url)
         for clave, valor in HEADERS.items():
             self.assertEqual(peticion_enviada.get_header(clave.capitalize()), valor)
-        self.assertEqual(len(noticias), 3)
+        self.assertEqual(len(actividades), 3)
 
     @patch("motor_noticias.collectors.html_municipio_libertador.urllib.request.urlopen")
     def test_http_error_se_convierte_en_error_controlado(self, urlopen_mock):

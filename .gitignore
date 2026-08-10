@@ -1,0 +1,17 @@
+# Entorno y secretos
+.env
+.env.*
+*.env
+secrets/
+credentials/
+*.pem
+*.key
+
+# Temporales comunes
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+node_modules/
+__pycache__/
+*.pyc

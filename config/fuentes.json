@@ -2,5 +2,9 @@
   "prensa_jujuy": {
     "nombre_fuente": "Prensa Jujuy (Gobierno de Jujuy)",
     "url_rss": "https://prensa.jujuy.gob.ar/rss/ultimas-noticias.xml"
+  },
+  "municipio_libertador": {
+    "nombre_fuente": "Municipalidad de Libertador General San Martín",
+    "url": "https://municipiolgsmjujuy.gob.ar/actividades-intendente"
   }
 }

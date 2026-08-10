@@ -42,3 +42,17 @@ python3 run.py --fuente rss-prensa-jujuy
 
 Las pruebas automáticas no acceden a este feed: usan un fixture XML
 local (`data/fixtures/prensa_jujuy_rss_prueba.xml`).
+
+## Recolección real: Municipio Libertador (HTML)
+
+Existe un collector real para la página de actividades del intendente
+de la Municipalidad de Libertador General San Martín (configurado en
+`config/fuentes.json`). Requiere acceso normal a internet desde el
+entorno donde se ejecute:
+
+```bash
+python3 run.py --fuente municipio-libertador
+```
+
+Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
+local (`data/fixtures/municipio_libertador_html_prueba.html`).

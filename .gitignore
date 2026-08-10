@@ -15,3 +15,7 @@ Thumbs.db
 node_modules/
 __pycache__/
 *.pyc
+
+# Base de datos generada localmente
+data/*.db
+data/*.sqlite3

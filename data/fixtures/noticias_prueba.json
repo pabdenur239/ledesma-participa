@@ -1,0 +1,37 @@
+[
+  {
+    "titulo": "Comenzaron las obras de repavimentación en Libertador General San Martín",
+    "texto": "El municipio de Libertador General San Martín inició esta semana un plan de repavimentación en varios barrios de la ciudad, con el objetivo de mejorar la conectividad vial.",
+    "url": "https://ejemplo-noticias.test/libertador/repavimentacion-2026",
+    "fuente": "Ejemplo Noticias (prueba)",
+    "fecha": "2026-08-05"
+  },
+  {
+    "titulo": "Fraile Pintado inauguró su nuevo centro de salud",
+    "texto": "La localidad de Fraile Pintado, en el Departamento Ledesma, inauguró un centro de salud con atención las 24 horas para vecinos de la zona.",
+    "url": "https://ejemplo-noticias.test/ledesma/fraile-pintado-salud",
+    "fuente": "Ejemplo Noticias (prueba)",
+    "fecha": "2026-08-06"
+  },
+  {
+    "titulo": "El Gobierno nacional anunció cambios en la política económica",
+    "texto": "En un anuncio realizado en Buenos Aires, el Gobierno nacional presentó modificaciones a su plan económico para lo que resta del año.",
+    "url": "https://ejemplo-noticias.test/nacional/economia-2026",
+    "fuente": "Ejemplo Noticias (prueba)",
+    "fecha": "2026-08-06"
+  },
+  {
+    "titulo": "Jujuy presentó su calendario turístico anual",
+    "texto": "El Gobierno de la provincia de Jujuy presentó el calendario de actividades turísticas para todo el territorio provincial.",
+    "url": "https://ejemplo-noticias.test/jujuy/calendario-turistico",
+    "fuente": "Ejemplo Noticias (prueba)",
+    "fecha": "2026-08-07"
+  },
+  {
+    "titulo": "Comenzaron las obras de repavimentación en Libertador General San Martín",
+    "texto": "El municipio de Libertador General San Martín inició esta semana un plan de repavimentación en varios barrios de la ciudad, con el objetivo de mejorar la conectividad vial.",
+    "url": "https://ejemplo-noticias.test/libertador/repavimentacion-2026?utm_source=facebook",
+    "fuente": "Ejemplo Noticias (prueba)",
+    "fecha": "2026-08-05"
+  }
+]

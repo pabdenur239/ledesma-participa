@@ -4,7 +4,7 @@ from typing import List, Tuple
 from .collectors.base import Collector
 from .db import Database
 from .dedupe import hash_contenido, normalizar_url
-from .models import Estado, Noticia
+from .models import Estado, Noticia, RevisionEstado
 from .redaccion.base import Redactor
 from .relevancia import clasificar_relevancia
 
@@ -47,6 +47,7 @@ def procesar_noticia(db: Database, noticia: Noticia, redactor: Redactor) -> Tupl
     noticia.titulo_preparado = titulo_preparado
     noticia.texto_preparado = texto_preparado
     noticia.estado = Estado.PREPARADA.value
+    noticia.revision_estado = RevisionEstado.PENDIENTE.value
     db.guardar(noticia)
     return noticia, "preparada"
 

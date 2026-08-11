@@ -2,7 +2,7 @@
 
 Medio digital hiperlocal con foco en Libertador General San Martín y el Departamento Ledesma (Jujuy, Argentina).
 
-Estado actual: **Fase 1** (núcleo del motor de noticias).
+Estado actual: **Fase 2** (panel mínimo de revisión humana).
 
 ## Instalación
 
@@ -74,3 +74,21 @@ python3 run.py --fuente municipio-libertador --redactor ollama
 Si Ollama no está disponible, el pipeline informa el error y se
 detiene (no cambia automáticamente a otro proveedor). Las pruebas
 automáticas no se conectan a Ollama: simulan sus respuestas.
+
+## Panel de revisión humana
+
+Panel web local y mínimo (solo biblioteca estándar) para revisar a mano
+las noticias en estado `preparada` antes de cualquier publicación
+futura. Nunca publica nada automáticamente: aprobar o rechazar solo
+cambia `revision_estado` (`pendiente` / `aprobada` / `rechazada`) sobre
+la misma base SQLite.
+
+```bash
+python3 run_panel.py
+```
+
+Queda disponible **únicamente** en `http://127.0.0.1:8000` (el servidor
+se enlaza siempre a `127.0.0.1`, nunca a `0.0.0.0`). Permite filtrar
+noticias preparadas por estado de revisión, ver el contenido original y
+preparado, editar un título/texto revisado, y aprobar o rechazar. No
+implementa autenticación: está pensado para uso exclusivamente local.

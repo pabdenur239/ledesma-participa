@@ -10,6 +10,12 @@ class Estado(str, Enum):
     PUBLICADA = "publicada"
 
 
+class RevisionEstado(str, Enum):
+    PENDIENTE = "pendiente"
+    APROBADA = "aprobada"
+    RECHAZADA = "rechazada"
+
+
 @dataclass
 class Noticia:
     id: Optional[int]
@@ -27,3 +33,7 @@ class Noticia:
     motivo_relevancia: Optional[str] = None
     titulo_preparado: Optional[str] = None
     texto_preparado: Optional[str] = None
+    revision_estado: str = RevisionEstado.PENDIENTE.value
+    fecha_revision: Optional[str] = None
+    titulo_revisado: Optional[str] = None
+    texto_revisado: Optional[str] = None

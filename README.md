@@ -61,6 +61,23 @@ python3 run.py --fuente municipio-libertador
 Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
 local (`data/fixtures/municipio_libertador_html_prueba.html`).
 
+## Recolección real: InfoYungas (HTML)
+
+Existe un collector real para el listado de noticias de InfoYungas
+(configurado en `config/fuentes.json`), medio local que cubre
+Libertador General San Martín, Ledesma y las Yungas. A diferencia del
+collector municipal, no asigna una localidad fija: la relevancia
+geográfica de cada noticia se deriva de su contenido con el
+clasificador existente. Requiere acceso normal a internet desde el
+entorno donde se ejecute:
+
+```bash
+python3 run.py --fuente infoyungas
+```
+
+Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
+local (`data/fixtures/infoyungas_html_prueba.html`).
+
 ## Redacción real: Ollama local
 
 Por defecto el pipeline redacta con `RedactorMock` (sin IA). Existe

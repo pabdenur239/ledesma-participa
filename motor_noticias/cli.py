@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from .collectors.fixtures import FixtureCollector
+from .collectors.html_infoyungas import ErrorRecoleccionInfoYungas, InfoYungasHTMLCollector
 from .collectors.html_municipio_libertador import (
     ErrorRecoleccionHTML,
     MunicipioLibertadorHTMLCollector,
@@ -21,12 +22,12 @@ def main():
     parser.add_argument("--db", default=str(DB_PATH_DEFAULT), help="Ruta a la base de datos SQLite")
     parser.add_argument(
         "--fuente",
-        choices=["fixture", "rss-prensa-jujuy", "municipio-libertador"],
+        choices=["fixture", "rss-prensa-jujuy", "municipio-libertador", "infoyungas"],
         default="fixture",
         help=(
             "Fuente a recolectar: datos de prueba locales (default), "
-            "el RSS real de Prensa Jujuy, o la página real de actividades "
-            "del Municipio Libertador"
+            "el RSS real de Prensa Jujuy, la página real de actividades "
+            "del Municipio Libertador, o el listado real de InfoYungas"
         ),
     )
     parser.add_argument(
@@ -45,13 +46,15 @@ def main():
         collector = PrensaJujuyRSSCollector()
     elif args.fuente == "municipio-libertador":
         collector = MunicipioLibertadorHTMLCollector()
+    elif args.fuente == "infoyungas":
+        collector = InfoYungasHTMLCollector()
     else:
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
     redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
 
     try:
         resultados = ejecutar_pipeline(db, collector, redactor)
-    except (ErrorRecoleccionRSS, ErrorRecoleccionHTML) as error:
+    except (ErrorRecoleccionRSS, ErrorRecoleccionHTML, ErrorRecoleccionInfoYungas) as error:
         db.close()
         print(f"Error al recolectar noticias: {error}", file=sys.stderr)
         sys.exit(1)

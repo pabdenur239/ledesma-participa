@@ -11,6 +11,7 @@ from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSColl
 from .db import Database
 from .pipeline import ejecutar_pipeline
 from .redaccion.mock import RedactorMock
+from .redaccion.ollama import ErrorRedaccionOllama, RedactorOllama
 
 DB_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "ledesma_participa.db"
 
@@ -31,6 +32,12 @@ def main():
     parser.add_argument(
         "--fixtures", default=None, help="Ruta al archivo de noticias de prueba (solo con --fuente fixture)"
     )
+    parser.add_argument(
+        "--redactor",
+        choices=["mock", "ollama"],
+        default="mock",
+        help="Redactor a usar: mock de prueba (default) u Ollama local",
+    )
     args = parser.parse_args()
 
     db = Database(args.db)
@@ -40,13 +47,17 @@ def main():
         collector = MunicipioLibertadorHTMLCollector()
     else:
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
-    redactor = RedactorMock()
+    redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
 
     try:
         resultados = ejecutar_pipeline(db, collector, redactor)
     except (ErrorRecoleccionRSS, ErrorRecoleccionHTML) as error:
         db.close()
         print(f"Error al recolectar noticias: {error}", file=sys.stderr)
+        sys.exit(1)
+    except ErrorRedaccionOllama as error:
+        db.close()
+        print(f"Error al redactar noticias: {error}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Base de datos: {args.db}")

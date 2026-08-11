@@ -56,3 +56,21 @@ python3 run.py --fuente municipio-libertador
 
 Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
 local (`data/fixtures/municipio_libertador_html_prueba.html`).
+
+## Redacción real: Ollama local
+
+Por defecto el pipeline redacta con `RedactorMock` (sin IA). Existe
+además `RedactorOllama`, que usa un modelo local servido por
+[Ollama](https://ollama.com) (configurado en `config/redaccion.json`,
+endpoint `http://localhost:11434/api/chat`, modelo `qwen3:1.7b`). No
+requiere instalar ningún paquete Python adicional ni claves de API;
+solo requiere tener Ollama corriendo localmente con el modelo
+descargado:
+
+```bash
+python3 run.py --fuente municipio-libertador --redactor ollama
+```
+
+Si Ollama no está disponible, el pipeline informa el error y se
+detiene (no cambia automáticamente a otro proveedor). Las pruebas
+automáticas no se conectan a Ollama: simulan sus respuestas.

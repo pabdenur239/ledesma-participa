@@ -1,0 +1,6 @@
+{
+  "proveedor": "ollama",
+  "endpoint": "http://localhost:11434/api/chat",
+  "modelo": "qwen3:1.7b",
+  "timeout": 60
+}

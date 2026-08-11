@@ -69,6 +69,51 @@ class TestEscapeHTML(unittest.TestCase):
         self.assertIn("&lt;img", pagina)
 
 
+class TestAdvertenciaRiesgoEditorial(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.tmpdir.name) / "test.db")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def test_lista_muestra_advertencia_para_noticia_con_riesgo(self):
+        noticia = _noticia_preparada(
+            requiere_revision_especial=True,
+            categoria_riesgo="institucional_municipal",
+            motivo_revision_especial="Menciona 'Intendente'.",
+        )
+        self.db.guardar(noticia)
+
+        pagina = _lista_html(self.db, "todas")
+
+        self.assertIn("REVISIÓN POLÍTICA/INSTITUCIONAL OBLIGATORIA", pagina)
+        self.assertIn("institucional_municipal", pagina)
+
+    def test_lista_no_muestra_advertencia_para_noticia_sin_riesgo(self):
+        noticia = _noticia_preparada()
+        self.db.guardar(noticia)
+
+        pagina = _lista_html(self.db, "todas")
+
+        self.assertNotIn("REVISIÓN POLÍTICA/INSTITUCIONAL OBLIGATORIA", pagina)
+
+    def test_detalle_muestra_advertencia_para_noticia_con_riesgo(self):
+        noticia = _noticia_preparada(
+            requiere_revision_especial=True,
+            categoria_riesgo="figura_publica_relacionada",
+            motivo_revision_especial="Menciona 'Pablo Abdenur'.",
+        )
+        self.db.guardar(noticia)
+        guardada = self.db.obtener(noticia.id)
+
+        pagina = _detalle_html(guardada)
+
+        self.assertIn("REVISIÓN POLÍTICA/INSTITUCIONAL OBLIGATORIA", pagina)
+        self.assertIn("figura_publica_relacionada", pagina)
+
+
 class TestServidorLocalhost(unittest.TestCase):
     def test_host_configurado_exclusivamente_en_loopback(self):
         self.assertEqual(HOST, "127.0.0.1")

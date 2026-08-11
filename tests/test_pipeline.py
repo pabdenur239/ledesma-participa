@@ -57,6 +57,39 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(resultado, "descartada")
         self.assertEqual(noticia.estado, Estado.DESCARTADA.value)
 
+    def test_noticia_municipal_requiere_revision_especial(self):
+        items = [
+            {
+                "titulo": "El Intendente de Libertador General San Martín anunció obras",
+                "texto": "El Intendente presentó el plan de obras para el barrio.",
+                "url": "https://ejemplo.test/intendente-1",
+                "fuente": "Prueba",
+                "fecha": "2026-08-01",
+            }
+        ]
+        resultados = ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
+        noticia, resultado = resultados[0]
+        self.assertEqual(resultado, "preparada")
+        self.assertTrue(noticia.requiere_revision_especial)
+        self.assertIsNotNone(noticia.categoria_riesgo)
+        self.assertIsNotNone(noticia.motivo_revision_especial)
+
+    def test_noticia_deportiva_local_no_requiere_revision_especial(self):
+        items = [
+            {
+                "titulo": "El club de Libertador General San Martín ganó el torneo",
+                "texto": "El equipo de Libertador General San Martín venció 2 a 0 en la final.",
+                "url": "https://ejemplo.test/deporte-1",
+                "fuente": "Prueba",
+                "fecha": "2026-08-01",
+            }
+        ]
+        resultados = ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
+        noticia, resultado = resultados[0]
+        self.assertEqual(resultado, "preparada")
+        self.assertFalse(noticia.requiere_revision_especial)
+        self.assertIsNone(noticia.categoria_riesgo)
+
     def test_duplicado_no_se_almacena_dos_veces(self):
         base = {
             "titulo": "Obras en Libertador General San Martín",

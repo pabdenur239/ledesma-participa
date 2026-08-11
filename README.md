@@ -92,3 +92,18 @@ se enlaza siempre a `127.0.0.1`, nunca a `0.0.0.0`). Permite filtrar
 noticias preparadas por estado de revisión, ver el contenido original y
 preparado, editar un título/texto revisado, y aprobar o rechazar. No
 implementa autenticación: está pensado para uso exclusivamente local.
+
+## Control de riesgo editorial político/institucional
+
+Toda noticia se evalúa automáticamente (por reglas simples y
+configurables en `config/riesgo_editorial.json`, sin IA) para detectar
+contenido sobre la Municipalidad, el intendente, concejales, el Concejo
+Deliberante, funcionarios, partidos políticos, candidatos/elecciones o
+Pablo Abdenur (sin darle ningún tratamiento distinto al resto). Ese
+contenido queda marcado con `requiere_revision_especial = true` y el
+panel muestra una advertencia visible ("REVISIÓN POLÍTICA/INSTITUCIONAL
+OBLIGATORIA") con la categoría y el motivo detectado. Esto no bloquea
+la aprobación humana: solo impide que ese contenido pueda considerarse
+publicable automáticamente en una futura etapa
+(`motor_noticias.publicacion.puede_publicarse_automaticamente`, todavía
+no conectada a ningún mecanismo de publicación).

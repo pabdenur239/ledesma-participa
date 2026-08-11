@@ -7,6 +7,20 @@ from .dedupe import hash_contenido, normalizar_url
 from .models import Estado, Noticia, RevisionEstado
 from .redaccion.base import Redactor
 from .relevancia import clasificar_relevancia
+from .riesgo_editorial import evaluar_riesgo_editorial
+
+
+def _aplicar_riesgo_editorial(noticia: Noticia) -> None:
+    resultado = evaluar_riesgo_editorial(
+        noticia.titulo_original,
+        noticia.texto_original,
+        noticia.titulo_preparado,
+        noticia.texto_preparado,
+        noticia.nombre_fuente,
+    )
+    noticia.requiere_revision_especial = resultado["requiere_revision_especial"]
+    noticia.categoria_riesgo = resultado["categoria_riesgo"]
+    noticia.motivo_revision_especial = resultado["motivo"]
 
 
 def normalizar_noticia(cruda: dict) -> Noticia:
@@ -40,6 +54,7 @@ def procesar_noticia(db: Database, noticia: Noticia, redactor: Redactor) -> Tupl
 
     if not noticia.relevancia_local:
         noticia.estado = Estado.DESCARTADA.value
+        _aplicar_riesgo_editorial(noticia)
         db.guardar(noticia)
         return noticia, "descartada"
 
@@ -48,6 +63,7 @@ def procesar_noticia(db: Database, noticia: Noticia, redactor: Redactor) -> Tupl
     noticia.texto_preparado = texto_preparado
     noticia.estado = Estado.PREPARADA.value
     noticia.revision_estado = RevisionEstado.PENDIENTE.value
+    _aplicar_riesgo_editorial(noticia)
     db.guardar(noticia)
     return noticia, "preparada"
 

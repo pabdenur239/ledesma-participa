@@ -25,13 +25,19 @@ CREATE TABLE IF NOT EXISTS noticias (
 CREATE INDEX IF NOT EXISTS idx_url_normalizada ON noticias(url_normalizada);
 """
 
-# Columnas de revisión humana, agregadas en una migración no destructiva:
-# una base ya existente conserva sus filas y solo suma estas columnas.
+# Columnas agregadas en migraciones no destructivas: una base ya existente
+# conserva sus filas y solo suma las columnas que le falten.
 COLUMNAS_REVISION = {
     "revision_estado": "TEXT NOT NULL DEFAULT 'pendiente'",
     "fecha_revision": "TEXT",
     "titulo_revisado": "TEXT",
     "texto_revisado": "TEXT",
+}
+
+COLUMNAS_RIESGO_EDITORIAL = {
+    "requiere_revision_especial": "INTEGER NOT NULL DEFAULT 0",
+    "motivo_revision_especial": "TEXT",
+    "categoria_riesgo": "TEXT",
 }
 
 
@@ -43,13 +49,14 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         self.conn.commit()
-        self._migrar_columnas_revision()
+        self._migrar_columnas(COLUMNAS_REVISION)
+        self._migrar_columnas(COLUMNAS_RIESGO_EDITORIAL)
 
-    def _migrar_columnas_revision(self):
+    def _migrar_columnas(self, columnas: dict):
         columnas_existentes = {
             fila[1] for fila in self.conn.execute("PRAGMA table_info(noticias)").fetchall()
         }
-        for columna, definicion in COLUMNAS_REVISION.items():
+        for columna, definicion in columnas.items():
             if columna not in columnas_existentes:
                 self.conn.execute(f"ALTER TABLE noticias ADD COLUMN {columna} {definicion}")
         self.conn.commit()
@@ -69,8 +76,9 @@ class Database:
                 nombre_fuente, fecha_fuente, fecha_recoleccion, localidad,
                 relevancia_local, motivo_relevancia, titulo_preparado,
                 texto_preparado, estado, hash_contenido, revision_estado,
-                fecha_revision, titulo_revisado, texto_revisado
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fecha_revision, titulo_revisado, texto_revisado,
+                requiere_revision_especial, motivo_revision_especial, categoria_riesgo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 noticia.titulo_original,
@@ -91,6 +99,9 @@ class Database:
                 noticia.fecha_revision,
                 noticia.titulo_revisado,
                 noticia.texto_revisado,
+                noticia.requiere_revision_especial,
+                noticia.motivo_revision_especial,
+                noticia.categoria_riesgo,
             ),
         )
         self.conn.commit()

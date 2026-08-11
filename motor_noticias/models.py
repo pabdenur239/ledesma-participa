@@ -37,3 +37,6 @@ class Noticia:
     fecha_revision: Optional[str] = None
     titulo_revisado: Optional[str] = None
     texto_revisado: Optional[str] = None
+    requiere_revision_especial: bool = False
+    motivo_revision_especial: Optional[str] = None
+    categoria_riesgo: Optional[str] = None

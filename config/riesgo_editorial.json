@@ -1,0 +1,29 @@
+{
+  "categorias": {
+    "institucional_municipal": [
+      "Municipalidad de Libertador General San Martín",
+      "Municipio",
+      "Intendente",
+      "Concejo Deliberante",
+      "Concejal",
+      "Concejales",
+      "funcionario",
+      "funcionarios",
+      "secretario municipal",
+      "secretaria municipal"
+    ],
+    "politica_partidaria": [
+      "diputado",
+      "diputada",
+      "senador",
+      "senadora",
+      "partido político",
+      "candidato",
+      "candidata",
+      "elecciones"
+    ],
+    "figura_publica_relacionada": [
+      "Pablo Abdenur"
+    ]
+  }
+}

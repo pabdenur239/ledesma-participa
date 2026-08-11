@@ -42,6 +42,10 @@ body {{ font-family: sans-serif; margin: 2rem; max-width: 900px; }}
 .estado-pendiente {{ color: #b8860b; }}
 .estado-aprobada {{ color: #2e7d32; }}
 .estado-rechazada {{ color: #c62828; }}
+.advertencia-riesgo {{
+  color: #b71c1c; font-weight: bold; border: 2px solid #b71c1c;
+  padding: 0.5rem; margin: 0.5rem 0; background: #fdecea;
+}}
 textarea {{ width: 100%; min-height: 6rem; }}
 input[type=text] {{ width: 100%; box-sizing: border-box; }}
 nav a {{ margin-right: 1rem; }}
@@ -54,8 +58,19 @@ nav a {{ margin-right: 1rem; }}
 </html>"""
 
 
+def _advertencia_riesgo(n: dict) -> str:
+    if not n.get("requiere_revision_especial"):
+        return ""
+    return f"""<p class="advertencia-riesgo">
+⚠ REVISIÓN POLÍTICA/INSTITUCIONAL OBLIGATORIA<br>
+Categoría de riesgo: {_e(n.get('categoria_riesgo'))}<br>
+Motivo: {_e(n.get('motivo_revision_especial'))}
+</p>"""
+
+
 def _tarjeta_noticia(n: dict) -> str:
     return f"""<div class="noticia">
+{_advertencia_riesgo(n)}
 <p><strong>Título original:</strong> {_e(n['titulo_original'])}</p>
 <p><strong>Texto original:</strong> {_e(n['texto_original'])}</p>
 <p><strong>Fuente:</strong> {_e(n['nombre_fuente'])} — <strong>Localidad:</strong> {_e(n['localidad'])}</p>
@@ -87,6 +102,7 @@ def _detalle_html(noticia: dict, mensaje: Optional[str] = None) -> str:
     valor_texto = noticia["texto_revisado"] or noticia["texto_preparado"] or ""
     cuerpo = f"""
 {aviso}
+{_advertencia_riesgo(noticia)}
 <p><a href="/">&laquo; Volver al panel</a></p>
 <h2>{_e(noticia['titulo_original'])}</h2>
 <p><strong>Fuente:</strong> {_e(noticia['nombre_fuente'])}

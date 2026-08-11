@@ -1,0 +1,4 @@
+# Única dependencia externa del proyecto: generación local de placas PNG
+# cuando una noticia no tiene imagen (motor_noticias/meta/imagen.py).
+# No requiere librerías del sistema; se instala igual en Windows/Mac/Linux.
+Pillow>=10.1.0

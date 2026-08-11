@@ -1,3 +1,4 @@
+import base64
 import html
 import urllib.parse
 from datetime import datetime, timezone
@@ -54,7 +55,7 @@ body {{ font-family: sans-serif; margin: 2rem; max-width: 900px; }}
 textarea {{ width: 100%; min-height: 6rem; }}
 input[type=text] {{ width: 100%; box-sizing: border-box; }}
 pre {{ white-space: pre-wrap; border: 1px solid #ccc; padding: 0.75rem; background: #fafafa; }}
-.placa-preview svg {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}
+.placa-preview {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}
 .imagen-original {{ max-width: 100%; border: 1px solid #ccc; }}
 nav a {{ margin-right: 1rem; }}
 </style>
@@ -153,11 +154,12 @@ def _seccion_imagen(contenido) -> str:
 
     if contenido.imagen_generada_automaticamente:
         try:
-            svg = Path(contenido.imagen_url).read_text(encoding="utf-8")
+            datos_png = Path(contenido.imagen_url).read_bytes()
+            data_uri = "data:image/png;base64," + base64.b64encode(datos_png).decode("ascii")
         except OSError:
-            svg = ""
+            data_uri = ""
         return f"""<h3>Imagen: placa generada automáticamente</h3>
-<div class="placa-preview">{svg}</div>"""
+<img class="placa-preview" src="{data_uri}" alt="Placa generada automáticamente">"""
 
     return f"""<h3>Imagen: imagen original</h3>
 <img class="imagen-original" src="{_e(contenido.imagen_url)}" alt="Imagen original de la noticia">"""

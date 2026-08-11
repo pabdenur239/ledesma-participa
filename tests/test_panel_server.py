@@ -195,14 +195,14 @@ class TestVistaPreviaFacebook(unittest.TestCase):
         self.assertIn("Información completa en el primer comentario.", cuerpo)
         self.assertIn("Fuente: Ejemplo Noticias (prueba)", cuerpo)
         self.assertIn("#LedesmaParticipa", cuerpo)
-        # sin imagen de origen: se generó y embebió una placa
+        # sin imagen de origen: se generó y embebió una placa PNG
         self.assertIn("placa generada automáticamente", cuerpo)
-        self.assertIn("<svg", cuerpo)
-        self.assertIn("LEDESMA PARTICIPA", cuerpo)
+        self.assertIn('<img class="placa-preview" src="data:image/png;base64,', cuerpo)
 
         guardada = self.db.obtener(noticia.id)
         self.assertTrue(guardada["imagen_generada_automaticamente"])
         self.assertIsNotNone(guardada["imagen_publicacion_ruta"])
+        self.assertTrue(guardada["imagen_publicacion_ruta"].endswith(".png"))
 
     def test_vista_previa_con_imagen_original_no_genera_placa(self):
         noticia = _noticia_preparada(

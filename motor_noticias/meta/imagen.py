@@ -1,13 +1,19 @@
 import hashlib
+import io
 import textwrap
 from pathlib import Path
 from typing import List, Optional
 from xml.sax.saxutils import escape as _escapar_xml
 
+from PIL import Image, ImageDraw, ImageFont
+
 DIRECTORIO_PLACAS_DEFAULT = Path(__file__).resolve().parent.parent.parent / "data" / "placas"
 
 ANCHO_PLACA = 1200
 ALTO_PLACA = 1200
+MARGEN_X = 80
+ALTO_BANDA_SUPERIOR = 160
+ALTO_BANDA_FOOTER = 140
 
 COLOR_MARCA = "#0d47a1"
 COLOR_FONDO = "#ffffff"
@@ -16,6 +22,8 @@ COLOR_RESUMEN = "#444444"
 COLOR_FOOTER_FONDO = "#f2f2f2"
 COLOR_FOOTER_TEXTO = "#333333"
 
+# Usados por generar_svg_placa (envoltorio de texto por cantidad de
+# caracteres, ya que el navegador es quien mide el ancho real).
 ANCHO_MAXIMO_TITULO = 26
 MAXIMO_LINEAS_TITULO = 4
 INTERLINEADO_TITULO = 64
@@ -41,14 +49,49 @@ def _envolver_texto(texto: str, ancho_maximo: int, maximo_lineas: int) -> List[s
     )
 
 
+def _envolver_texto_pixeles(dibujo, texto: str, fuente, ancho_maximo_px: int, maximo_lineas: int) -> List[str]:
+    """Igual que _envolver_texto, pero midiendo el ancho real en píxeles con
+    la fuente que se va a usar para dibujar: evita que una línea se salga
+    del lienzo por diferencias entre fuentes."""
+    texto = (texto or "").strip()
+    if not texto:
+        return []
+    palabras = texto.split()
+    lineas: List[str] = []
+    actual = ""
+    indice = 0
+    while indice < len(palabras) and len(lineas) < maximo_lineas:
+        palabra = palabras[indice]
+        candidato = f"{actual} {palabra}".strip()
+        if dibujo.textlength(candidato, font=fuente) <= ancho_maximo_px or not actual:
+            actual = candidato
+            indice += 1
+        else:
+            lineas.append(actual)
+            actual = ""
+    if actual and len(lineas) < maximo_lineas:
+        lineas.append(actual)
+
+    hay_texto_restante = indice < len(palabras)
+    if hay_texto_restante and lineas:
+        ultima = lineas[-1]
+        candidato = ultima + "…"
+        while dibujo.textlength(candidato, font=fuente) > ancho_maximo_px and " " in ultima:
+            ultima = ultima.rsplit(" ", 1)[0]
+            candidato = ultima + "…"
+        lineas[-1] = candidato
+
+    return lineas
+
+
 def _hash_contenido_placa(titulo: str, resumen: str, fuente: str, localidad: str) -> str:
     contenido = "|".join((titulo or "", resumen or "", fuente or "", localidad or ""))
     return hashlib.sha1(contenido.encode("utf-8")).hexdigest()[:16]
 
 
 def generar_svg_placa(titulo: str, resumen: str, fuente: str = "", localidad: str = "") -> str:
-    """Genera el marcado SVG de la placa. Formato 1200x1200, márgenes
-    amplios y tipografía simple, pensado para legibilidad en Facebook."""
+    """Genera el marcado SVG de la placa. Se conserva como representación
+    interna simple; el archivo publicable es el PNG de generar_placa()."""
     lineas_titulo = _envolver_texto(titulo, ANCHO_MAXIMO_TITULO, MAXIMO_LINEAS_TITULO)
     lineas_resumen = _envolver_texto(resumen, ANCHO_MAXIMO_RESUMEN, MAXIMO_LINEAS_RESUMEN)
 
@@ -81,6 +124,56 @@ def generar_svg_placa(titulo: str, resumen: str, fuente: str = "", localidad: st
 """
 
 
+def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", localidad: str = "") -> bytes:
+    """Dibuja la placa directamente como PNG (1200x1200) con Pillow: mismo
+    branding, título, bajada, fuente y localidad que la versión SVG, listo
+    para una futura subida por la Graph API (que no acepta SVG)."""
+    imagen = Image.new("RGB", (ANCHO_PLACA, ALTO_PLACA), COLOR_FONDO)
+    dibujo = ImageDraw.Draw(imagen)
+    ancho_maximo_px = ANCHO_PLACA - 2 * MARGEN_X
+
+    dibujo.rectangle([(0, 0), (ANCHO_PLACA, ALTO_BANDA_SUPERIOR)], fill=COLOR_MARCA)
+    fuente_marca = ImageFont.load_default(size=44)
+    dibujo.text((MARGEN_X, 55), "LEDESMA PARTICIPA", font=fuente_marca, fill="#ffffff")
+
+    fuente_titulo = ImageFont.load_default(size=52)
+    lineas_titulo = _envolver_texto_pixeles(
+        dibujo, titulo, fuente_titulo, ancho_maximo_px, MAXIMO_LINEAS_TITULO
+    )
+    y = 380
+    for linea in lineas_titulo:
+        dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_TITULO)
+        y += 64
+
+    fuente_resumen = ImageFont.load_default(size=32)
+    lineas_resumen = _envolver_texto_pixeles(
+        dibujo, resumen, fuente_resumen, ancho_maximo_px, MAXIMO_LINEAS_RESUMEN
+    )
+    y += 30
+    for linea in lineas_resumen:
+        dibujo.text((MARGEN_X, y), linea, font=fuente_resumen, fill=COLOR_RESUMEN)
+        y += 42
+
+    y_footer = ALTO_PLACA - ALTO_BANDA_FOOTER
+    dibujo.rectangle([(0, y_footer), (ANCHO_PLACA, ALTO_PLACA)], fill=COLOR_FOOTER_FONDO)
+    fuente_footer = ImageFont.load_default(size=26)
+    if fuente:
+        dibujo.text(
+            (MARGEN_X, y_footer + 35), f"Fuente: {fuente}", font=fuente_footer, fill=COLOR_FOOTER_TEXTO
+        )
+    if localidad:
+        dibujo.text(
+            (MARGEN_X, y_footer + 80),
+            f"Localidad: {localidad}",
+            font=fuente_footer,
+            fill=COLOR_FOOTER_TEXTO,
+        )
+
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def generar_placa(
     titulo: str,
     resumen: str,
@@ -88,7 +181,7 @@ def generar_placa(
     localidad: Optional[str] = None,
     directorio_salida: Optional[Path] = None,
 ) -> Path:
-    """Genera el archivo SVG de la placa para este contenido, o reutiliza el
+    """Genera el archivo PNG de la placa para este contenido, o reutiliza el
     ya existente sin volver a escribirlo. El nombre del archivo depende
     únicamente del contenido (título, resumen, fuente, localidad): el mismo
     contenido siempre produce el mismo archivo."""
@@ -96,11 +189,10 @@ def generar_placa(
     directorio_salida.mkdir(parents=True, exist_ok=True)
 
     identificador = _hash_contenido_placa(titulo, resumen, fuente or "", localidad or "")
-    ruta = directorio_salida / f"placa_{identificador}.svg"
+    ruta = directorio_salida / f"placa_{identificador}.png"
 
     if not ruta.exists():
-        ruta.write_text(
-            generar_svg_placa(titulo, resumen, fuente or "", localidad or ""), encoding="utf-8"
-        )
+        datos_png = generar_imagen_placa_png(titulo, resumen, fuente or "", localidad or "")
+        ruta.write_bytes(datos_png)
 
     return ruta

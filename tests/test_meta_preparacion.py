@@ -79,7 +79,10 @@ class TestImagenEnPreparacion(TestPrepararPublicacionConDirectorioAislado):
         contenido = preparar_publicacion(_noticia())
         self.assertTrue(contenido.imagen_generada_automaticamente)
         self.assertIsNotNone(contenido.imagen_url)
-        self.assertTrue(Path(contenido.imagen_url).exists())
+        ruta = Path(contenido.imagen_url)
+        self.assertTrue(ruta.exists())
+        self.assertEqual(ruta.suffix, ".png")
+        self.assertTrue(ruta.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
 
     def test_con_imagen_original_no_genera_placa(self):
         noticia = _noticia(
@@ -122,7 +125,9 @@ class TestImagenEnPreparacion(TestPrepararPublicacionConDirectorioAislado):
                 guardada = db.obtener(noticia_modelo.id)
                 self.assertTrue(guardada["imagen_generada_automaticamente"])
                 self.assertIsNotNone(guardada["imagen_publicacion_ruta"])
-                self.assertTrue(Path(guardada["imagen_publicacion_ruta"]).exists())
+                ruta = Path(guardada["imagen_publicacion_ruta"])
+                self.assertTrue(ruta.exists())
+                self.assertEqual(ruta.suffix, ".png")
             finally:
                 db.close()
 

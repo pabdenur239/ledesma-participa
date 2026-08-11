@@ -6,11 +6,15 @@ Estado actual: **Fase 2** (panel mínimo de revisión humana).
 
 ## Instalación
 
-Requiere Python 3. No hay dependencias externas (solo biblioteca estándar).
+Requiere Python 3. Una única dependencia externa —
+[Pillow](https://pillow.readthedocs.io/), para generar las placas PNG
+cuando una noticia no tiene imagen (ver más abajo); el resto del
+proyecto sigue usando solo biblioteca estándar.
 
 ```bash
 git clone https://github.com/pabdenur239/ledesma-participa.git
 cd ledesma-participa
+pip install -r requirements.txt
 ```
 
 ## Ejecución
@@ -139,27 +143,37 @@ Ninguno de los collectors actuales extrae todavía una imagen de la
 fuente, así que hoy toda noticia usa este mecanismo; el modelo de datos
 ya está preparado para cuando alguno la extraiga (`tiene_imagen_original`).
 Si la noticia no tiene imagen original, al preparar la publicación de
-Facebook se genera automáticamente una placa 1200×1200 en **SVG**
-(`motor_noticias/meta/imagen.py`) con el branding "Ledesma Participa",
-el título, una bajada breve, la fuente y la localidad — usando
-exclusivamente `titulo_revisado`/`texto_revisado` (o su fallback
-preparado), nunca IA. Se eligió SVG generado por código en vez de
-Pillow porque Pillow no está disponible en este entorno y agregarla
-sería una dependencia nueva para una tarea que el proyecto puede
-resolver con biblioteca estándar (`textwrap` para el recorte
-determinístico de líneas largas). Nota para una etapa futura: Facebook
-no acepta SVG para publicar fotos, así que antes de publicar de verdad
-esa placa deberá convertirse a PNG/JPEG.
+Facebook se genera automáticamente una placa **PNG de 1200×1200**
+(`motor_noticias/meta/imagen.py`, dibujada con Pillow) con el branding
+"Ledesma Participa", el título, una bajada breve, la fuente y la
+localidad — usando exclusivamente `titulo_revisado`/`texto_revisado`
+(o su fallback preparado), nunca IA. El recorte de líneas largas mide
+el ancho real en píxeles con la propia fuente tipográfica para no
+desbordar el lienzo, y nunca corta una palabra al medio.
+
+Se eligió Pillow (única dependencia externa del proyecto) en vez de
+seguir generando SVG porque Facebook no acepta SVG para publicar fotos
+reales — se necesitaba un PNG válido — y este entorno no tiene ningún
+conversor SVG→PNG ya instalado (ni `rsvg-convert`, ni Inkscape, ni
+ImageMagick) que además fuera a estar disponible en la máquina del
+usuario. Pillow se instala igual en Windows/Mac/Linux vía `pip`, sin
+librerías de sistema adicionales, y desde Pillow 10.1 incluye una
+fuente tipográfica propia escalable (`ImageFont.load_default(size=…)`),
+así que tampoco hace falta empaquetar ningún archivo de fuente. El
+generador de SVG (`generar_svg_placa`) se conserva en el mismo módulo
+como representación interna simple, aunque ya no es el archivo que se
+persiste ni se publica.
 
 Las placas se guardan en `data/placas/` (generado localmente, ignorado
 por Git), con un nombre de archivo derivado del contenido exacto
 (título + bajada + fuente + localidad): el mismo contenido siempre
-reutiliza el mismo archivo, sin regenerarlo. La ruta usada para
+reutiliza el mismo archivo `.png`, sin regenerarlo. La ruta usada para
 publicación y si fue generada automáticamente quedan persistidas en la
-noticia (`imagen_publicacion_ruta`, `imagen_generada_automaticamente`),
-migración SQLite no destructiva. La vista previa de Facebook del panel
-(`/facebook?id=...`) muestra esa imagen embebida junto con una
-indicación clara de si es "imagen original" o "placa generada
-automáticamente" — la placa se genera incluso para noticias con riesgo
-político/institucional, ya que solo habilita la previsualización en
-DRY RUN, nunca publicación real, y nunca reemplaza la revisión humana.
+noticia (`imagen_publicacion_ruta`, `imagen_generada_automaticamente`;
+no hicieron falta columnas nuevas para este cambio). La vista previa de
+Facebook del panel (`/facebook?id=...`) embebe ese PNG (como
+`data:image/png;base64,...`) junto con una indicación clara de si es
+"imagen original" o "placa generada automáticamente" — la placa se
+genera incluso para noticias con riesgo político/institucional, ya que
+solo habilita la previsualización en DRY RUN, nunca publicación real,
+y nunca reemplaza la revisión humana.

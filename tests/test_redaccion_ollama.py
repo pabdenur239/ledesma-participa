@@ -114,6 +114,16 @@ class TestPeticionOllama(unittest.TestCase):
             "No inventes cifras",
             "No inventes fechas",
             "No inventes declaraciones",
+            "No agregues fechas",
+            "No agregues lugares",
+            "No agregues personas",
+            "No agregues asistentes",
+            "No agregues características físicas",
+            "No agregues objetivos, beneficios ni consecuencias",
+            "No agregues contexto institucional",
+            "fuente oficial informó",
+            "conocimiento general o inferencia",
+            "reescribir, nunca enriquecer",
             "No emitas opiniones",
             "No uses lenguaje partidario",
             "neutralidad editorial",
@@ -210,6 +220,128 @@ class TestErroresOllama(unittest.TestCase):
 
         with self.assertRaises(ErrorRedaccionOllama):
             self.redactor.redactar(self.noticia)
+
+
+class TestProteccionAntiAlucinacion(unittest.TestCase):
+    """Reproduce los tres casos reales detectados con qwen3:1.7b."""
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_caso_a_bripaem_con_texto_suficiente_puede_reescribirse(self, urlopen_mock):
+        noticia = _noticia_de_prueba(
+            titulo_original="Ing. Oscar Jayat nuevo Presidente del BRIPAEM",
+            texto_original=(
+                "En una asamblea extraordinaria realizada en la ciudad de Buenos Aires, "
+                "asumió como Presidente del BRIPAEM por el periodo 2026-2028."
+            ),
+        )
+        urlopen_mock.return_value = _respuesta_falsa(
+            _respuesta_ollama(
+                "Jayat asumió como Presidente del BRIPAEM",
+                "Oscar Jayat asumió como Presidente del BRIPAEM para el periodo 2026-2028, "
+                "en una asamblea extraordinaria en Buenos Aires.",
+            )
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        urlopen_mock.assert_called_once()
+        self.assertEqual(titulo, "Jayat asumió como Presidente del BRIPAEM")
+        self.assertIn("BRIPAEM", texto)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_caso_a_respuesta_con_agregado_no_sustentado_usa_fallback(self, urlopen_mock):
+        # reproduce el agregado real detectado: una frase de tipo "fuente
+        # oficial" que no está en el contenido original.
+        noticia = _noticia_de_prueba(
+            titulo_original="Ing. Oscar Jayat nuevo Presidente del BRIPAEM",
+            texto_original=(
+                "En una asamblea extraordinaria realizada en la ciudad de Buenos Aires, "
+                "asumió como Presidente del BRIPAEM por el periodo 2026-2028."
+            ),
+        )
+        urlopen_mock.return_value = _respuesta_falsa(
+            _respuesta_ollama(
+                "Jayat asumió como Presidente del BRIPAEM",
+                "Oscar Jayat asumió como Presidente del BRIPAEM para el periodo 2026-2028. "
+                "La información se encuentra registrada en la fuente oficial correspondiente.",
+            )
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        self.assertEqual(titulo, noticia.titulo_original)
+        self.assertEqual(texto, noticia.texto_original)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_caso_b_polideportivo_sin_informacion_usa_fallback_seguro(self, urlopen_mock):
+        noticia = _noticia_de_prueba(
+            titulo_original="Reinauguración Polideportivo del Barrio 18 de Noviembre",
+            texto_original="",
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        urlopen_mock.assert_not_called()
+        self.assertEqual(titulo, "Reinauguración Polideportivo del Barrio 18 de Noviembre")
+        self.assertEqual(texto, "Reinauguración Polideportivo del Barrio 18 de Noviembre")
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_caso_c_convenio_sin_informacion_usa_fallback_seguro(self, urlopen_mock):
+        noticia = _noticia_de_prueba(
+            titulo_original="Firma de Convenio Etapa 2 Techado del Predio Ferial Municipal",
+            texto_original="",
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        urlopen_mock.assert_not_called()
+        self.assertEqual(titulo, "Firma de Convenio Etapa 2 Techado del Predio Ferial Municipal")
+        self.assertEqual(texto, "Firma de Convenio Etapa 2 Techado del Predio Ferial Municipal")
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_titulo_identico_al_texto_usa_fallback_seguro_sin_llamar_al_modelo(self, urlopen_mock):
+        noticia = _noticia_de_prueba(
+            titulo_original="Reinauguración Polideportivo del Barrio 18 de Noviembre",
+            texto_original="Reinauguración Polideportivo del Barrio 18 de Noviembre",
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        urlopen_mock.assert_not_called()
+        self.assertEqual(titulo, noticia.titulo_original)
+        self.assertEqual(texto, noticia.titulo_original)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_respuesta_muy_expandida_respecto_de_la_fuente_usa_fallback(self, urlopen_mock):
+        # reproduce el caso donde el modelo inventó objetivos, fecha,
+        # autoridades, instalaciones y actividades futuras a partir de un
+        # texto fuente corto.
+        noticia = _noticia_de_prueba(
+            titulo_original="Reinauguración Polideportivo del Barrio 18 de Noviembre",
+            texto_original="El intendente encabezó la reinauguración del polideportivo.",
+        )
+        texto_inventado = (
+            "El acto tuvo como objetivo promover el deporte y el desarrollo social en la "
+            "comunidad. Se realizó el 15 de noviembre con la presencia de autoridades "
+            "municipales y numerosos vecinos del barrio. Las instalaciones renovadas "
+            "cuentan con equipamiento moderno y se prevén nuevas actividades deportivas "
+            "y recreativas para los próximos meses, fortaleciendo el vínculo comunitario "
+            "y el acceso al deporte en la zona."
+        )
+        urlopen_mock.return_value = _respuesta_falsa(
+            _respuesta_ollama("Reinauguraron el polideportivo del Barrio 18 de Noviembre", texto_inventado)
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        self.assertEqual(titulo, noticia.titulo_original)
+        self.assertEqual(texto, noticia.texto_original)
 
 
 class TestRedactorMockSigueFuncionando(unittest.TestCase):

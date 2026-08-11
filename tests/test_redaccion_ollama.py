@@ -124,6 +124,9 @@ class TestPeticionOllama(unittest.TestCase):
             "fuente oficial informó",
             "conocimiento general o inferencia",
             "reescribir, nunca enriquecer",
+            "metadatos internos",
+            "la fuente es...",
+            "la localidad es...",
             "No emitas opiniones",
             "No uses lenguaje partidario",
             "neutralidad editorial",
@@ -273,6 +276,62 @@ class TestProteccionAntiAlucinacion(unittest.TestCase):
 
         self.assertEqual(titulo, noticia.titulo_original)
         self.assertEqual(texto, noticia.texto_original)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_caso_a_metadatos_internos_filtrados_al_texto_usa_fallback(self, urlopen_mock):
+        # reproduce exactamente el agregado real: nombre_fuente y localidad
+        # (enviados como contexto interno) aparecen como contenido
+        # periodístico, sin estar presentes en el título/texto original.
+        noticia = _noticia_de_prueba(
+            titulo_original="Ing. Oscar Jayat nuevo Presidente del BRIPAEM",
+            texto_original=(
+                "En una asamblea extraordinaria realizada en la ciudad de Buenos Aires, "
+                "asumió como Presidente del BRIPAEM por el periodo 2026-2028."
+            ),
+            nombre_fuente="Municipalidad de Libertador General San Martín",
+            localidad="Libertador General San Martín",
+        )
+        urlopen_mock.return_value = _respuesta_falsa(
+            _respuesta_ollama(
+                "Jayat asumió como Presidente del BRIPAEM",
+                "Oscar Jayat asumió como Presidente del BRIPAEM para el periodo 2026-2028. "
+                "La fuente es la Municipalidad de Libertador General San Martín. "
+                "La localidad es Libertador General San Martín.",
+            )
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        self.assertEqual(titulo, noticia.titulo_original)
+        self.assertEqual(texto, noticia.texto_original)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_metadato_legitimo_ya_presente_en_el_original_no_dispara_fallback(self, urlopen_mock):
+        # si el propio texto original ya menciona la localidad, no debe
+        # descartarse solo por eso.
+        noticia = _noticia_de_prueba(
+            titulo_original="Obras en Libertador General San Martín",
+            texto_original=(
+                "El municipio de Libertador General San Martín inició un plan de "
+                "repavimentación en varios barrios de la ciudad esta semana."
+            ),
+            nombre_fuente="Municipalidad de Libertador General San Martín",
+            localidad="Libertador General San Martín",
+        )
+        urlopen_mock.return_value = _respuesta_falsa(
+            _respuesta_ollama(
+                "Comenzaron obras en Libertador General San Martín",
+                "El municipio de Libertador General San Martín inició esta semana un "
+                "plan de repavimentación en varios barrios.",
+            )
+        )
+        redactor = RedactorOllama()
+
+        titulo, texto = redactor.redactar(noticia)
+
+        self.assertEqual(titulo, "Comenzaron obras en Libertador General San Martín")
+        self.assertIn("Libertador General San Martín", texto)
 
     @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
     def test_caso_b_polideportivo_sin_informacion_usa_fallback_seguro(self, urlopen_mock):

@@ -43,6 +43,13 @@ PROMPT_SISTEMA = (
     "- No agregues contexto institucional ni antecedentes no mencionados.\n"
     "- No agregues frases como 'la fuente oficial informó...' salvo que "
     "estén presentes en el contenido original.\n"
+    "- El nombre de la fuente y la localidad que se te indican son "
+    "metadatos internos para tu contexto, no contenido periodístico: no "
+    "los menciones en el título ni en el texto preparado salvo que ya "
+    "aparezcan explícitamente en el título original o el texto original.\n"
+    "- No escribas frases como 'la fuente es...', 'según la fuente...', "
+    "'la localidad es...' o 'informó la Municipalidad...' si esa "
+    "formulación no existe en el contenido original.\n"
     "- No completes información faltante mediante conocimiento general o inferencia.\n"
     "- No agregues contexto que no esté presente en la fuente.\n"
     "- No emitas opiniones.\n"
@@ -97,8 +104,10 @@ def _construir_mensaje_usuario(noticia: Noticia) -> str:
     return (
         f"Título original: {noticia.titulo_original}\n"
         f"Texto original: {noticia.texto_original}\n"
-        f"Fuente: {noticia.nombre_fuente or ''}\n"
-        f"Localidad: {noticia.localidad or ''}"
+        f"Fuente (metadato interno, no mencionar salvo que ya figure en el "
+        f"título o el texto original): {noticia.nombre_fuente or ''}\n"
+        f"Localidad (metadato interno, no mencionar salvo que ya figure en "
+        f"el título o el texto original): {noticia.localidad or ''}"
     )
 
 
@@ -126,6 +135,18 @@ def _fallback_seguro(noticia: Noticia) -> Tuple[str, str]:
     return titulo, texto if texto else titulo
 
 
+def _metadato_filtrado(metadato: Optional[str], original_combinado: str, preparado_combinado: str) -> bool:
+    if not metadato:
+        return False
+    metadato_norm = _normalizar_comparacion(metadato)
+    if not metadato_norm:
+        return False
+    if metadato_norm in _normalizar_comparacion(original_combinado):
+        # el propio contenido original ya lo menciona legítimamente
+        return False
+    return metadato_norm in _normalizar_comparacion(preparado_combinado)
+
+
 def _respuesta_es_sospechosa(noticia: Noticia, titulo_preparado: str, texto_preparado: str) -> bool:
     base = (noticia.texto_original or "").strip() or noticia.titulo_original.strip()
     limite = len(base) * FACTOR_MAXIMO_EXPANSION + MARGEN_ABSOLUTO_EXPANSION
@@ -140,6 +161,13 @@ def _respuesta_es_sospechosa(noticia: Noticia, titulo_preparado: str, texto_prep
     for frase in FRASES_NO_SUSTENTADAS:
         if frase in texto_preparado_norm and frase not in base_norm:
             return True
+
+    original_combinado = f"{noticia.titulo_original} {noticia.texto_original or ''}"
+    preparado_combinado = f"{titulo_preparado} {texto_preparado}"
+    if _metadato_filtrado(noticia.nombre_fuente, original_combinado, preparado_combinado):
+        return True
+    if _metadato_filtrado(noticia.localidad, original_combinado, preparado_combinado):
+        return True
 
     return False
 

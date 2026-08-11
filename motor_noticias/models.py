@@ -40,3 +40,6 @@ class Noticia:
     requiere_revision_especial: bool = False
     motivo_revision_especial: Optional[str] = None
     categoria_riesgo: Optional[str] = None
+    tiene_imagen_original: bool = False
+    imagen_publicacion_ruta: Optional[str] = None
+    imagen_generada_automaticamente: bool = False

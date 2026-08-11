@@ -20,3 +20,6 @@ __pycache__/
 # Base de datos generada localmente
 data/*.db
 data/*.sqlite3
+
+# Placas generadas automáticamente
+data/placas/

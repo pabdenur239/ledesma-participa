@@ -29,6 +29,7 @@ class ContenidoFacebook:
     primer_comentario: str
     hashtags: List[str]
     imagen_url: Optional[str] = None
+    imagen_generada_automaticamente: bool = False
     menciones: List[str] = field(default_factory=list)
 
 

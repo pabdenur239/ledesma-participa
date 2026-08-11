@@ -4,6 +4,7 @@ import threading
 import unittest
 from http.server import HTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 from motor_noticias.db import Database
@@ -120,6 +121,14 @@ class TestVistaPreviaFacebook(unittest.TestCase):
         self.db_path = Path(self.tmpdir.name) / "test.db"
         self.db = Database(self.db_path)
 
+        # Las placas generadas durante la vista previa van a un directorio
+        # temporal, no al data/placas real del repositorio.
+        self.dir_placas = tempfile.TemporaryDirectory()
+        self.parche_placas = patch(
+            "motor_noticias.meta.imagen.DIRECTORIO_PLACAS_DEFAULT", Path(self.dir_placas.name)
+        )
+        self.parche_placas.start()
+
         PanelHandler.db_path = self.db_path
         self.servidor = HTTPServer((HOST, 0), PanelHandler)
         self.puerto = self.servidor.server_address[1]
@@ -131,6 +140,8 @@ class TestVistaPreviaFacebook(unittest.TestCase):
         self.servidor.server_close()
         self.hilo.join(timeout=5)
         self.db.close()
+        self.parche_placas.stop()
+        self.dir_placas.cleanup()
         self.tmpdir.cleanup()
 
     def _conexion(self):
@@ -184,6 +195,33 @@ class TestVistaPreviaFacebook(unittest.TestCase):
         self.assertIn("Información completa en el primer comentario.", cuerpo)
         self.assertIn("Fuente: Ejemplo Noticias (prueba)", cuerpo)
         self.assertIn("#LedesmaParticipa", cuerpo)
+        # sin imagen de origen: se generó y embebió una placa
+        self.assertIn("placa generada automáticamente", cuerpo)
+        self.assertIn("<svg", cuerpo)
+        self.assertIn("LEDESMA PARTICIPA", cuerpo)
+
+        guardada = self.db.obtener(noticia.id)
+        self.assertTrue(guardada["imagen_generada_automaticamente"])
+        self.assertIsNotNone(guardada["imagen_publicacion_ruta"])
+
+    def test_vista_previa_con_imagen_original_no_genera_placa(self):
+        noticia = _noticia_preparada(
+            revision_estado=RevisionEstado.APROBADA.value,
+            tiene_imagen_original=True,
+            imagen_publicacion_ruta="https://ejemplo.test/foto-original.jpg",
+        )
+        self.db.guardar(noticia)
+
+        conn = self._conexion()
+        conn.request("GET", f"/facebook?id={noticia.id}")
+        resp = conn.getresponse()
+        cuerpo = resp.read().decode("utf-8")
+        conn.close()
+
+        self.assertEqual(resp.status, 200)
+        self.assertIn("imagen original", cuerpo)
+        self.assertIn("https://ejemplo.test/foto-original.jpg", cuerpo)
+        self.assertNotIn("placa generada automáticamente", cuerpo)
 
     def test_vista_previa_de_noticia_con_riesgo_politico_sigue_siendo_dry_run(self):
         noticia = _noticia_preparada(
@@ -203,6 +241,8 @@ class TestVistaPreviaFacebook(unittest.TestCase):
         self.assertEqual(resp.status, 200)
         self.assertIn("MODO PRUEBA — NO SE PUBLICARÁ NADA", cuerpo)
         self.assertIn("REVISIÓN POLÍTICA/INSTITUCIONAL OBLIGATORIA", cuerpo)
+        # la placa se genera igual para la vista previa, sin habilitar publicación real
+        self.assertIn("placa generada automáticamente", cuerpo)
 
 
 class TestServidorLocalhost(unittest.TestCase):

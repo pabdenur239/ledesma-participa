@@ -40,6 +40,12 @@ COLUMNAS_RIESGO_EDITORIAL = {
     "categoria_riesgo": "TEXT",
 }
 
+COLUMNAS_IMAGEN = {
+    "tiene_imagen_original": "INTEGER NOT NULL DEFAULT 0",
+    "imagen_publicacion_ruta": "TEXT",
+    "imagen_generada_automaticamente": "INTEGER NOT NULL DEFAULT 0",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -51,6 +57,7 @@ class Database:
         self.conn.commit()
         self._migrar_columnas(COLUMNAS_REVISION)
         self._migrar_columnas(COLUMNAS_RIESGO_EDITORIAL)
+        self._migrar_columnas(COLUMNAS_IMAGEN)
 
     def _migrar_columnas(self, columnas: dict):
         columnas_existentes = {
@@ -77,8 +84,9 @@ class Database:
                 relevancia_local, motivo_relevancia, titulo_preparado,
                 texto_preparado, estado, hash_contenido, revision_estado,
                 fecha_revision, titulo_revisado, texto_revisado,
-                requiere_revision_especial, motivo_revision_especial, categoria_riesgo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                requiere_revision_especial, motivo_revision_especial, categoria_riesgo,
+                tiene_imagen_original, imagen_publicacion_ruta, imagen_generada_automaticamente
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 noticia.titulo_original,
@@ -102,6 +110,9 @@ class Database:
                 noticia.requiere_revision_especial,
                 noticia.motivo_revision_especial,
                 noticia.categoria_riesgo,
+                noticia.tiene_imagen_original,
+                noticia.imagen_publicacion_ruta,
+                noticia.imagen_generada_automaticamente,
             ),
         )
         self.conn.commit()
@@ -147,6 +158,22 @@ class Database:
             WHERE id = ?
             """,
             (revision_estado, titulo_revisado, texto_revisado, fecha_revision, id_noticia),
+        )
+        self.conn.commit()
+
+    def actualizar_imagen_publicacion(
+        self,
+        id_noticia: int,
+        imagen_publicacion_ruta: Optional[str],
+        imagen_generada_automaticamente: bool,
+    ) -> None:
+        self.conn.execute(
+            """
+            UPDATE noticias
+            SET imagen_publicacion_ruta = ?, imagen_generada_automaticamente = ?
+            WHERE id = ?
+            """,
+            (imagen_publicacion_ruta, imagen_generada_automaticamente, id_noticia),
         )
         self.conn.commit()
 

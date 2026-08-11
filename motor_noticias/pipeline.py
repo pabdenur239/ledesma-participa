@@ -24,6 +24,7 @@ def _aplicar_riesgo_editorial(noticia: Noticia) -> None:
 
 
 def normalizar_noticia(cruda: dict) -> Noticia:
+    imagen_url = cruda.get("imagen_url") or None
     return Noticia(
         id=None,
         titulo_original=cruda["titulo"].strip(),
@@ -35,6 +36,8 @@ def normalizar_noticia(cruda: dict) -> Noticia:
         estado=Estado.ENCONTRADA.value,
         hash_contenido="",
         localidad=cruda.get("localidad") or None,
+        tiene_imagen_original=bool(imagen_url),
+        imagen_publicacion_ruta=imagen_url,
     )
 
 

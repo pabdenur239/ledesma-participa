@@ -156,6 +156,76 @@ class TestMigracion(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_migra_base_con_riesgo_pero_sin_columnas_de_imagen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "sin_imagen.db"
+
+            # Simula una base ya migrada hasta la fase de riesgo editorial,
+            # pero todavía sin las columnas de imagen/placa.
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE noticias (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    titulo_original TEXT NOT NULL,
+                    texto_original TEXT NOT NULL,
+                    url_fuente TEXT NOT NULL,
+                    url_normalizada TEXT NOT NULL,
+                    nombre_fuente TEXT,
+                    fecha_fuente TEXT,
+                    fecha_recoleccion TEXT NOT NULL,
+                    localidad TEXT,
+                    relevancia_local INTEGER,
+                    motivo_relevancia TEXT,
+                    titulo_preparado TEXT,
+                    texto_preparado TEXT,
+                    estado TEXT NOT NULL,
+                    hash_contenido TEXT NOT NULL UNIQUE,
+                    revision_estado TEXT NOT NULL DEFAULT 'pendiente',
+                    fecha_revision TEXT,
+                    titulo_revisado TEXT,
+                    texto_revisado TEXT,
+                    requiere_revision_especial INTEGER NOT NULL DEFAULT 0,
+                    motivo_revision_especial TEXT,
+                    categoria_riesgo TEXT
+                );
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO noticias (
+                    titulo_original, texto_original, url_fuente, url_normalizada,
+                    nombre_fuente, fecha_fuente, fecha_recoleccion, estado, hash_contenido,
+                    revision_estado
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "Noticia sin imagen",
+                    "Texto",
+                    "https://ejemplo.test/sin-imagen",
+                    "https://ejemplo.test/sin-imagen",
+                    "Fuente",
+                    "2026-03-01",
+                    "2026-03-01T00:00:00",
+                    Estado.PREPARADA.value,
+                    "hash-sin-imagen",
+                    RevisionEstado.APROBADA.value,
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            db = Database(db_path)
+            try:
+                filas = db.listar()
+                self.assertEqual(len(filas), 1)
+                self.assertEqual(filas[0]["revision_estado"], RevisionEstado.APROBADA.value)
+                self.assertFalse(filas[0]["tiene_imagen_original"])
+                self.assertIsNone(filas[0]["imagen_publicacion_ruta"])
+                self.assertFalse(filas[0]["imagen_generada_automaticamente"])
+            finally:
+                db.close()
+
 
 class TestRevisionHumana(unittest.TestCase):
     def setUp(self):
@@ -222,6 +292,36 @@ class TestRevisionHumana(unittest.TestCase):
         self.assertTrue(guardada["requiere_revision_especial"])
         self.assertEqual(guardada["categoria_riesgo"], "institucional_municipal")
         self.assertEqual(guardada["motivo_revision_especial"], "Menciona 'Intendente'.")
+
+    def test_guarda_y_recupera_campos_de_imagen(self):
+        noticia = _noticia_preparada(
+            tiene_imagen_original=True,
+            imagen_publicacion_ruta="https://ejemplo.test/foto.jpg",
+            imagen_generada_automaticamente=False,
+        )
+        self.db.guardar(noticia)
+        guardada = self.db.obtener(noticia.id)
+        self.assertTrue(guardada["tiene_imagen_original"])
+        self.assertEqual(guardada["imagen_publicacion_ruta"], "https://ejemplo.test/foto.jpg")
+        self.assertFalse(guardada["imagen_generada_automaticamente"])
+
+    def test_noticia_sin_imagen_por_defecto(self):
+        noticia = _noticia_preparada()
+        self.db.guardar(noticia)
+        guardada = self.db.obtener(noticia.id)
+        self.assertFalse(guardada["tiene_imagen_original"])
+        self.assertIsNone(guardada["imagen_publicacion_ruta"])
+        self.assertFalse(guardada["imagen_generada_automaticamente"])
+
+    def test_actualizar_imagen_publicacion(self):
+        noticia = _noticia_preparada()
+        self.db.guardar(noticia)
+        self.db.actualizar_imagen_publicacion(
+            noticia.id, "/tmp/placas/placa_abc123.svg", True
+        )
+        guardada = self.db.obtener(noticia.id)
+        self.assertEqual(guardada["imagen_publicacion_ruta"], "/tmp/placas/placa_abc123.svg")
+        self.assertTrue(guardada["imagen_generada_automaticamente"])
 
     def test_listar_preparadas_filtra_por_revision_estado(self):
         pendiente = _noticia_preparada(

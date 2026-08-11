@@ -54,6 +54,8 @@ body {{ font-family: sans-serif; margin: 2rem; max-width: 900px; }}
 textarea {{ width: 100%; min-height: 6rem; }}
 input[type=text] {{ width: 100%; box-sizing: border-box; }}
 pre {{ white-space: pre-wrap; border: 1px solid #ccc; padding: 0.75rem; background: #fafafa; }}
+.placa-preview svg {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}
+.imagen-original {{ max-width: 100%; border: 1px solid #ccc; }}
 nav a {{ margin-right: 1rem; }}
 </style>
 </head>
@@ -145,6 +147,22 @@ def _detalle_html(noticia: dict, mensaje: Optional[str] = None) -> str:
     return _pagina(f"Revisar noticia #{noticia['id']}", cuerpo)
 
 
+def _seccion_imagen(contenido) -> str:
+    if not contenido.imagen_url:
+        return "<h3>Imagen</h3>\n<p><em>Sin imagen disponible.</em></p>"
+
+    if contenido.imagen_generada_automaticamente:
+        try:
+            svg = Path(contenido.imagen_url).read_text(encoding="utf-8")
+        except OSError:
+            svg = ""
+        return f"""<h3>Imagen: placa generada automáticamente</h3>
+<div class="placa-preview">{svg}</div>"""
+
+    return f"""<h3>Imagen: imagen original</h3>
+<img class="imagen-original" src="{_e(contenido.imagen_url)}" alt="Imagen original de la noticia">"""
+
+
 def _facebook_preview_html(noticia: dict, contenido) -> str:
     cuerpo = f"""
 <p class="modo-prueba">MODO PRUEBA — NO SE PUBLICARÁ NADA</p>
@@ -159,6 +177,8 @@ def _facebook_preview_html(noticia: dict, contenido) -> str:
 <pre>{_e(contenido.primer_comentario)}</pre>
 
 <p><strong>Hashtags:</strong> {_e(' '.join(contenido.hashtags))}</p>
+
+{_seccion_imagen(contenido)}
 """
     return _pagina(f"Vista previa Facebook — noticia #{noticia['id']}", cuerpo)
 
@@ -217,7 +237,7 @@ class PanelHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    contenido = preparar_publicacion(noticia, dry_run=True)
+                    contenido = preparar_publicacion(noticia, dry_run=True, db=db)
                 except ErrorPreparacionFacebook as error:
                     self._responder_html(
                         _pagina("No disponible", f"<p>{_e(str(error))}</p>"), status=400

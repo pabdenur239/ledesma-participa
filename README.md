@@ -132,3 +132,34 @@ versionadas): `META_PAGE_ID` (dato público, con un valor por defecto
 ya confirmado) y `META_PAGE_ACCESS_TOKEN` (sin valor por defecto,
 nunca hardcodeado ni mostrado en salidas o logs). `.env` está
 ignorado por Git.
+
+### Placa generada automáticamente cuando no hay imagen
+
+Ninguno de los collectors actuales extrae todavía una imagen de la
+fuente, así que hoy toda noticia usa este mecanismo; el modelo de datos
+ya está preparado para cuando alguno la extraiga (`tiene_imagen_original`).
+Si la noticia no tiene imagen original, al preparar la publicación de
+Facebook se genera automáticamente una placa 1200×1200 en **SVG**
+(`motor_noticias/meta/imagen.py`) con el branding "Ledesma Participa",
+el título, una bajada breve, la fuente y la localidad — usando
+exclusivamente `titulo_revisado`/`texto_revisado` (o su fallback
+preparado), nunca IA. Se eligió SVG generado por código en vez de
+Pillow porque Pillow no está disponible en este entorno y agregarla
+sería una dependencia nueva para una tarea que el proyecto puede
+resolver con biblioteca estándar (`textwrap` para el recorte
+determinístico de líneas largas). Nota para una etapa futura: Facebook
+no acepta SVG para publicar fotos, así que antes de publicar de verdad
+esa placa deberá convertirse a PNG/JPEG.
+
+Las placas se guardan en `data/placas/` (generado localmente, ignorado
+por Git), con un nombre de archivo derivado del contenido exacto
+(título + bajada + fuente + localidad): el mismo contenido siempre
+reutiliza el mismo archivo, sin regenerarlo. La ruta usada para
+publicación y si fue generada automáticamente quedan persistidas en la
+noticia (`imagen_publicacion_ruta`, `imagen_generada_automaticamente`),
+migración SQLite no destructiva. La vista previa de Facebook del panel
+(`/facebook?id=...`) muestra esa imagen embebida junto con una
+indicación clara de si es "imagen original" o "placa generada
+automáticamente" — la placa se genera incluso para noticias con riesgo
+político/institucional, ya que solo habilita la previsualización en
+DRY RUN, nunca publicación real, y nunca reemplaza la revisión humana.

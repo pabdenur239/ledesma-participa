@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..db import Database
+from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, RevisionEstado
 
 # El panel es exclusivamente local: se enlaza siempre a 127.0.0.1, nunca a
@@ -46,8 +47,13 @@ body {{ font-family: sans-serif; margin: 2rem; max-width: 900px; }}
   color: #b71c1c; font-weight: bold; border: 2px solid #b71c1c;
   padding: 0.5rem; margin: 0.5rem 0; background: #fdecea;
 }}
+.modo-prueba {{
+  color: #0d47a1; font-weight: bold; border: 2px solid #0d47a1;
+  padding: 0.5rem; margin: 0.5rem 0; background: #e3f2fd;
+}}
 textarea {{ width: 100%; min-height: 6rem; }}
 input[type=text] {{ width: 100%; box-sizing: border-box; }}
+pre {{ white-space: pre-wrap; border: 1px solid #ccc; padding: 0.75rem; background: #fafafa; }}
 nav a {{ margin-right: 1rem; }}
 </style>
 </head>
@@ -68,6 +74,12 @@ Motivo: {_e(n.get('motivo_revision_especial'))}
 </p>"""
 
 
+def _enlace_facebook(n: dict) -> str:
+    if n.get("revision_estado") != RevisionEstado.APROBADA.value:
+        return ""
+    return f'<p><a href="/facebook?id={n["id"]}">Preparar publicación Facebook (modo prueba)</a></p>'
+
+
 def _tarjeta_noticia(n: dict) -> str:
     return f"""<div class="noticia">
 {_advertencia_riesgo(n)}
@@ -80,6 +92,7 @@ def _tarjeta_noticia(n: dict) -> str:
 <p><strong>Estado de revisión:</strong>
 <span class="estado-{_e(n['revision_estado'])}">{_e(n['revision_estado'])}</span></p>
 <p><a href="/noticia?id={n['id']}">Editar / aprobar / rechazar</a></p>
+{_enlace_facebook(n)}
 </div>"""
 
 
@@ -127,8 +140,27 @@ def _detalle_html(noticia: dict, mensaje: Optional[str] = None) -> str:
 <button type="submit" name="accion" value="aprobar">Aprobar</button>
 <button type="submit" name="accion" value="rechazar">Rechazar</button>
 </form>
+{_enlace_facebook(noticia)}
 """
     return _pagina(f"Revisar noticia #{noticia['id']}", cuerpo)
+
+
+def _facebook_preview_html(noticia: dict, contenido) -> str:
+    cuerpo = f"""
+<p class="modo-prueba">MODO PRUEBA — NO SE PUBLICARÁ NADA</p>
+{_advertencia_riesgo(noticia)}
+<p><a href="/noticia?id={noticia['id']}">&laquo; Volver a la noticia</a></p>
+<h2>Vista previa de publicación en Facebook</h2>
+
+<h3>Publicación principal</h3>
+<pre>{_e(contenido.post_principal)}</pre>
+
+<h3>Primer comentario</h3>
+<pre>{_e(contenido.primer_comentario)}</pre>
+
+<p><strong>Hashtags:</strong> {_e(' '.join(contenido.hashtags))}</p>
+"""
+    return _pagina(f"Vista previa Facebook — noticia #{noticia['id']}", cuerpo)
 
 
 class PanelHandler(BaseHTTPRequestHandler):
@@ -174,6 +206,24 @@ class PanelHandler(BaseHTTPRequestHandler):
                     )
                 else:
                     self._responder_html(_detalle_html(noticia))
+                return
+
+            if partes.path == "/facebook":
+                id_texto = query.get("id", [None])[0]
+                noticia = db.obtener(int(id_texto)) if id_texto and id_texto.isdigit() else None
+                if not noticia or noticia["estado"] != Estado.PREPARADA.value:
+                    self._responder_html(
+                        _pagina("No encontrada", "<p>Noticia no encontrada.</p>"), status=404
+                    )
+                    return
+                try:
+                    contenido = preparar_publicacion(noticia, dry_run=True)
+                except ErrorPreparacionFacebook as error:
+                    self._responder_html(
+                        _pagina("No disponible", f"<p>{_e(str(error))}</p>"), status=400
+                    )
+                    return
+                self._responder_html(_facebook_preview_html(noticia, contenido))
                 return
 
             self._no_encontrada()

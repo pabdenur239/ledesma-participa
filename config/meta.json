@@ -1,0 +1,13 @@
+{
+  "page_id_default": "1174992842373499",
+  "cierre_post_principal": "Información completa en el primer comentario.",
+  "longitud_maxima_resena": 280,
+  "hashtag_base": "#LedesmaParticipa",
+  "hashtags_por_categoria_localidad": {
+    "maxima_prioridad": "#LibertadorGeneralSanMartín",
+    "prioridad_alta": "#Ledesma",
+    "jujuy": "#Jujuy"
+  },
+  "menciones_disponibles": ["@seguidores", "@destacar"],
+  "menciones_habilitadas_por_defecto": false
+}

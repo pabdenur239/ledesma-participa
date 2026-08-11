@@ -107,3 +107,28 @@ la aprobación humana: solo impide que ese contenido pueda considerarse
 publicable automáticamente en una futura etapa
 (`motor_noticias.publicacion.puede_publicarse_automaticamente`, todavía
 no conectada a ningún mecanismo de publicación).
+
+## Preparación de publicación en Facebook (sin publicar)
+
+Prepara, para noticias **aprobadas**, el contenido que en una futura
+etapa podría publicarse en la página de Facebook "Ledesma Participa"
+(`motor_noticias/meta/`): un post principal (título + reseña breve +
+"Información completa en el primer comentario.") y un primer comentario
+(texto completo, fuente, hashtags deterministas según localidad — sin
+IA). Usa siempre `titulo_revisado`/`texto_revisado` cuando existen, con
+fallback a `titulo_preparado`/`texto_preparado`; nunca vuelve a
+pedirle contenido a una IA.
+
+Desde el panel, las noticias aprobadas tienen un enlace "Preparar
+publicación Facebook (modo prueba)" que muestra una vista previa
+exacta marcada como **"MODO PRUEBA — NO SE PUBLICARÁ NADA"**. El modo
+DRY RUN es el único implementado en esta fase: `ClienteMetaGraphAPI`
+no contiene ningún camino de código que envíe una petición real a
+Meta, y una noticia con `requiere_revision_especial = true` solo
+admite DRY RUN, nunca publicación real, incluso estando aprobada.
+
+Credenciales por variables de entorno (ver `.env.example`, nunca
+versionadas): `META_PAGE_ID` (dato público, con un valor por defecto
+ya confirmado) y `META_PAGE_ACCESS_TOKEN` (sin valor por defecto,
+nunca hardcodeado ni mostrado en salidas o logs). `.env` está
+ignorado por Git.

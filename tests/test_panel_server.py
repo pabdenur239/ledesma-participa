@@ -114,6 +114,97 @@ class TestAdvertenciaRiesgoEditorial(unittest.TestCase):
         self.assertIn("figura_publica_relacionada", pagina)
 
 
+class TestVistaPreviaFacebook(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        self.db = Database(self.db_path)
+
+        PanelHandler.db_path = self.db_path
+        self.servidor = HTTPServer((HOST, 0), PanelHandler)
+        self.puerto = self.servidor.server_address[1]
+        self.hilo = threading.Thread(target=self.servidor.serve_forever, daemon=True)
+        self.hilo.start()
+
+    def tearDown(self):
+        self.servidor.shutdown()
+        self.servidor.server_close()
+        self.hilo.join(timeout=5)
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def _conexion(self):
+        return http.client.HTTPConnection(HOST, self.puerto, timeout=5)
+
+    def test_enlace_no_aparece_para_noticia_pendiente(self):
+        noticia = _noticia_preparada()
+        self.db.guardar(noticia)
+
+        pagina_lista = _lista_html(self.db, "todas")
+        self.assertNotIn("Preparar publicación Facebook", pagina_lista)
+
+    def test_enlace_aparece_solo_para_noticia_aprobada(self):
+        noticia = _noticia_preparada(revision_estado=RevisionEstado.APROBADA.value)
+        self.db.guardar(noticia)
+
+        pagina_lista = _lista_html(self.db, "todas")
+        self.assertIn(f"/facebook?id={noticia.id}", pagina_lista)
+
+    def test_vista_previa_de_noticia_pendiente_no_disponible(self):
+        noticia = _noticia_preparada()
+        self.db.guardar(noticia)
+
+        conn = self._conexion()
+        conn.request("GET", f"/facebook?id={noticia.id}")
+        resp = conn.getresponse()
+        cuerpo = resp.read().decode("utf-8")
+        conn.close()
+
+        self.assertEqual(resp.status, 400)
+        self.assertIn("aprobada", cuerpo)
+
+    def test_vista_previa_de_noticia_aprobada_muestra_modo_prueba(self):
+        noticia = _noticia_preparada(
+            revision_estado=RevisionEstado.APROBADA.value,
+            titulo_preparado="Se inauguró la plaza del barrio",
+            texto_preparado="El municipio inauguró la nueva plaza del barrio San José.",
+            nombre_fuente="Ejemplo Noticias (prueba)",
+        )
+        self.db.guardar(noticia)
+
+        conn = self._conexion()
+        conn.request("GET", f"/facebook?id={noticia.id}")
+        resp = conn.getresponse()
+        cuerpo = resp.read().decode("utf-8")
+        conn.close()
+
+        self.assertEqual(resp.status, 200)
+        self.assertIn("MODO PRUEBA — NO SE PUBLICARÁ NADA", cuerpo)
+        self.assertIn("Se inauguró la plaza del barrio", cuerpo)
+        self.assertIn("Información completa en el primer comentario.", cuerpo)
+        self.assertIn("Fuente: Ejemplo Noticias (prueba)", cuerpo)
+        self.assertIn("#LedesmaParticipa", cuerpo)
+
+    def test_vista_previa_de_noticia_con_riesgo_politico_sigue_siendo_dry_run(self):
+        noticia = _noticia_preparada(
+            revision_estado=RevisionEstado.APROBADA.value,
+            requiere_revision_especial=True,
+            categoria_riesgo="institucional_municipal",
+            motivo_revision_especial="Menciona 'Intendente'.",
+        )
+        self.db.guardar(noticia)
+
+        conn = self._conexion()
+        conn.request("GET", f"/facebook?id={noticia.id}")
+        resp = conn.getresponse()
+        cuerpo = resp.read().decode("utf-8")
+        conn.close()
+
+        self.assertEqual(resp.status, 200)
+        self.assertIn("MODO PRUEBA — NO SE PUBLICARÁ NADA", cuerpo)
+        self.assertIn("REVISIÓN POLÍTICA/INSTITUCIONAL OBLIGATORIA", cuerpo)
+
+
 class TestServidorLocalhost(unittest.TestCase):
     def test_host_configurado_exclusivamente_en_loopback(self):
         self.assertEqual(HOST, "127.0.0.1")

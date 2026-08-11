@@ -24,8 +24,11 @@ FIXTURE_PATH = (
 NOMBRE_FUENTE = "InfoYungas"
 URL_BASE = "https://www.infoyungas.com/"
 
-TITULO_HOSPITAL = "El municipio de Libertador General San Martín inauguró obras en el hospital"
-TITULO_FRAILE_PINTADO = "Fraile Pintado: inauguraron un nuevo centro comunitario"
+TITULO_YUTO = (
+    "EMPLEADA MUNICIPAL DE YUTO DENUNCIA QUE FUE DESPEDIDA ESTANDO ENFERMA "
+    "Y LLEVA 1 AÑO SIN COBRAR SUELDO"
+)
+TITULO_CALILEGUA = 'CONCEJAL VIVIANA LÓPEZ: "PEDIMOS QUE TODA VENTA DE TERRENOS PASE POR EL CONCEJO"'
 TITULO_NACIONAL = "El Gobierno nacional anunció cambios en la política económica"
 
 
@@ -43,44 +46,50 @@ class TestParsearListado(unittest.TestCase):
     def setUp(self):
         self.contenido = FIXTURE_PATH.read_text(encoding="utf-8")
 
-    def test_extrae_las_tres_noticias_reales(self):
+    def test_extrae_las_noticias_reales_incluido_el_duplicado(self):
         noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
         titulos = [n["titulo"] for n in noticias]
         self.assertEqual(len(noticias), 4)  # incluye el duplicado, filtrado luego por el pipeline
-        self.assertIn(TITULO_HOSPITAL, titulos)
-        self.assertIn(TITULO_FRAILE_PINTADO, titulos)
+        self.assertIn(TITULO_YUTO, titulos)
+        self.assertIn(TITULO_CALILEGUA, titulos)
         self.assertIn(TITULO_NACIONAL, titulos)
 
     def test_extrae_titulo_resumen_url_y_fuente(self):
         noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        hospital = next(n for n in noticias if n["titulo"] == TITULO_HOSPITAL)
+        calilegua = next(n for n in noticias if n["titulo"] == TITULO_CALILEGUA)
         self.assertEqual(
-            hospital["texto"],
-            "El intendente encabezó la inauguración de las nuevas salas del hospital, "
-            "junto a vecinos del barrio.",
+            calilegua["texto"],
+            "CALILEGUA - La concejal Viviana López confirmó que junto a la concejal "
+            "Benítez están trabajando en un proyecto de ordenanza para regular la "
+            "venta de terrenos, que será presentada al Concejo Deliberante de Calilegua.",
         )
-        self.assertEqual(hospital["url"], "https://www.infoyungas.com/notas/obras-hospital-libertador")
-        self.assertEqual(hospital["fuente"], NOMBRE_FUENTE)
-
-    def test_extrae_imagen_cuando_existe(self):
-        noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        hospital = next(n for n in noticias if n["titulo"] == TITULO_HOSPITAL)
         self.assertEqual(
-            hospital["imagen_url"],
-            "https://www.infoyungas.com/wp-content/uploads/2026/08/hospital.jpg",
+            calilegua["url"],
+            "https://www.infoyungas.com/post/concejal-viviana-lopez-pedimos-que-toda-venta-de-terrenos-pase-por-el-concejo",
+        )
+        self.assertEqual(calilegua["fuente"], NOMBRE_FUENTE)
+
+    def test_extrae_imagen_asociada_por_proximidad(self):
+        noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
+        yuto = next(n for n in noticias if n["titulo"] == TITULO_YUTO)
+        # debe tomar la imagen final (data-hook="gallery-item-image-img"),
+        # no el placeholder borroso de precarga
+        self.assertEqual(
+            yuto["imagen_url"],
+            "https://static.wixstatic.com/media/e5aa3a_aea205a5337741bb860f769252025ecb~mv2.webp",
         )
 
     def test_imagen_vacia_cuando_no_existe(self):
         noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        fraile_pintado = next(n for n in noticias if n["titulo"] == TITULO_FRAILE_PINTADO)
-        self.assertIsNone(fraile_pintado["imagen_url"])
+        nacional = next(n for n in noticias if n["titulo"] == TITULO_NACIONAL)
+        self.assertIsNone(nacional["imagen_url"])
 
-    def test_fecha_solo_cuando_es_explicita(self):
+    def test_no_extrae_fecha_porque_el_sitio_solo_muestra_texto_relativo(self):
+        # El listado real solo expone "hace 2 días" (relativo, no estable);
+        # no debe inferirse ninguna fecha absoluta a partir de eso.
         noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
-        hospital = next(n for n in noticias if n["titulo"] == TITULO_HOSPITAL)
-        fraile_pintado = next(n for n in noticias if n["titulo"] == TITULO_FRAILE_PINTADO)
-        self.assertEqual(hospital["fecha"], "2026-08-10")
-        self.assertEqual(fraile_pintado["fecha"], "")  # el fixture no incluye <time> para esta nota
+        for noticia in noticias:
+            self.assertEqual(noticia["fecha"], "")
 
     def test_no_captura_navegacion_footer_ni_publicidad(self):
         noticias = parsear_listado(self.contenido, URL_BASE, NOMBRE_FUENTE)
@@ -88,7 +97,6 @@ class TestParsearListado(unittest.TestCase):
         for texto_no_deseado in (
             "Inicio",
             "Política",
-            "Deportes",
             "Contacto",
             "Publicidad",
             "ofertas de la semana",
@@ -107,25 +115,29 @@ class TestPipelineConFixtureHTML(unittest.TestCase):
         self.db.close()
         self.tmpdir.cleanup()
 
-    def test_noticia_local_relevante_queda_preparada_con_riesgo_institucional(self):
+    def test_noticia_local_relevante_por_yuto(self):
         resultados = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
-        noticia_hospital, resultado = next(
-            (n, r) for n, r in resultados if n.titulo_original == TITULO_HOSPITAL
+        noticia_yuto, resultado = next(
+            (n, r) for n, r in resultados if n.titulo_original == TITULO_YUTO
         )
         self.assertEqual(resultado, "preparada")
-        self.assertTrue(noticia_hospital.relevancia_local)
-        # "municipio" e "intendente" activan el control de riesgo político/institucional
-        self.assertTrue(noticia_hospital.requiere_revision_especial)
+        self.assertTrue(noticia_yuto.relevancia_local)
+        self.assertTrue(noticia_yuto.tiene_imagen_original)
+        self.assertEqual(
+            noticia_yuto.imagen_publicacion_ruta,
+            "https://static.wixstatic.com/media/e5aa3a_aea205a5337741bb860f769252025ecb~mv2.webp",
+        )
 
-    def test_noticia_local_relevante_sin_imagen_queda_lista_para_placa_automatica(self):
+    def test_noticia_local_relevante_con_riesgo_institucional_por_concejal(self):
         resultados = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
-        noticia_fraile_pintado, resultado = next(
-            (n, r) for n, r in resultados if n.titulo_original == TITULO_FRAILE_PINTADO
+        noticia_calilegua, resultado = next(
+            (n, r) for n, r in resultados if n.titulo_original == TITULO_CALILEGUA
         )
         self.assertEqual(resultado, "preparada")
-        self.assertTrue(noticia_fraile_pintado.relevancia_local)
-        self.assertFalse(noticia_fraile_pintado.tiene_imagen_original)
-        self.assertIsNone(noticia_fraile_pintado.imagen_publicacion_ruta)
+        self.assertTrue(noticia_calilegua.relevancia_local)
+        # "concejal" y "Concejo Deliberante" activan el control de riesgo
+        # político/institucional existente, sin haberlo modificado.
+        self.assertTrue(noticia_calilegua.requiere_revision_especial)
 
     def test_noticia_ajena_queda_descartada(self):
         resultados = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)

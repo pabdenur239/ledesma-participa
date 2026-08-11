@@ -16,7 +16,18 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-ENCABEZADO_TAGS = ("h1", "h2", "h3", "h4")
+# El sitio real está construido con Wix (no WordPress): cada noticia es un
+# <div data-hook="post-list-item">, con el título en un <div data-hook=
+# "post-title"> y el resumen en un <div data-hook="post-description">
+# dentro de él. La imagen NO está anidada dentro del post: es un elemento
+# hermano anterior (<img data-hook="gallery-item-image-img">) que forma
+# parte del mismo ítem de la galería, por eso se asocia por proximidad
+# (la última imagen vista antes de que empiece el siguiente post).
+DATA_HOOK_ITEM = "post-list-item"
+DATA_HOOK_TITULO = "post-title"
+DATA_HOOK_RESUMEN = "post-description"
+DATA_HOOK_IMAGEN = "gallery-item-image-img"
+
 TAGS_EXCLUIDOS = {"nav", "header", "footer", "aside", "script", "style", "noscript", "form", "iframe"}
 VOID_TAGS = {
     "area", "base", "br", "col", "embed", "hr", "img",
@@ -46,13 +57,11 @@ def _atributo(attrs, nombre):
 
 
 class _ParserListadoInfoYungas(html.parser.HTMLParser):
-    """Recorre el listado de noticias buscando bloques <article>: dentro de
-    cada uno toma el primer encabezado con enlace como título, la primera
-    imagen como imagen_url, el primer <time datetime="..."> como fecha (solo
-    si está explícito) y el primer párrafo posterior al título como resumen.
-
-    Ignora navegación, encabezado de sitio, pie de página, widgets/publicidad
-    (aside), scripts y estilos."""
+    """Recorre el listado real de InfoYungas (Wix): cada noticia es un
+    <div data-hook="post-list-item"> con título y resumen anidados; la
+    imagen es un elemento hermano anterior, asociada por proximidad. No
+    hay fecha explícita y estable en el listado (solo texto relativo tipo
+    "hace 2 días"), así que nunca se completa ese campo aquí."""
 
     def __init__(self, url_base: str):
         super().__init__(convert_charrefs=True)
@@ -61,15 +70,18 @@ class _ParserListadoInfoYungas(html.parser.HTMLParser):
 
         self._pila: List[str] = []
         self._omitir_desde: Optional[int] = None
+        self._imagen_pendiente: Optional[str] = None
 
-        self._en_articulo = False
-        self._profundidad_articulo = 0
-        self._articulo_actual: Optional[dict] = None
+        self._en_item = False
+        self._profundidad_item = 0
+        self._item_actual: Optional[dict] = None
 
         self._en_titulo = False
-        self._capturando_enlace_titulo = False
-        self._en_resumen = False
+        self._profundidad_titulo = 0
         self._buffer_titulo: List[str] = []
+
+        self._en_resumen = False
+        self._profundidad_resumen = 0
         self._buffer_resumen: List[str] = []
 
     def handle_starttag(self, tag, attrs):
@@ -84,52 +96,43 @@ class _ParserListadoInfoYungas(html.parser.HTMLParser):
             self._omitir_desde = len(self._pila)
             return
 
-        if not self._en_articulo:
-            if tag == "article":
-                self._en_articulo = True
-                self._profundidad_articulo = len(self._pila)
-                self._articulo_actual = {
+        data_hook = _atributo(attrs, "data-hook")
+
+        if not self._en_item:
+            if tag == "div" and data_hook == DATA_HOOK_ITEM:
+                self._en_item = True
+                self._profundidad_item = len(self._pila)
+                self._item_actual = {
                     "titulo": "",
                     "url": None,
                     "resumen": "",
-                    "imagen_url": None,
-                    "fecha": "",
+                    "imagen_url": self._imagen_pendiente,
                 }
+                self._imagen_pendiente = None
                 self._en_titulo = False
-                self._capturando_enlace_titulo = False
                 self._en_resumen = False
-                self._buffer_titulo = []
-                self._buffer_resumen = []
             return
 
-        if tag in ENCABEZADO_TAGS and not self._articulo_actual["titulo"] and not self._en_titulo:
-            self._en_titulo = True
-            self._buffer_titulo = []
-        elif tag == "a" and self._en_titulo and not self._articulo_actual["url"]:
+        if tag == "a" and not self._item_actual["url"]:
             href = _atributo(attrs, "href")
             if href:
-                self._articulo_actual["url"] = urljoin(self.url_base, href)
-            self._capturando_enlace_titulo = True
-        elif tag == "time" and not self._articulo_actual["fecha"]:
-            fecha = _atributo(attrs, "datetime")
-            if fecha:
-                self._articulo_actual["fecha"] = fecha
-        elif (
-            tag == "p"
-            and self._articulo_actual["titulo"]
-            and not self._articulo_actual["resumen"]
-            and not self._en_resumen
-        ):
+                self._item_actual["url"] = urljoin(self.url_base, href)
+        elif data_hook == DATA_HOOK_TITULO and not self._en_titulo and not self._item_actual["titulo"]:
+            self._en_titulo = True
+            self._profundidad_titulo = len(self._pila)
+            self._buffer_titulo = []
+        elif data_hook == DATA_HOOK_RESUMEN and not self._en_resumen and not self._item_actual["resumen"]:
             self._en_resumen = True
+            self._profundidad_resumen = len(self._pila)
             self._buffer_resumen = []
 
     def _procesar_elemento_void(self, tag, attrs):
-        if self._omitir_desde is not None or not self._en_articulo:
+        if self._omitir_desde is not None or tag != "img":
             return
-        if tag == "img" and not self._articulo_actual["imagen_url"]:
-            src = _atributo(attrs, "src") or _atributo(attrs, "data-src")
+        if _atributo(attrs, "data-hook") == DATA_HOOK_IMAGEN:
+            src = _atributo(attrs, "src")
             if src:
-                self._articulo_actual["imagen_url"] = urljoin(self.url_base, src)
+                self._imagen_pendiente = urljoin(self.url_base, src)
 
     def handle_endtag(self, tag):
         if not self._pila or self._pila[-1] != tag:
@@ -141,28 +144,25 @@ class _ParserListadoInfoYungas(html.parser.HTMLParser):
                 self._omitir_desde = None
             return
 
-        if not self._en_articulo:
+        if not self._en_item:
             return
 
-        if self._en_titulo and tag in ENCABEZADO_TAGS:
-            self._articulo_actual["titulo"] = _limpiar_espacios(" ".join(self._buffer_titulo))
+        if self._en_titulo and len(self._pila) < self._profundidad_titulo:
+            self._item_actual["titulo"] = _limpiar_espacios(" ".join(self._buffer_titulo))
             self._en_titulo = False
-            self._capturando_enlace_titulo = False
-        elif tag == "a":
-            self._capturando_enlace_titulo = False
-        elif self._en_resumen and tag == "p":
+        elif self._en_resumen and len(self._pila) < self._profundidad_resumen:
             resumen = _limpiar_espacios(" ".join(self._buffer_resumen))
             if len(resumen) >= LONGITUD_MINIMA_RESUMEN:
-                self._articulo_actual["resumen"] = resumen
+                self._item_actual["resumen"] = resumen
             self._en_resumen = False
-        elif tag == "article" and len(self._pila) < self._profundidad_articulo:
-            self._en_articulo = False
-            if self._articulo_actual["titulo"] and self._articulo_actual["url"]:
-                self.items.append(self._articulo_actual)
-            self._articulo_actual = None
+        elif tag == "div" and len(self._pila) < self._profundidad_item:
+            self._en_item = False
+            if self._item_actual["titulo"] and self._item_actual["url"]:
+                self.items.append(self._item_actual)
+            self._item_actual = None
 
     def handle_data(self, data):
-        if self._omitir_desde is not None or not self._en_articulo:
+        if self._omitir_desde is not None or not self._en_item:
             return
         texto = data.strip()
         if not texto:
@@ -184,7 +184,7 @@ def parsear_listado(html_crudo: str, url_base: str, nombre_fuente: str) -> List[
             "texto": item["resumen"],
             "url": item["url"],
             "fuente": nombre_fuente,
-            "fecha": item["fecha"],
+            "fecha": "",
             "imagen_url": item["imagen_url"],
         }
         for item in parser.items

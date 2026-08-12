@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .collectors.base import Collector
 from .db import Database
@@ -49,12 +49,19 @@ def normalizar_noticia(cruda: dict) -> Noticia:
     )
 
 
-def procesar_noticia(db: Database, noticia: Noticia, redactor: Redactor) -> Tuple[Noticia, str]:
+def procesar_noticia(
+    db: Database, noticia: Noticia, redactor: Redactor, categoria: Optional[str] = None
+) -> Tuple[Noticia, str]:
     noticia.url_normalizada = normalizar_url(noticia.url_fuente)
     noticia.hash_contenido = hash_contenido(noticia.titulo_original, noticia.texto_original)
 
     clasificacion = clasificar_territorio(
-        noticia.titulo_original, noticia.texto_original, localidad_fuente=noticia.localidad
+        noticia.titulo_original,
+        noticia.texto_original,
+        localidad_fuente=noticia.localidad,
+        nombre_fuente=noticia.nombre_fuente,
+        url=noticia.url_fuente,
+        categoria=categoria,
     )
     # `relevancia_local` conserva exactamente el mismo significado que tenía
     # antes de la cascada editorial: relación directa con Libertador o el
@@ -104,5 +111,5 @@ def ejecutar_pipeline(
     resultados = []
     for cruda in collector.recolectar():
         noticia = normalizar_noticia(cruda)
-        resultados.append(procesar_noticia(db, noticia, redactor))
+        resultados.append(procesar_noticia(db, noticia, redactor, categoria=cruda.get("categoria")))
     return resultados

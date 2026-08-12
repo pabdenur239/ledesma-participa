@@ -87,12 +87,16 @@ class TestParsearRSS(unittest.TestCase):
         self.assertIn("tenía 68 años", sin_imagen["texto"])
         self.assertIn("captaba víctimas", sin_imagen["texto"])
 
-    def test_categoria_se_usa_para_excluir_horoscopo_pero_no_se_expone(self):
+    def test_categoria_se_usa_para_excluir_horoscopo_y_se_expone_para_territorio(self):
         noticias = parsear_rss_arc(self.contenido, NOMBRE_FUENTE)
         titulos = [n["titulo"] for n in noticias]
         self.assertNotIn(TITULO_HOROSCOPO, titulos)  # category "Horóscopo": exclusión determinística
-        for n in noticias:
-            self.assertNotIn("categoria", n)  # no se agrega un campo nuevo al modelo
+        # La categoría real (cuando existe) se expone en el dict de la noticia
+        # cruda: la usa la clasificación territorial nacional como evidencia
+        # de sección argentina/internacional. No se persiste como campo nuevo
+        # en el modelo de datos general (Noticia no tiene columna "categoria").
+        con_categoria = [n for n in noticias if n.get("categoria")]
+        self.assertTrue(con_categoria)
 
 
 class TestLimiteYProporcionDeportes(unittest.TestCase):

@@ -94,8 +94,12 @@ class TestParsearRSS(unittest.TestCase):
         noticias = parsear_rss_arc(self.contenido, NOMBRE_FUENTE)
         titulos = [n["titulo"] for n in noticias]
         self.assertNotIn(TITULO_LOTERIA, titulos)
+        # Infobae no trae <category>: el campo se expone igual (queda None)
+        # para que la clasificación territorial nacional lo reciba de forma
+        # homogénea con La Nación.
         for n in noticias:
-            self.assertNotIn("categoria", n)
+            self.assertIn("categoria", n)
+            self.assertIsNone(n["categoria"])
 
 
 class TestLimiteYProporcionDeportes(unittest.TestCase):

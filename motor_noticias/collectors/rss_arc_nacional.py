@@ -211,6 +211,10 @@ def parsear_rss_arc(
             "fuente": nombre_fuente,
             "fecha": _texto(item, "pubDate") or "",
             "imagen_url": _imagen(item),
+            # Metadato ya extraído (se usaba solo para filtrar): se expone
+            # también para que la clasificación territorial nacional pueda
+            # usarlo como evidencia de sección argentina/internacional.
+            "categoria": categoria,
         }
         candidatas.append((noticia, _es_deportes_o_espectaculos(categoria, enlace)))
 

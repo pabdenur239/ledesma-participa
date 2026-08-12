@@ -291,12 +291,14 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
         self.assertEqual(entradas[0].estado, "existente")
 
     def test_propuesta_del_mismo_territorio_reemplazada_por_otra_mas_reciente(self):
+        # Horario futuro respecto de AHORA (09:00 Jujuy): una franja pasada
+        # queda congelada y no se puede usar para probar el reemplazo.
         _crear_noticia(self.db, "local", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
 
         mas_reciente = _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
 
-        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
 
         self.assertEqual(entradas[0].noticia_id, mas_reciente.id)
         self.assertEqual(entradas[0].estado, "actualizado")
@@ -453,8 +455,12 @@ class TestIntegracionConMotorContinuo(BaseAgendaTest):
         }
         fuentes_prueba = (("fuente-integracion", _colector_ok([item_local]), ErrorFuenteDePrueba),)
 
+        # agenda_automatica=False: este test aísla el pipeline del motor
+        # continuo de la actualización automática de agenda (que tiene su
+        # propia cobertura en test_ciclo_continuo.py) para no depender de la
+        # fecha/hora real del entorno donde corren los tests.
         with patch("motor_noticias.ciclo_continuo.FUENTES_CONTINUAS", fuentes_prueba):
-            ejecutar_ciclo(self.db, RedactorMock())
+            ejecutar_ciclo(self.db, RedactorMock(), agenda_automatica=False)
 
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 

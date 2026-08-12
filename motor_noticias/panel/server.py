@@ -7,11 +7,12 @@ from pathlib import Path
 from typing import Optional
 
 from ..alertas import NIVEL_ERROR, calcular_alertas
+from ..ciclo_continuo import NOMBRE_SALUD_AGENDA, agenda_automatica_habilitada
 from ..continuo_runner import LOCK_PATH_DEFAULT
 from ..db import Database
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, RevisionEstado
-from ..motor_editorial import ZONA_JUJUY
+from ..motor_editorial import HORARIOS_DEFAULT, ZONA_JUJUY
 
 # El panel es exclusivamente local: se enlaza siempre a 127.0.0.1, nunca a
 # 0.0.0.0 ni a una dirección configurable, para que no sea accesible desde
@@ -242,6 +243,65 @@ def _proxima_ejecucion_aproximada(ultimo_ciclo: Optional[dict]) -> Optional[str]
     return (fecha_fin + timedelta(seconds=ultimo_ciclo["intervalo_segundos"])).isoformat()
 
 
+def _proxima_franja_prevista(ahora: datetime) -> Optional[str]:
+    hoy = ahora.strftime("%Y-%m-%d")
+    for hora in HORARIOS_DEFAULT:
+        momento = datetime.strptime(f"{hoy} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=ZONA_JUJUY)
+        if momento > ahora:
+            return hora
+    return None  # todas las franjas de hoy ya pasaron
+
+
+def _resumen_agenda_hoy(db: Database, ahora: datetime) -> dict:
+    fecha_hoy = ahora.strftime("%Y-%m-%d")
+    items = [item for item in db.listar_agenda(fecha_hoy) if item["tipo"] == "normal"]
+    pendientes = aprobados = sin_candidato = 0
+    for item in items:
+        if not item["noticia_id"]:
+            sin_candidato += 1
+            continue
+        noticia = db.obtener(item["noticia_id"])
+        if not noticia:
+            continue
+        if noticia["revision_estado"] == RevisionEstado.APROBADA.value:
+            aprobados += 1
+        elif noticia["revision_estado"] == RevisionEstado.PENDIENTE.value:
+            pendientes += 1
+    return {"pendientes": pendientes, "aprobados": aprobados, "sin_candidato": sin_candidato}
+
+
+def _seccion_agenda_automatica_html(db: Database) -> str:
+    ahora = datetime.now(ZONA_JUJUY)
+    salud_agenda = db.obtener_salud_fuente(NOMBRE_SALUD_AGENDA)
+    resumen = _resumen_agenda_hoy(db, ahora)
+    habilitada = agenda_automatica_habilitada()
+
+    if salud_agenda:
+        resultado = salud_agenda["ultimo_resultado"].upper()
+        indicador_resultado = _indicador("OK" if resultado == "OK" else "ERROR")
+        ultima_actualizacion = _e(salud_agenda["ultima_consulta"])
+        error_agenda = (
+            f"<p><strong>Último error:</strong> {_e(salud_agenda['ultimo_error'])}</p>"
+            if salud_agenda["ultimo_resultado"] == "error"
+            else ""
+        )
+    else:
+        indicador_resultado = "<em>sin datos aún</em>"
+        ultima_actualizacion = "sin datos aún"
+        error_agenda = ""
+
+    return f"""
+<h3>Agenda Editorial automática</h3>
+<p><strong>Agenda automática:</strong> {"activada" if habilitada else "desactivada (config/agenda.json)"}</p>
+<p><strong>Última actualización:</strong> {ultima_actualizacion} — {indicador_resultado}</p>
+{error_agenda}
+<p><strong>Espacios pendientes:</strong> {resumen['pendientes']} —
+<strong>Aprobados:</strong> {resumen['aprobados']} —
+<strong>Sin candidato:</strong> {resumen['sin_candidato']}</p>
+<p><strong>Próxima franja prevista:</strong> {_e(_proxima_franja_prevista(ahora)) or "sin franjas restantes hoy"}</p>
+"""
+
+
 def _estado_sistema_html(db: Database, lock_path: Path) -> str:
     motor_activo = lock_path.exists()
     ultimo_ciclo = db.ultimo_ciclo()
@@ -274,7 +334,11 @@ def _estado_sistema_html(db: Database, lock_path: Path) -> str:
     else:
         tabla_fuentes = "<h3>Estado de cada fuente</h3>\n<p>El motor continuo todavía no ejecutó ningún ciclo.</p>"
 
-    return _pagina("Estado del sistema — Ledesma Participa", resumen + seccion_alertas + tabla_fuentes)
+    seccion_agenda = _seccion_agenda_automatica_html(db)
+
+    return _pagina(
+        "Estado del sistema — Ledesma Participa", resumen + seccion_alertas + tabla_fuentes + seccion_agenda
+    )
 
 
 def _antiguedad_legible(fecha_recoleccion: Optional[str], ahora: Optional[datetime] = None) -> str:

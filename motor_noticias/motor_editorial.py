@@ -37,6 +37,13 @@ def _fecha_limite_antiguedad(ahora_utc: datetime) -> str:
     return (ahora_utc - timedelta(hours=ANTIGUEDAD_MAXIMA_HORAS)).isoformat()
 
 
+def _es_franja_pasada(fecha: str, hora: str, ahora: datetime) -> bool:
+    """Una franja ya pasada (según `ahora`, en America/Argentina/Jujuy) no
+    admite más candidatos automáticos: evita propuestas retrospectivas."""
+    momento = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=ZONA_JUJUY)
+    return momento <= ahora
+
+
 def _buscar_candidato_cascada(db: Database, usados: set, fecha_limite: str) -> Optional[dict]:
     """Recorre la cascada territorial obligatoria (local → departamental →
     provincial → nacional) y devuelve el primer candidato apto que
@@ -57,10 +64,19 @@ def generar_agenda(
     """Genera (o completa) la agenda editorial de un día: un candidato por
     franja horaria siguiendo la cascada territorial, más cualquier noticia
     local/departamental marcada urgente como propuesta aparte. Nunca publica
-    nada ni reemplaza un espacio que ya tiene una noticia asignada (eso es lo
-    que preserva las decisiones humanas ante una regeneración). Si un espacio
-    sigue en `sin_candidato`, se reintenta en cada llamada por si ya hay
-    contenido nuevo disponible."""
+    nada. Pensada para poder llamarse repetidamente (p.ej. desde el Motor
+    Continuo, una vez por ciclo tras consultar todas las fuentes) sin pisar
+    nada que no deba pisar:
+
+    - `aprobada`, `rechazada` y `publicada` nunca se tocan.
+    - Una franja futura sin decisión humana (`pendiente` o `sin_candidato`)
+      se reevalúa en cada llamada: puede mejorar si aparece un candidato de
+      mayor prioridad territorial (o más reciente dentro del mismo nivel).
+    - Una franja ya pasada (según `ahora`, en America/Argentina/Jujuy) que
+      ya fue evaluada antes queda congelada tal cual quedó, tenga o no
+      candidato: no se generan propuestas retrospectivas. Solo se completa
+      por primera vez si el ciclo corrió más tarde de lo previsto y esa
+      franja nunca llegó a evaluarse."""
     # Se normaliza siempre a Jujuy, sin importar en qué huso venga `ahora`
     # (propio o inyectado en un test), para que la fecha del día se calcule
     # de forma consistente con America/Argentina/Jujuy y no con UTC u otro
@@ -95,6 +111,23 @@ def generar_agenda(
             entradas.append(
                 EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
             )
+            continue
+
+        # Franja ya evaluada antes y cuya hora ya pasó: no se generan
+        # propuestas retrospectivas, tenga o no candidato asignado (con o
+        # sin decisión humana pendiente). Se conserva tal cual quedó. Si
+        # nunca se evaluó (el ciclo corrió por primera vez más tarde de lo
+        # previsto), sí se completa una única vez más abajo.
+        if existente is not None and _es_franja_pasada(fecha, hora, ahora):
+            if noticia_existente is not None:
+                usados.add(noticia_existente["id"])
+                entradas.append(
+                    EntradaAgenda(
+                        fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente"
+                    )
+                )
+            else:
+                entradas.append(EntradaAgenda(fecha, hora, "normal", None, None, "sin_candidato"))
             continue
 
         # El espacio no está protegido (sin candidato todavía, o con una

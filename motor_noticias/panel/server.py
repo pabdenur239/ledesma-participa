@@ -14,7 +14,7 @@ from ..ingreso_manual import ErrorIngresoManual, ResultadoIngresoManual, cargar_
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, OrigenIngreso, RevisionEstado
 from ..motor_editorial import HORARIOS_DEFAULT, ZONA_JUJUY
-from ..redaccion.mock import RedactorMock
+from ..redaccion import crear_redactor
 
 # El panel es exclusivamente local: se enlaza siempre a 127.0.0.1, nunca a
 # 0.0.0.0 ni a una dirección configurable, para que no sea accesible desde
@@ -578,10 +578,12 @@ def _resultado_carga_manual_html(resultado: ResultadoIngresoManual) -> str:
 class PanelHandler(BaseHTTPRequestHandler):
     db_path = DB_PATH_DEFAULT
     lock_path = LOCK_PATH_DEFAULT
-    # Redacción para la carga manual: siempre el mock local (sin IA externa).
-    # El panel no depende de que Ollama esté corriendo para poder cargar una
-    # noticia manual.
-    redactor = RedactorMock()
+    # Redactor para la carga manual: el mismo mecanismo de selección que usan
+    # `cli.py` y `continuo_runner.py` (`crear_redactor`, 'mock' por defecto),
+    # nunca un circuito aparte — una noticia manual usa el redactor
+    # configurado, igual que una automática. `iniciar_servidor()` puede
+    # sobrescribir esto según cómo se haya lanzado el panel.
+    redactor = crear_redactor()
 
     def _db(self) -> Database:
         return Database(self.db_path)
@@ -762,8 +764,10 @@ class PanelHandler(BaseHTTPRequestHandler):
         pass
 
 
-def iniciar_servidor(db_path=None):
+def iniciar_servidor(db_path=None, redactor=None):
     PanelHandler.db_path = db_path or DB_PATH_DEFAULT
+    if redactor is not None:
+        PanelHandler.redactor = redactor
     servidor = HTTPServer((HOST, PORT), PanelHandler)
     print("Panel Ledesma Participa:")
     print(f"http://{HOST}:{PORT}")

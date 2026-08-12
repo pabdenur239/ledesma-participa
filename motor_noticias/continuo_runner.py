@@ -8,8 +8,7 @@ from typing import Optional
 
 from .ciclo_continuo import INTERVALO_SEGUNDOS_DEFAULT, ejecutar_ciclo
 from .db import Database
-from .redaccion.mock import RedactorMock
-from .redaccion.ollama import RedactorOllama
+from .redaccion import crear_redactor
 
 DB_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "ledesma_participa.db"
 LOCK_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "run_continuo.lock"
@@ -128,7 +127,7 @@ def main(argv=None) -> int:
         logger.error(str(error))
         return 1
 
-    redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
+    redactor = crear_redactor(args.redactor)
     db = Database(args.db)
     try:
         bucle_continuo(db, redactor, args.intervalo, max_ciclos=args.max_ciclos)

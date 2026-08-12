@@ -20,8 +20,8 @@ from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSS
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
 from .db import Database
 from .pipeline import ejecutar_pipeline
-from .redaccion.mock import RedactorMock
-from .redaccion.ollama import ErrorRedaccionOllama, RedactorOllama
+from .redaccion import crear_redactor
+from .redaccion.ollama import ErrorRedaccionOllama
 
 DB_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "ledesma_participa.db"
 
@@ -86,7 +86,7 @@ def main():
         collector = InfobaeRSSCollector()
     else:
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
-    redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
+    redactor = crear_redactor(args.redactor)
 
     try:
         resultados = ejecutar_pipeline(db, collector, redactor)

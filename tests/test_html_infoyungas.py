@@ -139,12 +139,16 @@ class TestPipelineConFixtureHTML(unittest.TestCase):
         # político/institucional existente, sin haberlo modificado.
         self.assertTrue(noticia_calilegua.requiere_revision_especial)
 
-    def test_noticia_ajena_queda_descartada(self):
+    def test_noticia_nacional_ajena_queda_preparada_sin_relevancia_local(self):
+        # "Gobierno nacional" la clasifica como territorio nacional: el
+        # Motor Editorial en cascada puede usarla cuando no haya contenido
+        # local/departamental, aunque relevancia_local siga en False.
         resultados = ejecutar_pipeline(self.db, ColectorHTMLDePrueba(self.contenido), self.redactor)
         noticia_nacional, resultado = next(
             (n, r) for n, r in resultados if n.titulo_original == TITULO_NACIONAL
         )
-        self.assertEqual(resultado, "descartada")
+        self.assertEqual(resultado, "preparada")
+        self.assertEqual(noticia_nacional.territorio, "nacional")
         self.assertFalse(noticia_nacional.relevancia_local)
 
     def test_duplicado_no_se_almacena_dos_veces(self):

@@ -69,7 +69,13 @@ class TestPipelineConFixtureRSS(unittest.TestCase):
         self.assertEqual(len(resultados), 3)
 
         self.assertEqual(resultados[0][1], "preparada")
-        self.assertEqual(resultados[1][1], "descartada")
+        self.assertEqual(resultados[0][0].territorio, "local")
+        # El balance turístico provincial menciona Jujuy sin relación local:
+        # territorio "provincial", sin relevancia_local, pero igual queda
+        # preparada para que el Motor Editorial pueda usarla en la cascada.
+        self.assertEqual(resultados[1][1], "preparada")
+        self.assertEqual(resultados[1][0].territorio, "provincial")
+        self.assertFalse(resultados[1][0].relevancia_local)
         self.assertEqual(resultados[2][1], "duplicado")
 
         self.assertEqual(len(self.db.listar()), 2)

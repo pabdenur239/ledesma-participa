@@ -215,6 +215,59 @@ pasan 6 horas sin ninguna noticia relevante para Libertador o el
 Departamento Ledesma. Ninguna alerta asume que una fuente está caída
 solo por no publicar contenido nuevo.
 
+## Clasificación territorial y elegibilidad editorial
+
+Cada noticia se clasifica de forma determinística (sin IA, `motor_noticias/territorio.py`)
+en `local`, `departamental`, `provincial`, `nacional` o `sin_clasificar`,
+reutilizando sin modificar el clasificador de relevancia existente y
+agregando un nivel nacional configurable en `config/localidades.json`
+("nacional"). `relevancia_local` conserva exactamente el mismo
+significado que siempre tuvo (relación directa con Libertador o el
+Departamento Ledesma); local y departamental siguen preparándose
+siempre. Provincial y nacional ahora también pueden llegar a
+`preparada` —sin relevancia_local— si superan un gate mínimo de calidad
+editorial sin IA (`motor_noticias/elegibilidad_editorial.py`: descarta
+publicidad, navegación, contenido vacío o insuficiente). Sin
+clasificación geográfica ni nacional identificable, nunca se prepara
+automáticamente.
+
+## Motor Editorial en Cascada y Agenda Editorial
+
+Selecciona automáticamente, para cada espacio de publicación del día,
+la mejor noticia ya `preparada` siguiendo la prioridad territorial
+obligatoria **local → departamental → provincial → nacional**
+(`motor_noticias/motor_editorial.py`): nunca elige un nivel inferior si
+existe una noticia apta de un nivel superior. Nunca publica nada: solo
+propone candidatos para revisión humana.
+
+```bash
+python3 generar_agenda.py
+python3 generar_agenda.py --fecha 2026-08-15
+```
+
+Objetivo de 6 propuestas diarias en franjas horarias configurables
+(`08:00, 10:30, 13:00, 16:00, 19:00, 21:30`, huso `America/Argentina/Jujuy`
+fijo en UTC-3, sin depender de la base de datos IANA de zonas horarias).
+Excluye automáticamente noticias con más de 48 horas de antigüedad,
+rechazadas o ya usadas en una agenda anterior. Si no hay candidato
+válido para un espacio, queda registrado como `sin_candidato` — nunca
+se inventa contenido ni se baja la exigencia editorial para completar
+la cuota. Una vez que un espacio tiene una noticia asignada, regenerar
+la agenda no la reemplaza (así una aprobación o un rechazo humano nunca
+se pisa automáticamente); los espacios `sin_candidato` sí se
+reintentan en cada regeneración.
+
+Soporte estructural para marcar una noticia como **urgente**
+(`Database.marcar_urgente`, hoy manual). Una urgente local o
+departamental aparece como propuesta aparte, fuera de las seis franjas
+fijas, y tampoco se publica sola: sigue requiriendo revisión humana.
+
+Desde el panel, la sección **"Agenda Editorial"**
+(`http://127.0.0.1:8000/agenda`, opcionalmente `?fecha=YYYY-MM-DD`)
+muestra hora, candidato, territorio, fuente, antigüedad, riesgo
+editorial, estado de revisión y si es urgente, con acciones para
+aprobar o rechazar (reutiliza el mismo flujo de revisión existente).
+
 ## Panel de revisión humana
 
 Panel web local y mínimo (solo biblioteca estándar) para revisar a mano

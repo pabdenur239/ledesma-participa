@@ -43,3 +43,6 @@ class Noticia:
     tiene_imagen_original: bool = False
     imagen_publicacion_ruta: Optional[str] = None
     imagen_generada_automaticamente: bool = False
+    territorio: Optional[str] = None
+    motivo_territorio: Optional[str] = None
+    urgente: bool = False

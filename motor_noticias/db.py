@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Union
 
-from .models import Estado, Noticia
+from .models import Estado, Noticia, RevisionEstado
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS noticias (
@@ -48,6 +48,23 @@ CREATE TABLE IF NOT EXISTS ciclo_ejecucion (
     total_noticias_nuevas INTEGER NOT NULL,
     total_errores INTEGER NOT NULL
 );
+
+-- Agenda editorial en cascada: una fila por espacio de publicación (franja
+-- horaria fija) o por propuesta urgente (hora NULL). No reemplaza ninguna
+-- fila existente que ya tenga noticia_id asignado: eso es lo que garantiza
+-- que una decisión humana (aprobada/rechazada, vía revision_estado de la
+-- propia noticia) nunca se pisa automáticamente en una regeneración.
+CREATE TABLE IF NOT EXISTS agenda_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    hora TEXT,
+    tipo TEXT NOT NULL DEFAULT 'normal',
+    territorio TEXT,
+    noticia_id INTEGER,
+    creada_en TEXT NOT NULL,
+    actualizada_en TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agenda_fecha ON agenda_item(fecha);
 """
 
 # Columnas agregadas en migraciones no destructivas: una base ya existente
@@ -71,6 +88,12 @@ COLUMNAS_IMAGEN = {
     "imagen_generada_automaticamente": "INTEGER NOT NULL DEFAULT 0",
 }
 
+COLUMNAS_TERRITORIO = {
+    "territorio": "TEXT",
+    "motivo_territorio": "TEXT",
+    "urgente": "INTEGER NOT NULL DEFAULT 0",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -83,6 +106,7 @@ class Database:
         self._migrar_columnas(COLUMNAS_REVISION)
         self._migrar_columnas(COLUMNAS_RIESGO_EDITORIAL)
         self._migrar_columnas(COLUMNAS_IMAGEN)
+        self._migrar_columnas(COLUMNAS_TERRITORIO)
 
     def _migrar_columnas(self, columnas: dict):
         columnas_existentes = {
@@ -110,8 +134,9 @@ class Database:
                 texto_preparado, estado, hash_contenido, revision_estado,
                 fecha_revision, titulo_revisado, texto_revisado,
                 requiere_revision_especial, motivo_revision_especial, categoria_riesgo,
-                tiene_imagen_original, imagen_publicacion_ruta, imagen_generada_automaticamente
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tiene_imagen_original, imagen_publicacion_ruta, imagen_generada_automaticamente,
+                territorio, motivo_territorio, urgente
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 noticia.titulo_original,
@@ -138,6 +163,9 @@ class Database:
                 noticia.tiene_imagen_original,
                 noticia.imagen_publicacion_ruta,
                 noticia.imagen_generada_automaticamente,
+                noticia.territorio,
+                noticia.motivo_territorio,
+                noticia.urgente,
             ),
         )
         self.conn.commit()
@@ -296,6 +324,103 @@ class Database:
         )
         fila = cur.fetchone()
         return fila["fecha"] if fila and fila["fecha"] else None
+
+    def marcar_urgente(self, id_noticia: int, urgente: bool = True) -> None:
+        self.conn.execute(
+            "UPDATE noticias SET urgente = ? WHERE id = ?", (1 if urgente else 0, id_noticia)
+        )
+        self.conn.commit()
+
+    def candidato_editorial(
+        self, territorio: str, excluidos_ids: set, fecha_limite: str
+    ) -> Optional[dict]:
+        """Mejor candidato `preparada` de un territorio dado para la cascada
+        del Motor Editorial: no rechazado, no usado en ninguna agenda previa,
+        y dentro de la antigüedad máxima permitida. El más reciente primero."""
+        query = (
+            "SELECT * FROM noticias WHERE estado = ? AND territorio = ? "
+            "AND revision_estado != ? AND fecha_recoleccion >= ?"
+        )
+        params: list = [Estado.PREPARADA.value, territorio, RevisionEstado.RECHAZADA.value, fecha_limite]
+        if excluidos_ids:
+            placeholders = ",".join("?" * len(excluidos_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(sorted(excluidos_ids))
+        query += " ORDER BY fecha_recoleccion DESC LIMIT 1"
+        cur = self.conn.execute(query, params)
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def candidatos_urgentes(self, excluidos_ids: set, fecha_limite: str) -> list:
+        """Noticias locales/departamentales marcadas urgentes, `preparada`,
+        no rechazadas, no usadas todavía en ninguna agenda."""
+        query = (
+            "SELECT * FROM noticias WHERE estado = ? AND urgente = 1 "
+            "AND territorio IN ('local', 'departamental') "
+            "AND revision_estado != ? AND fecha_recoleccion >= ?"
+        )
+        params: list = [Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value, fecha_limite]
+        if excluidos_ids:
+            placeholders = ",".join("?" * len(excluidos_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(sorted(excluidos_ids))
+        query += " ORDER BY fecha_recoleccion DESC"
+        cur = self.conn.execute(query, params)
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def noticias_ids_usadas_en_agenda(self) -> set:
+        cur = self.conn.execute("SELECT DISTINCT noticia_id FROM agenda_item WHERE noticia_id IS NOT NULL")
+        return {fila["noticia_id"] for fila in cur.fetchall()}
+
+    def obtener_agenda_item(self, fecha: str, hora: Optional[str]) -> Optional[dict]:
+        cur = self.conn.execute(
+            "SELECT * FROM agenda_item WHERE fecha = ? AND hora = ? AND tipo = 'normal'",
+            (fecha, hora),
+        )
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def guardar_agenda_item(
+        self,
+        fecha: str,
+        hora: Optional[str],
+        tipo: str,
+        territorio: Optional[str],
+        noticia_id: Optional[int],
+        creada_en: str,
+        actualizada_en: Optional[str] = None,
+        id_existente: Optional[int] = None,
+    ) -> int:
+        actualizada_en = actualizada_en or creada_en
+        if id_existente:
+            self.conn.execute(
+                "UPDATE agenda_item SET territorio = ?, noticia_id = ?, actualizada_en = ? WHERE id = ?",
+                (territorio, noticia_id, actualizada_en, id_existente),
+            )
+            self.conn.commit()
+            return id_existente
+
+        cur = self.conn.execute(
+            """
+            INSERT INTO agenda_item (fecha, hora, tipo, territorio, noticia_id, creada_en, actualizada_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (fecha, hora, tipo, territorio, noticia_id, creada_en, actualizada_en),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def listar_agenda(self, fecha: Optional[str] = None) -> list:
+        if fecha:
+            cur = self.conn.execute(
+                "SELECT * FROM agenda_item WHERE fecha = ? ORDER BY tipo DESC, hora IS NULL, hora",
+                (fecha,),
+            )
+        else:
+            cur = self.conn.execute(
+                "SELECT * FROM agenda_item ORDER BY fecha DESC, tipo DESC, hora IS NULL, hora"
+            )
+        return [dict(fila) for fila in cur.fetchall()]
 
     def close(self):
         self.conn.close()

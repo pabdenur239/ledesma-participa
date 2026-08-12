@@ -111,12 +111,17 @@ class TestPipelineConFixtureRSS(unittest.TestCase):
         self.assertTrue(noticia_calilegua.relevancia_local)
         self.assertFalse(noticia_calilegua.tiene_imagen_original)
 
-    def test_noticia_provincial_ajena_queda_descartada(self):
+    def test_noticia_provincial_ajena_queda_preparada_sin_relevancia_local(self):
+        # Menciona Jujuy sin relación local: territorio "provincial", sin
+        # relevancia_local, pero igual queda preparada para que el Motor
+        # Editorial en cascada pueda usarla si no hay contenido local/
+        # departamental disponible.
         resultados = ejecutar_pipeline(self.db, ColectorRSSDePrueba(self.contenido), self.redactor)
         noticia_provincial, resultado = next(
             (n, r) for n, r in resultados if n.titulo_original == TITULO_PROVINCIAL
         )
-        self.assertEqual(resultado, "descartada")
+        self.assertEqual(resultado, "preparada")
+        self.assertEqual(noticia_provincial.territorio, "provincial")
         self.assertFalse(noticia_provincial.relevancia_local)
 
     def test_duplicado_no_se_almacena_dos_veces(self):

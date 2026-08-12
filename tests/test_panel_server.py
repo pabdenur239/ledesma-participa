@@ -500,5 +500,141 @@ class TestEstadoDelSistema(unittest.TestCase):
         self.assertIn("Sin alertas activas.", cuerpo)
 
 
+class TestAgendaEditorial(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        self.db = Database(self.db_path)
+
+        PanelHandler.db_path = self.db_path
+        self.servidor = HTTPServer((HOST, 0), PanelHandler)
+        self.puerto = self.servidor.server_address[1]
+        self.hilo = threading.Thread(target=self.servidor.serve_forever, daemon=True)
+        self.hilo.start()
+
+    def tearDown(self):
+        self.servidor.shutdown()
+        self.servidor.server_close()
+        self.hilo.join(timeout=5)
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def _conexion(self):
+        return http.client.HTTPConnection(HOST, self.puerto, timeout=5)
+
+    def _get(self, ruta):
+        conn = self._conexion()
+        conn.request("GET", ruta)
+        resp = conn.getresponse()
+        cuerpo = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, cuerpo
+
+    def _post_noticia(self, id_noticia, accion):
+        conn = self._conexion()
+        conn.request(
+            "POST",
+            f"/noticia?id={id_noticia}",
+            body=urlencode({"accion": accion}),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def _crear_noticia_local_preparada(self, titulo="Obras en Libertador General San Martín"):
+        noticia = Noticia(
+            id=None,
+            titulo_original=titulo,
+            texto_original="Texto de prueba con contenido suficiente.",
+            url_fuente="https://ejemplo.test/agenda-1",
+            url_normalizada="https://ejemplo.test/agenda-1",
+            nombre_fuente="Fuente de prueba",
+            fecha_fuente="",
+            fecha_recoleccion=datetime.now(timezone.utc).isoformat(),
+            estado=Estado.PREPARADA.value,
+            hash_contenido="hash-agenda-1",
+            relevancia_local=True,
+            territorio="local",
+            motivo_territorio="Prueba.",
+            titulo_preparado=titulo,
+            texto_preparado="Texto preparado de prueba.",
+        )
+        self.db.guardar(noticia)
+        return noticia
+
+    def test_agenda_sin_generar_indica_como_generarla(self):
+        status, cuerpo = self._get("/agenda?fecha=2026-08-12")
+        self.assertEqual(status, 200)
+        self.assertIn("Agenda Editorial", cuerpo)
+        self.assertIn("generar_agenda.py", cuerpo)
+
+    def test_agenda_muestra_hora_candidato_territorio_fuente_riesgo_y_estado(self):
+        from motor_noticias.motor_editorial import generar_agenda
+
+        self._crear_noticia_local_preparada()
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",))
+
+        status, cuerpo = self._get("/agenda?fecha=2026-08-12")
+
+        self.assertEqual(status, 200)
+        self.assertIn("08:00", cuerpo)
+        self.assertIn("Obras en Libertador General San Martín", cuerpo)
+        self.assertIn("local", cuerpo)
+        self.assertIn("Fuente de prueba", cuerpo)
+        self.assertIn("pendiente", cuerpo)
+
+    def test_agenda_permite_aprobar(self):
+        from motor_noticias.motor_editorial import generar_agenda
+
+        noticia = self._crear_noticia_local_preparada()
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",))
+
+        status = self._post_noticia(noticia.id, "aprobar")
+        self.assertEqual(status, 303)
+
+        _, cuerpo = self._get("/agenda?fecha=2026-08-12")
+        self.assertIn("aprobada", cuerpo)
+
+        guardada = self.db.obtener(noticia.id)
+        self.assertEqual(guardada["revision_estado"], "aprobada")
+
+    def test_agenda_permite_rechazar(self):
+        from motor_noticias.motor_editorial import generar_agenda
+
+        noticia = self._crear_noticia_local_preparada()
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",))
+
+        status = self._post_noticia(noticia.id, "rechazar")
+        self.assertEqual(status, 303)
+
+        _, cuerpo = self._get("/agenda?fecha=2026-08-12")
+        self.assertIn("rechazada", cuerpo)
+
+        guardada = self.db.obtener(noticia.id)
+        self.assertEqual(guardada["revision_estado"], "rechazada")
+
+    def test_agenda_muestra_sin_candidato_cuando_no_hay_contenido(self):
+        from motor_noticias.motor_editorial import generar_agenda
+
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",))
+
+        _, cuerpo = self._get("/agenda?fecha=2026-08-12")
+
+        self.assertIn("sin_candidato", cuerpo)
+
+    def test_agenda_muestra_urgente(self):
+        from motor_noticias.motor_editorial import generar_agenda
+
+        noticia = self._crear_noticia_local_preparada()
+        self.db.marcar_urgente(noticia.id, True)
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",))
+
+        _, cuerpo = self._get("/agenda?fecha=2026-08-12")
+
+        self.assertIn("URGENTE", cuerpo)
+
+
 if __name__ == "__main__":
     unittest.main()

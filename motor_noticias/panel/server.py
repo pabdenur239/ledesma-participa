@@ -11,6 +11,7 @@ from ..continuo_runner import LOCK_PATH_DEFAULT
 from ..db import Database
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, RevisionEstado
+from ..motor_editorial import ZONA_JUJUY
 
 # El panel es exclusivamente local: se enlaza siempre a 127.0.0.1, nunca a
 # 0.0.0.0 ni a una dirección configurable, para que no sea accesible desde
@@ -69,11 +70,14 @@ th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
 .alerta {{ padding: 0.5rem; margin-bottom: 0.5rem; border-radius: 3px; }}
 .alerta-advertencia {{ background: #fff3cd; border: 1px solid #b8860b; }}
 .alerta-error {{ background: #fdecea; border: 1px solid #c62828; }}
+.etiqueta-urgente {{ background: #b71c1c; color: #fff; padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: bold; }}
+form.acciones-en-linea {{ display: inline; }}
+form.acciones-en-linea button {{ margin-right: 0.3rem; }}
 </style>
 </head>
 <body>
 <h1><a href="/" style="text-decoration:none;color:inherit;">Ledesma Participa — Panel de revisión</a></h1>
-<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a></nav>
+<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a></nav>
 {cuerpo}
 </body>
 </html>"""
@@ -273,6 +277,86 @@ def _estado_sistema_html(db: Database, lock_path: Path) -> str:
     return _pagina("Estado del sistema — Ledesma Participa", resumen + seccion_alertas + tabla_fuentes)
 
 
+def _antiguedad_legible(fecha_recoleccion: Optional[str], ahora: Optional[datetime] = None) -> str:
+    if not fecha_recoleccion:
+        return "—"
+    try:
+        fecha = datetime.fromisoformat(fecha_recoleccion)
+    except ValueError:
+        return "—"
+    ahora = ahora or datetime.now(timezone.utc)
+    horas = (ahora - fecha).total_seconds() / 3600
+    if horas < 1:
+        return "menos de 1 h"
+    return f"{int(horas)} h"
+
+
+def _acciones_agenda(noticia_id: int) -> str:
+    return f"""<form class="acciones-en-linea" method="post" action="/noticia?id={noticia_id}">
+<button type="submit" name="accion" value="aprobar">Aprobar</button>
+<button type="submit" name="accion" value="rechazar">Rechazar</button>
+</form> <a href="/noticia?id={noticia_id}">Ver</a>"""
+
+
+def _fila_agenda(item: dict, db: Database) -> str:
+    etiqueta_hora = _e(item["hora"]) if item["hora"] else '<span class="etiqueta-urgente">URGENTE</span>'
+
+    if not item["noticia_id"]:
+        return f"""<tr>
+<td>{etiqueta_hora}</td>
+<td><em>(sin candidato)</em></td>
+<td>—</td><td>—</td><td>—</td><td>—</td>
+<td>sin_candidato</td>
+<td>—</td>
+<td></td>
+</tr>"""
+
+    noticia = db.obtener(item["noticia_id"])
+    if not noticia:
+        return f"""<tr>
+<td>{etiqueta_hora}</td>
+<td colspan="8"><em>Noticia #{item['noticia_id']} no encontrada.</em></td>
+</tr>"""
+
+    candidato = noticia["titulo_preparado"] or noticia["titulo_original"]
+    riesgo = "SÍ" if noticia["requiere_revision_especial"] else "no"
+    urgente = "sí" if noticia["urgente"] else "no"
+    return f"""<tr>
+<td>{etiqueta_hora}</td>
+<td>{_e(candidato)}</td>
+<td>{_e(item['territorio'])}</td>
+<td>{_e(noticia['nombre_fuente'])}</td>
+<td>{_antiguedad_legible(noticia['fecha_recoleccion'])}</td>
+<td>{riesgo}</td>
+<td>{_e(noticia['revision_estado'])}</td>
+<td>{urgente}</td>
+<td>{_acciones_agenda(noticia['id'])}</td>
+</tr>"""
+
+
+def _agenda_html(db: Database, fecha: str) -> str:
+    items = db.listar_agenda(fecha)
+
+    if not items:
+        cuerpo = f"""
+<h2>Agenda Editorial — {_e(fecha)}</h2>
+<p>Todavía no se generó la agenda para esta fecha. Ejecutá
+<code>python generar_agenda.py --fecha {_e(fecha)}</code> desde la terminal.</p>
+"""
+        return _pagina("Agenda Editorial — Ledesma Participa", cuerpo)
+
+    filas = "\n".join(_fila_agenda(item, db) for item in items)
+    cuerpo = f"""
+<h2>Agenda Editorial — {_e(fecha)}</h2>
+<table>
+<tr><th>Hora</th><th>Candidato</th><th>Territorio</th><th>Fuente</th>
+<th>Antigüedad</th><th>Riesgo</th><th>Estado</th><th>Urgente</th><th>Acciones</th></tr>
+{filas}
+</table>
+"""
+    return _pagina("Agenda Editorial — Ledesma Participa", cuerpo)
+
+
 class PanelHandler(BaseHTTPRequestHandler):
     db_path = DB_PATH_DEFAULT
     lock_path = LOCK_PATH_DEFAULT
@@ -310,6 +394,11 @@ class PanelHandler(BaseHTTPRequestHandler):
 
             if partes.path == "/estado":
                 self._responder_html(_estado_sistema_html(db, self.lock_path))
+                return
+
+            if partes.path == "/agenda":
+                fecha = query.get("fecha", [None])[0] or datetime.now(ZONA_JUJUY).strftime("%Y-%m-%d")
+                self._responder_html(_agenda_html(db, fecha))
                 return
 
             if partes.path == "/noticia":

@@ -42,7 +42,12 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(noticia.estado, Estado.PREPARADA.value)
         self.assertIsNotNone(noticia.texto_preparado)
 
-    def test_noticia_no_local_queda_descartada(self):
+    def test_noticia_nacional_sin_relevancia_local_queda_preparada(self):
+        # El Motor Editorial en cascada necesita poder usar contenido
+        # nacional cuando no hay nada local/departamental disponible:
+        # relevancia_local sigue en False (sigue significando "no es local"),
+        # pero el territorio "nacional" y la elegibilidad editorial permiten
+        # que de todos modos se prepare.
         items = [
             {
                 "titulo": "Anuncio económico nacional",
@@ -54,8 +59,31 @@ class TestPipeline(unittest.TestCase):
         ]
         resultados = ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
         noticia, resultado = resultados[0]
+        self.assertEqual(resultado, "preparada")
+        self.assertEqual(noticia.estado, Estado.PREPARADA.value)
+        self.assertEqual(noticia.territorio, "nacional")
+        self.assertFalse(noticia.relevancia_local)
+
+    def test_noticia_sin_clasificar_queda_descartada(self):
+        # Sin relación con Libertador, Ledesma, Jujuy ni referencias
+        # nacionales explícitas: nunca se prepara automáticamente.
+        items = [
+            {
+                "titulo": "Estrenó su nuevo disco el músico internacional",
+                "texto": (
+                    "El artista presentó su nuevo álbum en una gira mundial "
+                    "sin fechas confirmadas todavía."
+                ),
+                "url": "https://ejemplo.test/sin-clasificar-1",
+                "fuente": "Prueba",
+                "fecha": "2026-08-01",
+            }
+        ]
+        resultados = ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
+        noticia, resultado = resultados[0]
         self.assertEqual(resultado, "descartada")
         self.assertEqual(noticia.estado, Estado.DESCARTADA.value)
+        self.assertEqual(noticia.territorio, "sin_clasificar")
 
     def test_noticia_municipal_requiere_revision_especial(self):
         items = [
@@ -89,6 +117,25 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(resultado, "preparada")
         self.assertFalse(noticia.requiere_revision_especial)
         self.assertIsNone(noticia.categoria_riesgo)
+
+    def test_riesgo_editorial_se_preserva_en_noticia_nacional_preparada(self):
+        # El control de riesgo político/institucional (sin modificar) sigue
+        # aplicándose igual aunque la noticia sea nacional/sin relevancia_local.
+        items = [
+            {
+                "titulo": "Un diputado presentó un proyecto en el Congreso",
+                "texto": "El Gobierno nacional recibió el proyecto presentado por el diputado.",
+                "url": "https://ejemplo.test/nacional-riesgo-1",
+                "fuente": "Prueba",
+                "fecha": "2026-08-01",
+            }
+        ]
+        resultados = ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
+        noticia, resultado = resultados[0]
+        self.assertEqual(resultado, "preparada")
+        self.assertEqual(noticia.territorio, "nacional")
+        self.assertTrue(noticia.requiere_revision_especial)
+        self.assertEqual(noticia.categoria_riesgo, "politica_partidaria")
 
     def test_duplicado_no_se_almacena_dos_veces(self):
         base = {

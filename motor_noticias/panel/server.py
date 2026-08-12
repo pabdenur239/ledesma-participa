@@ -578,12 +578,15 @@ def _resultado_carga_manual_html(resultado: ResultadoIngresoManual) -> str:
 class PanelHandler(BaseHTTPRequestHandler):
     db_path = DB_PATH_DEFAULT
     lock_path = LOCK_PATH_DEFAULT
-    # Redactor para la carga manual: el mismo mecanismo de selección que usan
-    # `cli.py` y `continuo_runner.py` (`crear_redactor`, 'mock' por defecto),
-    # nunca un circuito aparte — una noticia manual usa el redactor
-    # configurado, igual que una automática. `iniciar_servidor()` puede
-    # sobrescribir esto según cómo se haya lanzado el panel.
-    redactor = crear_redactor()
+    # Redactor para la carga manual: mismo mecanismo que `cli.py` y
+    # `continuo_runner.py` (`crear_redactor`), nunca un circuito aparte — una
+    # noticia manual usa el redactor configurado, igual que una automática.
+    # El default de clase es explícitamente "mock" (sin leer config ni
+    # depender del entorno, para no instanciar nada al solo importar este
+    # módulo); `iniciar_servidor()` es quien resuelve la configuración real
+    # (config/redaccion.json, con el override de --redactor si se pasó) al
+    # arrancar el proceso, y la asigna ahí de forma explícita.
+    redactor = crear_redactor("mock")
 
     def _db(self) -> Database:
         return Database(self.db_path)
@@ -765,9 +768,11 @@ class PanelHandler(BaseHTTPRequestHandler):
 
 
 def iniciar_servidor(db_path=None, redactor=None):
+    """Punto de arranque real del panel: acá (y no al importar el módulo) se
+    resuelve el redactor configurado, si quien llama no pasó ya uno
+    explícito (p.ej. `run_panel.py` pasando el override de --redactor)."""
     PanelHandler.db_path = db_path or DB_PATH_DEFAULT
-    if redactor is not None:
-        PanelHandler.redactor = redactor
+    PanelHandler.redactor = redactor if redactor is not None else crear_redactor()
     servidor = HTTPServer((HOST, PORT), PanelHandler)
     print("Panel Ledesma Participa:")
     print(f"http://{HOST}:{PORT}")

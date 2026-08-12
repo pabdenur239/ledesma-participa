@@ -65,7 +65,13 @@ def construir_parser() -> argparse.ArgumentParser:
         help=f"Segundos entre ciclos (default: {INTERVALO_SEGUNDOS_DEFAULT})",
     )
     parser.add_argument(
-        "--redactor", choices=["mock", "ollama"], default="mock", help="Redactor a usar (default: mock)"
+        "--redactor",
+        choices=["mock", "ollama"],
+        default=None,
+        help=(
+            "Override puntual del redactor a usar (mock u Ollama local). "
+            "Si no se pasa, se usa config/redaccion.json → \"proveedor\"."
+        ),
     )
     parser.add_argument("--lock", default=str(LOCK_PATH_DEFAULT), help="Ruta al archivo de lock")
     parser.add_argument("--log", default=str(LOG_PATH_DEFAULT), help="Ruta al archivo de log")

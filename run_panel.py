@@ -10,8 +10,11 @@ def main():
     parser.add_argument(
         "--redactor",
         choices=["mock", "ollama"],
-        default="mock",
-        help="Redactor a usar para la carga manual de noticias: mock de prueba (default) u Ollama local",
+        default=None,
+        help=(
+            "Override puntual del redactor a usar para la carga manual (mock u Ollama local). "
+            "Si no se pasa, se usa config/redaccion.json → \"proveedor\"."
+        ),
     )
     args = parser.parse_args()
 

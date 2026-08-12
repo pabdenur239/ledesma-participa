@@ -11,5 +11,9 @@
   "infoyungas": {
     "nombre_fuente": "InfoYungas",
     "url": "https://www.infoyungas.com/"
+  },
+  "jujuyalmomento": {
+    "nombre_fuente": "Jujuy al Momento",
+    "url": "https://www.jujuyalmomento.com/"
   }
 }

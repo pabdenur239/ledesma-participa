@@ -4,6 +4,10 @@ from pathlib import Path
 
 from .collectors.fixtures import FixtureCollector
 from .collectors.html_infoyungas import ErrorRecoleccionInfoYungas, InfoYungasHTMLCollector
+from .collectors.html_jujuyalmomento import (
+    ErrorRecoleccionJujuyAlMomento,
+    JujuyAlMomentoHTMLCollector,
+)
 from .collectors.html_municipio_libertador import (
     ErrorRecoleccionHTML,
     MunicipioLibertadorHTMLCollector,
@@ -22,12 +26,19 @@ def main():
     parser.add_argument("--db", default=str(DB_PATH_DEFAULT), help="Ruta a la base de datos SQLite")
     parser.add_argument(
         "--fuente",
-        choices=["fixture", "rss-prensa-jujuy", "municipio-libertador", "infoyungas"],
+        choices=[
+            "fixture",
+            "rss-prensa-jujuy",
+            "municipio-libertador",
+            "infoyungas",
+            "jujuy-al-momento",
+        ],
         default="fixture",
         help=(
             "Fuente a recolectar: datos de prueba locales (default), "
             "el RSS real de Prensa Jujuy, la página real de actividades "
-            "del Municipio Libertador, o el listado real de InfoYungas"
+            "del Municipio Libertador, el listado real de InfoYungas, "
+            "o el listado real de Jujuy al Momento"
         ),
     )
     parser.add_argument(
@@ -48,13 +59,20 @@ def main():
         collector = MunicipioLibertadorHTMLCollector()
     elif args.fuente == "infoyungas":
         collector = InfoYungasHTMLCollector()
+    elif args.fuente == "jujuy-al-momento":
+        collector = JujuyAlMomentoHTMLCollector()
     else:
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
     redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
 
     try:
         resultados = ejecutar_pipeline(db, collector, redactor)
-    except (ErrorRecoleccionRSS, ErrorRecoleccionHTML, ErrorRecoleccionInfoYungas) as error:
+    except (
+        ErrorRecoleccionRSS,
+        ErrorRecoleccionHTML,
+        ErrorRecoleccionInfoYungas,
+        ErrorRecoleccionJujuyAlMomento,
+    ) as error:
         db.close()
         print(f"Error al recolectar noticias: {error}", file=sys.stderr)
         sys.exit(1)

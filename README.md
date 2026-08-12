@@ -78,6 +78,25 @@ python3 run.py --fuente infoyungas
 Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
 local (`data/fixtures/infoyungas_html_prueba.html`).
 
+## Recolección real: Jujuy al Momento (HTML)
+
+Existe un collector real para el listado de noticias de Jujuy al Momento
+(configurado en `config/fuentes.json`), medio provincial. Es una fuente
+provincial: no asigna una localidad fija, la relevancia geográfica de
+cada noticia se deriva de su contenido con el clasificador existente
+(igual que InfoYungas), lo que evita que se cuele contenido genérico de
+Jujuy sin relación con Libertador General San Martín o el Departamento
+Ledesma. El sitio no expone ninguna fecha estable en el listado, así que
+ese campo siempre queda vacío. Requiere acceso normal a internet desde
+el entorno donde se ejecute:
+
+```bash
+python3 run.py --fuente jujuy-al-momento
+```
+
+Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
+local (`data/fixtures/jujuyalmomento_html_prueba.html`).
+
 ## Redacción real: Ollama local
 
 Por defecto el pipeline redacta con `RedactorMock` (sin IA). Existe

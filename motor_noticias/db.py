@@ -94,6 +94,17 @@ COLUMNAS_TERRITORIO = {
     "urgente": "INTEGER NOT NULL DEFAULT 0",
 }
 
+# Carga manual desde el panel (Cargar noticia): campo aditivo simple para
+# distinguir origen sin migrar nada existente. `localidad_informada` es solo
+# una pista editorial auditable (no se usa para forzar la clasificación
+# territorial); `observacion_interna` es privada, nunca se muestra en el
+# contenido preparado ni público.
+COLUMNAS_INGRESO_MANUAL = {
+    "origen_ingreso": "TEXT NOT NULL DEFAULT 'automatico'",
+    "localidad_informada": "TEXT",
+    "observacion_interna": "TEXT",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -107,6 +118,7 @@ class Database:
         self._migrar_columnas(COLUMNAS_RIESGO_EDITORIAL)
         self._migrar_columnas(COLUMNAS_IMAGEN)
         self._migrar_columnas(COLUMNAS_TERRITORIO)
+        self._migrar_columnas(COLUMNAS_INGRESO_MANUAL)
 
     def _migrar_columnas(self, columnas: dict):
         columnas_existentes = {
@@ -135,8 +147,9 @@ class Database:
                 fecha_revision, titulo_revisado, texto_revisado,
                 requiere_revision_especial, motivo_revision_especial, categoria_riesgo,
                 tiene_imagen_original, imagen_publicacion_ruta, imagen_generada_automaticamente,
-                territorio, motivo_territorio, urgente
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                territorio, motivo_territorio, urgente,
+                origen_ingreso, localidad_informada, observacion_interna
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 noticia.titulo_original,
@@ -166,6 +179,9 @@ class Database:
                 noticia.territorio,
                 noticia.motivo_territorio,
                 noticia.urgente,
+                noticia.origen_ingreso,
+                noticia.localidad_informada,
+                noticia.observacion_interna,
             ),
         )
         self.conn.commit()

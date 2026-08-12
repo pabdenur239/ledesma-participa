@@ -16,6 +16,11 @@ class RevisionEstado(str, Enum):
     RECHAZADA = "rechazada"
 
 
+class OrigenIngreso(str, Enum):
+    AUTOMATICO = "automatico"
+    MANUAL = "manual"
+
+
 @dataclass
 class Noticia:
     id: Optional[int]
@@ -46,3 +51,6 @@ class Noticia:
     territorio: Optional[str] = None
     motivo_territorio: Optional[str] = None
     urgente: bool = False
+    origen_ingreso: str = OrigenIngreso.AUTOMATICO.value
+    localidad_informada: Optional[str] = None
+    observacion_interna: Optional[str] = None

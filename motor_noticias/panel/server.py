@@ -10,9 +10,11 @@ from ..alertas import NIVEL_ERROR, calcular_alertas
 from ..ciclo_continuo import NOMBRE_SALUD_AGENDA, agenda_automatica_habilitada
 from ..continuo_runner import LOCK_PATH_DEFAULT
 from ..db import Database
+from ..ingreso_manual import ErrorIngresoManual, ResultadoIngresoManual, cargar_noticia_manual
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
-from ..models import Estado, RevisionEstado
+from ..models import Estado, OrigenIngreso, RevisionEstado
 from ..motor_editorial import HORARIOS_DEFAULT, ZONA_JUJUY
+from ..redaccion.mock import RedactorMock
 
 # El panel es exclusivamente local: se enlaza siempre a 127.0.0.1, nunca a
 # 0.0.0.0 ni a una dirección configurable, para que no sea accesible desde
@@ -21,6 +23,11 @@ HOST = "127.0.0.1"
 PORT = 8000
 
 DB_PATH_DEFAULT = Path(__file__).resolve().parent.parent.parent / "data" / "ledesma_participa.db"
+
+# Tope defensivo del cuerpo del POST de "Cargar noticia" (los límites reales
+# por campo los valida `ingreso_manual`; esto solo evita leer un cuerpo
+# arbitrariamente grande en memoria antes de llegar a esa validación).
+LONGITUD_MAXIMA_CUERPO_POST_CARGA = 200_000
 
 FILTROS_VALIDOS = ("pendientes", "aprobadas", "rechazadas", "todas")
 FILTRO_A_REVISION_ESTADO = {
@@ -72,13 +79,25 @@ th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
 .alerta-advertencia {{ background: #fff3cd; border: 1px solid #b8860b; }}
 .alerta-error {{ background: #fdecea; border: 1px solid #c62828; }}
 .etiqueta-urgente {{ background: #b71c1c; color: #fff; padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: bold; }}
+.etiqueta-manual {{ background: #6a1b9a; color: #fff; padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: bold; }}
 form.acciones-en-linea {{ display: inline; }}
 form.acciones-en-linea button {{ margin-right: 0.3rem; }}
+label {{ display: block; margin-top: 0.75rem; font-weight: bold; }}
+.ayuda-campo {{ font-weight: normal; color: #555; font-size: 0.85em; }}
+.error-formulario {{
+  color: #c62828; font-weight: bold; border: 2px solid #c62828;
+  padding: 0.5rem; margin: 0.5rem 0; background: #fdecea;
+}}
+.resultado-carga {{ border: 1px solid #ccc; padding: 1rem; margin: 1rem 0; }}
+.acciones-resultado a {{
+  display: inline-block; margin: 0.3rem 0.5rem 0.3rem 0; padding: 0.4rem 0.8rem;
+  border: 1px solid #ccc; border-radius: 3px; text-decoration: none; color: inherit;
+}}
 </style>
 </head>
 <body>
 <h1><a href="/" style="text-decoration:none;color:inherit;">Ledesma Participa — Panel de revisión</a></h1>
-<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a></nav>
+<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a> | <a href="/cargar-noticia">Cargar noticia</a></nav>
 {cuerpo}
 </body>
 </html>"""
@@ -100,10 +119,16 @@ def _enlace_facebook(n: dict) -> str:
     return f'<p><a href="/facebook?id={n["id"]}">Preparar publicación Facebook (modo prueba)</a></p>'
 
 
+def _etiqueta_manual(n: dict) -> str:
+    if n.get("origen_ingreso") != OrigenIngreso.MANUAL.value:
+        return ""
+    return ' <span class="etiqueta-manual">MANUAL</span>'
+
+
 def _tarjeta_noticia(n: dict) -> str:
     return f"""<div class="noticia">
 {_advertencia_riesgo(n)}
-<p><strong>Título original:</strong> {_e(n['titulo_original'])}</p>
+<p><strong>Título original:</strong> {_e(n['titulo_original'])}{_etiqueta_manual(n)}</p>
 <p><strong>Texto original:</strong> {_e(n['texto_original'])}</p>
 <p><strong>Fuente:</strong> {_e(n['nombre_fuente'])} — <strong>Localidad:</strong> {_e(n['localidad'])}</p>
 <p><strong>Título preparado:</strong> {_e(n['titulo_preparado'])}</p>
@@ -387,7 +412,7 @@ def _fila_agenda(item: dict, db: Database) -> str:
     urgente = "sí" if noticia["urgente"] else "no"
     return f"""<tr>
 <td>{etiqueta_hora}</td>
-<td>{_e(candidato)}</td>
+<td>{_e(candidato)}{_etiqueta_manual(noticia)}</td>
 <td>{_e(item['territorio'])}</td>
 <td>{_e(noticia['nombre_fuente'])}</td>
 <td>{_antiguedad_legible(noticia['fecha_recoleccion'])}</td>
@@ -421,9 +446,142 @@ def _agenda_html(db: Database, fecha: str) -> str:
     return _pagina("Agenda Editorial — Ledesma Participa", cuerpo)
 
 
+CAMPOS_FORMULARIO_MANUAL = (
+    "fuente",
+    "url",
+    "titulo",
+    "texto",
+    "fecha_origen",
+    "localidad_informada",
+    "imagen_url",
+    "observacion_interna",
+)
+
+
+def _formulario_carga_manual_html(mensaje_error: Optional[str] = None, valores: Optional[dict] = None) -> str:
+    valores = valores or {}
+    v = {campo: _e(valores.get(campo, "")) for campo in CAMPOS_FORMULARIO_MANUAL}
+    urgente_marcado = "checked" if valores.get("urgente") else ""
+    aviso_error = f'<p class="error-formulario">{_e(mensaje_error)}</p>' if mensaje_error else ""
+
+    cuerpo = f"""
+<h2>Cargar noticia</h2>
+<p>Para noticias de fuentes que hoy no se pueden automatizar de forma
+estable (Ledesma Soy, FM Imagen, Canal 6, radios locales, Facebook,
+WhatsApp, comunicados, vecinos, etc.). Pegá el texto y, si lo tenés, el
+enlace — el sistema no descarga ni scrapea nada, solo guarda la
+referencia. La noticia pasa por el mismo circuito editorial que las
+automáticas: no se publica nada.</p>
+{aviso_error}
+<form method="post" action="/cargar-noticia">
+<label>Fuente (obligatorio):<br>
+<span class="ayuda-campo">Ej: Ledesma Soy, FM Imagen, Canal 6, Vecino, Municipalidad, Policía, Otro.</span><br>
+<input type="text" name="fuente" maxlength="150" value="{v['fuente']}" required></label>
+
+<label>URL de origen (opcional):<br>
+<span class="ayuda-campo">Enlace de Facebook, sitio web, publicación o comunicado. Solo se guarda como referencia.</span><br>
+<input type="text" name="url" maxlength="2000" value="{v['url']}"></label>
+
+<label>Título original (opcional):<br>
+<input type="text" name="titulo" maxlength="500" value="{v['titulo']}"></label>
+
+<label>Texto original (obligatorio):<br>
+<textarea name="texto" maxlength="20000" required>{v['texto']}</textarea></label>
+
+<label>Fecha/hora de la información (opcional):<br>
+<span class="ayuda-campo">Si no la sabés, dejá vacío: se va a registrar la fecha/hora de esta carga.</span><br>
+<input type="text" name="fecha_origen" maxlength="100" value="{v['fecha_origen']}"
+placeholder="Ej: 12/08/2026 18:30"></label>
+
+<label>Localidad (opcional):<br>
+<span class="ayuda-campo">Pista editorial para auditoría. Ej: Libertador General San Martín, Calilegua,
+Caimancito, Fraile Pintado, Yuto, otra. No fuerza la clasificación automática.</span><br>
+<input type="text" name="localidad_informada" maxlength="150" value="{v['localidad_informada']}"></label>
+
+<label>Imagen — URL directa (opcional):<br>
+<span class="ayuda-campo">Solo si tenés un enlace de imagen directamente usable. No se descarga.
+Si no hay, se usa la placa automática existente.</span><br>
+<input type="text" name="imagen_url" maxlength="2000" value="{v['imagen_url']}"></label>
+
+<label><input type="checkbox" name="urgente" value="1" {urgente_marcado}> Urgente</label>
+
+<label>Observación interna (opcional):<br>
+<span class="ayuda-campo">Privada, para revisión — no se muestra públicamente ni entra al texto preparado.
+Ej: "confirmar con otra fuente", "dato recibido por WhatsApp".</span><br>
+<textarea name="observacion_interna" maxlength="2000">{v['observacion_interna']}</textarea></label>
+
+<br>
+<button type="submit">Guardar</button>
+</form>
+"""
+    return _pagina("Cargar noticia — Ledesma Participa", cuerpo)
+
+
+def _resultado_carga_manual_html(resultado: ResultadoIngresoManual) -> str:
+    if resultado.duplicado:
+        cuerpo = """
+<h2>Cargar noticia</h2>
+<p class="error-formulario">Esta noticia ya existe o coincide con una noticia ingresada anteriormente.</p>
+<p class="acciones-resultado"><a href="/cargar-noticia">Cargar otra noticia</a></p>
+"""
+        return _pagina("Cargar noticia — Ledesma Participa", cuerpo)
+
+    riesgo = "SÍ" if resultado.requiere_revision_especial else "no"
+    urgente = "sí" if resultado.urgente else "no"
+
+    if resultado.estado == Estado.PREPARADA.value:
+        estado_legible = f"preparada — revisión: {_e(resultado.revision_estado)}"
+        acciones_extra = f'<a href="/noticia?id={resultado.noticia_id}">Ver noticia</a><a href="/?filtro=pendientes">Ir a Revisión</a><a href="/agenda">Ir a Agenda Editorial</a>'
+        motivo_html = ""
+    else:
+        estado_legible = "descartada (no elegible)"
+        acciones_extra = ""
+        motivo_html = (
+            f"<p><strong>Motivo:</strong> {_e(resultado.motivo_territorio)}</p>"
+            if resultado.territorio == "sin_clasificar"
+            else "<p><strong>Motivo:</strong> no superó el control mínimo de calidad editorial "
+            "(contenido insuficiente, publicitario o no periodístico).</p>"
+        )
+
+    advertencia_agenda = ""
+    if resultado.agenda_actualizada is False:
+        advertencia_agenda = (
+            '<p class="error-formulario">La noticia se guardó correctamente, pero no se pudo '
+            f"actualizar la Agenda Editorial automáticamente: {_e(resultado.agenda_mensaje_error)}. "
+            "Podés actualizarla manualmente desde <code>generar_agenda.py</code>.</p>"
+        )
+    en_agenda = "sí" if resultado.agenda_actualizada else ("no" if resultado.agenda_actualizada is False else "—")
+
+    cuerpo = f"""
+<h2>Cargar noticia — resultado</h2>
+<div class="resultado-carga">
+<p><strong>Noticia guardada</strong> <span class="etiqueta-manual">MANUAL</span></p>
+<p><strong>Fuente:</strong> {_e(resultado.fuente)}</p>
+<p><strong>Origen:</strong> MANUAL</p>
+<p><strong>Título:</strong> {_e(resultado.titulo_original)}</p>
+<p><strong>Territorio detectado:</strong> {_e(resultado.territorio)}</p>
+<p><strong>Estado:</strong> {estado_legible}</p>
+<p><strong>Riesgo editorial:</strong> {riesgo}</p>
+<p><strong>Urgente:</strong> {urgente}</p>
+<p><strong>¿Entró a la Agenda Editorial?:</strong> {en_agenda}</p>
+{motivo_html}
+</div>
+{advertencia_agenda}
+<p class="acciones-resultado">
+{acciones_extra}
+<a href="/cargar-noticia">Cargar otra noticia</a>
+</p>
+"""
+    return _pagina("Cargar noticia — Ledesma Participa", cuerpo)
+
+
 class PanelHandler(BaseHTTPRequestHandler):
     db_path = DB_PATH_DEFAULT
     lock_path = LOCK_PATH_DEFAULT
+    # Redacción para la carga manual: siempre el mock local (sin IA externa).
+    # El panel no depende de que Ollama esté corriendo para poder cargar una
+    # noticia manual.
+    redactor = RedactorMock()
 
     def _db(self) -> Database:
         return Database(self.db_path)
@@ -476,6 +634,10 @@ class PanelHandler(BaseHTTPRequestHandler):
                     self._responder_html(_detalle_html(noticia))
                 return
 
+            if partes.path == "/cargar-noticia":
+                self._responder_html(_formulario_carga_manual_html())
+                return
+
             if partes.path == "/facebook":
                 id_texto = query.get("id", [None])[0]
                 noticia = db.obtener(int(id_texto)) if id_texto and id_texto.isdigit() else None
@@ -500,6 +662,11 @@ class PanelHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         partes = urllib.parse.urlsplit(self.path)
+
+        if partes.path == "/cargar-noticia":
+            self._post_cargar_noticia()
+            return
+
         if partes.path != "/noticia":
             self._no_encontrada()
             return
@@ -546,6 +713,47 @@ class PanelHandler(BaseHTTPRequestHandler):
                 fecha_revision=fecha_revision,
             )
             self._redirigir(f"/noticia?id={id_noticia}")
+        finally:
+            db.close()
+
+    def _post_cargar_noticia(self) -> None:
+        longitud = int(self.headers.get("Content-Length", 0) or 0)
+        if longitud <= 0 or longitud > LONGITUD_MAXIMA_CUERPO_POST_CARGA:
+            self._responder_html(
+                _pagina("Error", "<p>Formulario inválido o demasiado grande.</p>"), status=413
+            )
+            return
+
+        cuerpo_peticion = self.rfile.read(longitud).decode("utf-8", errors="replace")
+        datos = urllib.parse.parse_qs(cuerpo_peticion)
+
+        def _campo(nombre: str) -> str:
+            return datos.get(nombre, [""])[0].strip()
+
+        valores = {campo: _campo(campo) for campo in CAMPOS_FORMULARIO_MANUAL}
+        valores["urgente"] = _campo("urgente") == "1"
+
+        db = self._db()
+        try:
+            try:
+                resultado = cargar_noticia_manual(
+                    db,
+                    self.redactor,
+                    fuente=valores["fuente"],
+                    texto=valores["texto"],
+                    url=valores["url"] or None,
+                    titulo=valores["titulo"] or None,
+                    fecha_origen=valores["fecha_origen"] or None,
+                    localidad_informada=valores["localidad_informada"] or None,
+                    imagen_url=valores["imagen_url"] or None,
+                    urgente=valores["urgente"],
+                    observacion_interna=valores["observacion_interna"] or None,
+                )
+            except ErrorIngresoManual as error:
+                self._responder_html(_formulario_carga_manual_html(str(error), valores), status=400)
+                return
+
+            self._responder_html(_resultado_carga_manual_html(resultado))
         finally:
             db.close()
 

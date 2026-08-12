@@ -1,4 +1,4 @@
-# start_motor.ps1 — inicia el Motor Continuo (run_continuo.py) con el
+﻿# start_motor.ps1 - inicia el Motor Continuo (run_continuo.py) con el
 # intérprete Python real del proyecto y el WorkingDirectory correcto, sin
 # depender del directorio actual del Programador de tareas.
 #

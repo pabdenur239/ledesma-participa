@@ -1,4 +1,4 @@
-# uninstall_tasks.ps1 — elimina EXCLUSIVAMENTE las dos tareas programadas de
+﻿# uninstall_tasks.ps1 - elimina EXCLUSIVAMENTE las dos tareas programadas de
 # Ledesma Participa. No toca el proyecto, la base de datos, los logs,
 # Ollama, los modelos ni Python.
 

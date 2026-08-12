@@ -1,4 +1,4 @@
-# status.ps1 — diagnóstico de solo lectura. No registra, desregistra, ni
+﻿# status.ps1 - diagnóstico de solo lectura. No registra, desregistra, ni
 # inicia/detiene nada. Seguro para correr en cualquier momento.
 
 . (Join-Path $PSScriptRoot "common.ps1")

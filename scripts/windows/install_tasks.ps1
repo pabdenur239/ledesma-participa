@@ -1,9 +1,9 @@
-# install_tasks.ps1 — registra las tareas programadas de Ledesma Participa
+﻿# install_tasks.ps1 - registra las tareas programadas de Ledesma Participa
 # para el usuario actual (sesión interactiva, sin guardar ninguna
 # contraseña). Reproducible: se puede correr de nuevo (usa -Force) sin
 # duplicar tareas.
 #
-# Trigger: al iniciar sesión el usuario actual (AtLogOn) — no AtStartup, para
+# Trigger: al iniciar sesión el usuario actual (AtLogOn) - no AtStartup, para
 # no complicar el arranque de Ollama ni depender de que el perfil de usuario
 # ya esté cargado.
 #
@@ -23,7 +23,7 @@ $TareaPanel = "LedesmaParticipa-Panel"
 $DelayMotor = "PT30S"   # 30 segundos
 $DelayPanel = "PT45S"   # levemente posterior al Motor
 
-# Reintentos ante fallo: 3 intentos, cada 2 minutos — evita "restart storms"
+# Reintentos ante fallo: 3 intentos, cada 2 minutos - evita "restart storms"
 # sin dejar de recuperarse ante un fallo puntual.
 $RestartCount = 3
 $RestartInterval = (New-TimeSpan -Minutes 2)

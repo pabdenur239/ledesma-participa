@@ -1,4 +1,4 @@
-# check_ollama.ps1 — verifica que Ollama esté disponible y que el modelo
+﻿# check_ollama.ps1 - verifica que Ollama esté disponible y que el modelo
 # configurado (config/redaccion.json) esté instalado, con reintentos
 # acotados por si Ollama todavía está arrancando. NO instala ni descarga
 # nada. NO reemplaza Ollama por otro motor si falla: solo lo registra.

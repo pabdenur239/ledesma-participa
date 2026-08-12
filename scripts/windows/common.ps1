@@ -1,4 +1,4 @@
-# common.ps1 — funciones y rutas compartidas por todos los scripts de
+﻿# common.ps1 - funciones y rutas compartidas por todos los scripts de
 # producción de Ledesma Participa en Windows. Nunca hardcodea la ruta del
 # proyecto ni del intérprete Python: ambas se resuelven dinámicamente a
 # partir de la ubicación de este mismo archivo (scripts/windows/), así el
@@ -34,7 +34,7 @@ function Write-Log {
     <#
     Escribe una línea con fecha/hora en logs/<LogFile>. Rotación simple: si
     el archivo supera ~5 MB se archiva como <LogFile>.1 (se pisa el anterior
-    .1 si ya existía) y se empieza uno nuevo — evita crecimiento infinito
+    .1 si ya existía) y se empieza uno nuevo - evita crecimiento infinito
     sin infraestructura de logging adicional.
     #>
     param(

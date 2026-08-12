@@ -7,14 +7,42 @@ ausencia de contraseñas/secretos, bind exclusivo a 127.0.0.1, y que
 status.ps1/uninstall_tasks.ps1 sean seguros (solo lectura / alcance acotado).
 """
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts" / "windows"
 
+# UTF-8 BOM: Windows PowerShell 5.1 (a diferencia de PowerShell 7+) solo
+# detecta un archivo .ps1 como UTF-8 de forma confiable si empieza con este
+# BOM; sin él, lee el archivo con la codificación ANSI del sistema y corrompe
+# cualquier caracter no ASCII (mojibake), lo que puede llegar a romper el
+# parseo si el resultado se parece a una comilla u otro caracter con
+# significado sintáctico.
+BOM_UTF8 = b"\xef\xbb\xbf"
+
+# Caracteres tipográficos que se evitan a propósito en estos scripts (aunque
+# el archivo ya esté bien codificado) para minimizar cualquier fricción con
+# parsers/editores más viejos: comillas curvas y guiones Unicode. Los
+# caracteres acentuados del español (á, é, í, ó, ú, ñ, ¿, ¡) sí se conservan:
+# son parte del idioma del proyecto, no "caracteres tipográficos innecesarios".
+CARACTERES_TIPOGRAFICOS_A_EVITAR = (
+    "—",  # em dash —
+    "–",  # en dash –
+    "‘",  # comilla simple izquierda '
+    "’",  # comilla simple derecha '
+    "“",  # comilla doble izquierda "
+    "”",  # comilla doble derecha "
+)
+
+PWSH = shutil.which("pwsh")
+
 
 def _leer(nombre: str) -> str:
-    return (SCRIPTS_DIR / nombre).read_text(encoding="utf-8")
+    # utf-8-sig: los .ps1 llevan BOM (lo necesita Windows PowerShell 5.1);
+    # se lo descarta acá para que las comparaciones de contenido no lo vean.
+    return (SCRIPTS_DIR / nombre).read_text(encoding="utf-8-sig")
 
 
 class TestArchivosExisten(unittest.TestCase):
@@ -32,6 +60,86 @@ class TestArchivosExisten(unittest.TestCase):
                 self.assertTrue((SCRIPTS_DIR / nombre).exists(), f"falta {nombre}")
 
 
+class TestCodificacionCompatibleConWindowsPowerShell51(unittest.TestCase):
+    """Bug real reportado desde Windows: PowerShell 5.1 interpretaba los
+    .ps1 (UTF-8 sin BOM) con la codificación ANSI del sistema, produciendo
+    mojibake ("finalizÃ³") y en algún punto un error de parseo (comilla sin
+    terminar). La causa confirmada es la falta de BOM; la corrección es
+    guardarlos como UTF-8 con BOM y evitar además guiones/comillas Unicode
+    en los mensajes, aunque no sean la causa raíz."""
+
+    def test_todos_los_ps1_tienen_bom_utf8(self):
+        archivos = list(SCRIPTS_DIR.glob("*.ps1"))
+        self.assertTrue(archivos, "no se encontraron archivos .ps1 para verificar")
+        for archivo in archivos:
+            with self.subTest(archivo=archivo.name):
+                inicio = archivo.read_bytes()[:3]
+                self.assertEqual(
+                    inicio, BOM_UTF8, f"{archivo.name} no empieza con BOM UTF-8 (PowerShell 5.1 lo necesita)"
+                )
+
+    def test_ningun_ps1_tiene_guiones_o_comillas_unicode(self):
+        for archivo in SCRIPTS_DIR.glob("*.ps1"):
+            contenido = archivo.read_text(encoding="utf-8-sig")
+            for caracter in CARACTERES_TIPOGRAFICOS_A_EVITAR:
+                with self.subTest(archivo=archivo.name, caracter=repr(caracter)):
+                    self.assertNotIn(caracter, contenido)
+
+    def test_los_acentos_del_espanol_se_conservan(self):
+        # La corrección es de codificación, no de idioma: los acentos
+        # siguen presentes (y ahora se van a leer bien en PowerShell 5.1).
+        contenido = _leer("common.ps1")
+        self.assertTrue(any(c in contenido for c in "áéíóúñ"))
+
+    @unittest.skipUnless(PWSH, "pwsh no disponible en este entorno: se omite la validación con el parser real")
+    def test_todos_los_ps1_parsean_sin_errores_con_powershell_real(self):
+        for archivo in SCRIPTS_DIR.glob("*.ps1"):
+            with self.subTest(archivo=archivo.name):
+                comando = (
+                    "$errores = $null; $tokens = $null; "
+                    f"[System.Management.Automation.Language.Parser]::ParseFile('{archivo}', [ref]$tokens, [ref]$errores) "
+                    "| Out-Null; "
+                    "if ($errores.Count -gt 0) { $errores | ForEach-Object { Write-Error $_.Message }; exit 1 } "
+                    "else { exit 0 }"
+                )
+                resultado = subprocess.run(
+                    [PWSH, "-NoProfile", "-NonInteractive", "-Command", comando],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(
+                    resultado.returncode, 0, f"{archivo.name} tiene errores de parseo:\n{resultado.stderr}"
+                )
+
+    @unittest.skipUnless(PWSH, "pwsh no disponible en este entorno: se omite la validación funcional real")
+    def test_common_ps1_se_puede_dot_sourcear_y_escribir_log(self):
+        # Prueba funcional real (no solo sintáctica): dot-source de
+        # common.ps1 y una escritura de log con acentos, con el propio
+        # intérprete de PowerShell.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            comando = (
+                f". '{SCRIPTS_DIR / 'common.ps1'}'; "
+                "Write-Log -LogFile 'prueba.log' -Mensaje 'codigo finalizo rotacion con acentos: áéíóú'; "
+                f"Get-Content (Join-Path (Get-ProjectRoot) 'logs/prueba.log')"
+            )
+            resultado = subprocess.run(
+                [PWSH, "-NoProfile", "-NonInteractive", "-Command", comando],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(SCRIPTS_DIR.parent.parent),
+            )
+            self.assertEqual(resultado.returncode, 0, resultado.stderr)
+            self.assertIn("áéíóú", resultado.stdout)
+            # limpieza: no versionar el log real generado por la prueba
+            logs_dir = SCRIPTS_DIR.parent.parent / "logs"
+            if logs_dir.exists():
+                shutil.rmtree(logs_dir)
+
+
 # 1. resolución de rutas
 class TestResolucionDeRutas(unittest.TestCase):
     def test_common_resuelve_projectroot_dinamicamente(self):
@@ -47,7 +155,7 @@ class TestResolucionDeRutas(unittest.TestCase):
     def test_ningun_script_hardcodea_la_ruta_del_usuario(self):
         for archivo in SCRIPTS_DIR.glob("*.ps1"):
             with self.subTest(archivo=archivo.name):
-                contenido = archivo.read_text(encoding="utf-8")
+                contenido = archivo.read_text(encoding="utf-8-sig")
                 self.assertNotIn(r"C:\Users", contenido)
                 self.assertNotIn("benic", contenido)
 
@@ -64,7 +172,7 @@ class TestConfiguracionCompartida(unittest.TestCase):
         # La función se define una sola vez, en common.ps1.
         definiciones = 0
         for archivo in SCRIPTS_DIR.glob("*.ps1"):
-            contenido = archivo.read_text(encoding="utf-8")
+            contenido = archivo.read_text(encoding="utf-8-sig")
             definiciones += len(re.findall(r"function\s+Get-ProjectPython", contenido))
         self.assertEqual(definiciones, 1)
 
@@ -161,7 +269,7 @@ class TestSinCredenciales(unittest.TestCase):
             "secret=",
         )
         for archivo in SCRIPTS_DIR.glob("*.ps1"):
-            contenido = archivo.read_text(encoding="utf-8").lower()
+            contenido = archivo.read_text(encoding="utf-8-sig").lower()
             for patron in patrones_prohibidos:
                 with self.subTest(archivo=archivo.name, patron=patron):
                     self.assertNotIn(patron, contenido)
@@ -177,7 +285,7 @@ class TestBindLocalhost(unittest.TestCase):
     def test_ningun_script_menciona_0_0_0_0(self):
         for archivo in SCRIPTS_DIR.glob("*.ps1"):
             with self.subTest(archivo=archivo.name):
-                self.assertNotIn("0.0.0.0", archivo.read_text(encoding="utf-8"))
+                self.assertNotIn("0.0.0.0", archivo.read_text(encoding="utf-8-sig"))
 
     def test_panel_server_sigue_atado_a_127_0_0_1(self):
         from motor_noticias.panel.server import HOST
@@ -187,7 +295,7 @@ class TestBindLocalhost(unittest.TestCase):
     def test_ningun_script_abre_firewall_ni_reglas_de_red(self):
         patrones = ("New-NetFirewallRule", "netsh advfirewall", "portproxy")
         for archivo in SCRIPTS_DIR.glob("*.ps1"):
-            contenido = archivo.read_text(encoding="utf-8")
+            contenido = archivo.read_text(encoding="utf-8-sig")
             for patron in patrones:
                 with self.subTest(archivo=archivo.name, patron=patron):
                     self.assertNotIn(patron, contenido)

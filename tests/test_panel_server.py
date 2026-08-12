@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timezone
 from http.server import HTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import urlencode
 
 from motor_noticias.db import Database
@@ -498,6 +498,21 @@ class TestEstadoDelSistema(unittest.TestCase):
         _, cuerpo = self._get("/estado")
 
         self.assertIn("Sin alertas activas.", cuerpo)
+
+    def test_estado_muestra_ollama_no_disponible_si_no_responde(self):
+        # En este entorno de test no hay ningún Ollama real corriendo: debe
+        # mostrarse "no disponible" sin que /estado falle ni se cuelgue.
+        _, cuerpo = self._get("/estado")
+        self.assertIn("<strong>Ollama:</strong> no disponible", cuerpo)
+
+    def test_estado_muestra_ollama_disponible_si_responde(self):
+        respuesta = MagicMock()
+        respuesta.__enter__.return_value = respuesta
+        respuesta.__exit__.return_value = False
+        respuesta.read.return_value = b'{"models": [{"name": "qwen3:1.7b"}]}'
+        with patch("motor_noticias.panel.server.urllib.request.urlopen", return_value=respuesta):
+            _, cuerpo = self._get("/estado")
+        self.assertIn("<strong>Ollama:</strong> disponible", cuerpo)
 
 
 class TestAgendaEditorial(unittest.TestCase):

@@ -1,6 +1,9 @@
 import base64
 import html
+import json
+import urllib.error
 import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -15,6 +18,10 @@ from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, OrigenIngreso, RevisionEstado
 from ..motor_editorial import HORARIOS_DEFAULT, ZONA_JUJUY
 from ..redaccion import crear_redactor
+from ..redaccion import _cargar_config_redaccion
+
+# Timeout corto: /estado nunca debe quedar colgado esperando a Ollama.
+TIMEOUT_ESTADO_OLLAMA_SEGUNDOS = 2
 
 # El panel es exclusivamente local: se enlaza siempre a 127.0.0.1, nunca a
 # 0.0.0.0 ni a una dirección configurable, para que no sea accesible desde
@@ -327,6 +334,23 @@ def _seccion_agenda_automatica_html(db: Database) -> str:
 """
 
 
+def _estado_ollama() -> str:
+    """Chequeo liviano y puramente informativo para /estado: reutiliza la
+    misma config/redaccion.json que ya lee `crear_redactor`/`RedactorOllama`
+    (sin duplicar valores) e intenta una consulta corta a la API de Ollama.
+    Nunca cambia nada ni sustituye el redactor configurado — un fallo acá
+    solo se muestra como "no disponible", no interrumpe la carga de /estado."""
+    try:
+        config = _cargar_config_redaccion()
+        endpoint = config.get("endpoint") or "http://127.0.0.1:11434/api/chat"
+        base = endpoint.rsplit("/api/", 1)[0]
+        with urllib.request.urlopen(f"{base}/api/tags", timeout=TIMEOUT_ESTADO_OLLAMA_SEGUNDOS) as resp:
+            json.loads(resp.read().decode("utf-8"))
+        return "disponible"
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return "no disponible"
+
+
 def _estado_sistema_html(db: Database, lock_path: Path) -> str:
     motor_activo = lock_path.exists()
     ultimo_ciclo = db.ultimo_ciclo()
@@ -341,6 +365,7 @@ def _estado_sistema_html(db: Database, lock_path: Path) -> str:
 <p><strong>Próxima ejecución aproximada:</strong> {_e(_proxima_ejecucion_aproximada(ultimo_ciclo)) or "sin datos aún"}</p>
 <p><strong>Noticias nuevas en última ejecución:</strong> {ultimo_ciclo['total_noticias_nuevas'] if ultimo_ciclo else "sin datos aún"}</p>
 <p><strong>Última noticia local recibida:</strong> {_e(db.ultima_noticia_relevante_fecha()) or "sin datos aún"}</p>
+<p><strong>Ollama:</strong> {_e(_estado_ollama())}</p>
 """
 
     if alertas:

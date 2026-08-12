@@ -408,3 +408,49 @@ Facebook del panel (`/facebook?id=...`) embebe ese PNG (como
 genera incluso para noticias con riesgo político/institucional, ya que
 solo habilita la previsualización en DRY RUN, nunca publicación real,
 y nunca reemplaza la revisión humana.
+
+## Producción local en Windows
+
+Scripts en `scripts/windows/` para que el Motor Continuo y el Panel
+arranquen solos al iniciar sesión en Windows, vía el Programador de
+tareas (sin instalar nada de terceros). Resuelven la ruta del proyecto
+y del intérprete Python dinámicamente (no hay rutas hardcodeadas), y
+nunca reemplazan Ollama por `RedactorMock` si falla — solo lo
+registran.
+
+**Instalar** (PowerShell, una vez):
+```powershell
+.\scripts\windows\install_tasks.ps1
+```
+Registra `LedesmaParticipa-Motor` y `LedesmaParticipa-Panel`, disparadas
+al iniciar sesión (con un pequeño retraso para darle tiempo a Ollama),
+con reintento automático ante fallo.
+
+**Estado:**
+```powershell
+.\scripts\windows\status.ps1
+```
+Diagnóstico de solo lectura: tareas, Ollama, Panel, rutas detectadas.
+
+**Panel:** `http://127.0.0.1:8000` (exclusivamente local).
+
+**Detener temporalmente:**
+```powershell
+Stop-ScheduledTask -TaskName "LedesmaParticipa-Motor"
+Stop-ScheduledTask -TaskName "LedesmaParticipa-Panel"
+```
+
+**Reiniciar:**
+```powershell
+Start-ScheduledTask -TaskName "LedesmaParticipa-Motor"
+Start-ScheduledTask -TaskName "LedesmaParticipa-Panel"
+```
+
+**Desinstalar tareas** (no toca el proyecto, la base de datos, los logs
+ni Ollama):
+```powershell
+.\scripts\windows\uninstall_tasks.ps1
+```
+
+**Logs:** `logs/` (`motor_continuo.log`, `panel.log`, `startup.log`,
+`ollama_check.log`), con rotación simple cuando superan ~5 MB.

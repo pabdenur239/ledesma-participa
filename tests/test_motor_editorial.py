@@ -236,6 +236,23 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
     """Una propuesta sin decisión humana (revision_estado='pendiente') puede
     mejorarse automáticamente al regenerar; aprobada/rechazada/publicada no."""
 
+    def test_candidato_asignado_automaticamente_queda_persistido_como_pendiente(self):
+        # No existe un estado "propuesta" separado en el modelo de datos: una
+        # candidata elegida por la cascada, antes de cualquier decisión
+        # humana, se persiste con revision_estado="pendiente" (el mismo valor
+        # que ya usaba el resto del panel). El motor la trata como
+        # reemplazable automáticamente precisamente porque no es ni
+        # "aprobada" ni "rechazada" (lista de protegidos), no porque exista
+        # un valor "propuesta" explícito.
+        local = _crear_noticia(self.db, "local")
+
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        item = self.db.obtener_agenda_item("2026-08-12", "08:00")
+        self.assertEqual(item["noticia_id"], local.id)
+        guardada = self.db.obtener(item["noticia_id"])
+        self.assertEqual(guardada["revision_estado"], "pendiente")
+
     def test_propuesta_provincial_reemplazada_por_local(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
         generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)

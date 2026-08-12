@@ -12,6 +12,8 @@ from .collectors.html_municipio_libertador import (
     MunicipioLibertadorHTMLCollector,
 )
 from .collectors.html_tribuno_jujuy import ErrorRecoleccionTribunoJujuy, TribunoJujuyHTMLCollector
+from .collectors.rss_infobae import ErrorRecoleccionInfobae, InfobaeRSSCollector
+from .collectors.rss_lanacion import ErrorRecoleccionLaNacion, LaNacionRSSCollector
 from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
 from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
@@ -35,6 +37,8 @@ FUENTES_CONTINUAS = (
     ("tribuno-jujuy", TribunoJujuyHTMLCollector, ErrorRecoleccionTribunoJujuy),
     ("todojujuy", TodoJujuyRSSCollector, ErrorRecoleccionTodoJujuy),
     ("somos-jujuy", SomosJujuyRSSCollector, ErrorRecoleccionSomosJujuy),
+    ("la-nacion", LaNacionRSSCollector, ErrorRecoleccionLaNacion),
+    ("infobae", InfobaeRSSCollector, ErrorRecoleccionInfobae),
 )
 
 

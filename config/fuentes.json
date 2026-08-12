@@ -27,5 +27,13 @@
   "somos_jujuy": {
     "nombre_fuente": "Somos Jujuy",
     "url": "https://www.somosjujuy.com.ar/feed/"
+  },
+  "la_nacion": {
+    "nombre_fuente": "La Nación",
+    "url": "https://www.lanacion.com.ar/arc/outboundfeeds/rss/"
+  },
+  "infobae": {
+    "nombre_fuente": "Infobae",
+    "url": "https://www.infobae.com/arc/outboundfeeds/rss/"
   }
 }

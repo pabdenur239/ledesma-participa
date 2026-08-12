@@ -159,6 +159,40 @@ python3 run.py --fuente somos-jujuy
 Las pruebas automáticas no acceden al feed real: usan un fixture XML
 local (`data/fixtures/somosjujuy_rss_prueba.xml`).
 
+## Recolección real: La Nación e Infobae (RSS nacionales)
+
+Existen collectors reales para los feeds RSS de La Nación e Infobae
+(configurados en `config/fuentes.json`), ambos medios nacionales sobre
+la plataforma Arc XP y por lo tanto con el mismo dialecto RSS —
+comparten un mismo módulo de parseo (`motor_noticias/collectors/rss_arc_nacional.py`).
+Ninguna noticia de estas fuentes se marca como "nacional" solo por
+venir de ahí: pasa por el mismo clasificador territorial que el resto,
+pudiendo resultar local, departamental, provincial, nacional o sin
+clasificar según su contenido. El feed real de Infobae es internacional
+(sin `<category>`, con el país codificado en la URL), por lo que la
+mayoría de sus notas no son de alcance argentino.
+
+El resumen usa `description` cuando trae un texto útil, o si no,
+`content:encoded` limpio de HTML/scripts/estilos, nunca la nota
+completa. La imagen se toma de `media:content`, luego
+`media:thumbnail`, luego un `<img>` embebido válido — ignorando
+píxeles, íconos y logos. La fecha es el `pubDate` del feed tal como lo
+expone la fuente. Se excluyen determinísticamente (por categoría o
+segmento de URL, sin IA) horóscopo, lotería/sorteos y contenido
+publicitario/patrocinado; deportes y espectáculos no se bloquean pero
+tienen un tope para no dominar el lote. Límite de 25 ítems recientes
+por fuente y ciclo. Requieren acceso normal a internet desde el
+entorno donde se ejecuten:
+
+```bash
+python3 run.py --fuente la-nacion
+python3 run.py --fuente infobae
+```
+
+Las pruebas automáticas no acceden a los feeds reales: usan fixtures
+XML locales (`data/fixtures/lanacion_rss_prueba.xml` y
+`data/fixtures/infobae_rss_prueba.xml`).
+
 ## Redacción real: Ollama local
 
 Por defecto el pipeline redacta con `RedactorMock` (sin IA). Existe
@@ -180,9 +214,10 @@ automáticas no se conectan a Ollama: simulan sus respuestas.
 ## Motor continuo de noticias
 
 Servicio local (solo biblioteca estándar) que consulta automáticamente,
-cada 30 minutos por defecto, las siete fuentes reales ya incorporadas
+cada 30 minutos por defecto, las fuentes reales ya incorporadas
 (Prensa Jujuy, Municipio Libertador, InfoYungas, Jujuy al Momento, El
-Tribuno de Jujuy, TodoJujuy y Somos Jujuy), reutilizando el mismo
+Tribuno de Jujuy, TodoJujuy, Somos Jujuy, La Nación e Infobae),
+reutilizando el mismo
 pipeline y las mismas reglas de relevancia, deduplicación y riesgo
 editorial que la ejecución manual — no publica nada, todo sigue
 requiriendo revisión humana en el panel.

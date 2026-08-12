@@ -58,6 +58,8 @@ class TestCicloContinuoEstructura(unittest.TestCase):
                 "tribuno-jujuy",
                 "todojujuy",
                 "somos-jujuy",
+                "la-nacion",
+                "infobae",
             ],
         )
 

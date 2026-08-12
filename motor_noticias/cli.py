@@ -12,6 +12,7 @@ from .collectors.html_municipio_libertador import (
     ErrorRecoleccionHTML,
     MunicipioLibertadorHTMLCollector,
 )
+from .collectors.html_tribuno_jujuy import ErrorRecoleccionTribunoJujuy, TribunoJujuyHTMLCollector
 from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
 from .db import Database
 from .pipeline import ejecutar_pipeline
@@ -32,13 +33,15 @@ def main():
             "municipio-libertador",
             "infoyungas",
             "jujuy-al-momento",
+            "tribuno-jujuy",
         ],
         default="fixture",
         help=(
             "Fuente a recolectar: datos de prueba locales (default), "
             "el RSS real de Prensa Jujuy, la página real de actividades "
             "del Municipio Libertador, el listado real de InfoYungas, "
-            "o el listado real de Jujuy al Momento"
+            "el listado real de Jujuy al Momento, o el listado real de "
+            "El Tribuno de Jujuy"
         ),
     )
     parser.add_argument(
@@ -61,6 +64,8 @@ def main():
         collector = InfoYungasHTMLCollector()
     elif args.fuente == "jujuy-al-momento":
         collector = JujuyAlMomentoHTMLCollector()
+    elif args.fuente == "tribuno-jujuy":
+        collector = TribunoJujuyHTMLCollector()
     else:
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
     redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
@@ -72,6 +77,7 @@ def main():
         ErrorRecoleccionHTML,
         ErrorRecoleccionInfoYungas,
         ErrorRecoleccionJujuyAlMomento,
+        ErrorRecoleccionTribunoJujuy,
     ) as error:
         db.close()
         print(f"Error al recolectar noticias: {error}", file=sys.stderr)

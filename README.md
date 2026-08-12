@@ -97,6 +97,28 @@ python3 run.py --fuente jujuy-al-momento
 Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
 local (`data/fixtures/jujuyalmomento_html_prueba.html`).
 
+## Recolección real: El Tribuno de Jujuy (HTML)
+
+Existe un collector real para el listado de noticias de El Tribuno de
+Jujuy (configurado en `config/fuentes.json`), medio provincial. El sitio
+no ofrece RSS/Atom (su página "RSS" en realidad lista redes sociales, no
+feeds); el listado se extrae de la portada HTML. Es una fuente
+provincial: no asigna una localidad fija, la relevancia geográfica de
+cada noticia se deriva de su contenido con el clasificador existente. A
+diferencia de InfoYungas y Jujuy al Momento, el sitio sí expone una
+fecha explícita y estable: el propio permalink de cada nota incluye la
+fecha y hora de publicación (p. ej.
+`/seccion/2026-8-12-9-30-0-titulo-slug`), de donde se extrae sin
+inferirla. Requiere acceso normal a internet desde el entorno donde se
+ejecute:
+
+```bash
+python3 run.py --fuente tribuno-jujuy
+```
+
+Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
+local (`data/fixtures/tribuno_jujuy_html_prueba.html`).
+
 ## Redacción real: Ollama local
 
 Por defecto el pipeline redacta con `RedactorMock` (sin IA). Existe

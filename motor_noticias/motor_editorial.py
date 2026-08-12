@@ -2,6 +2,14 @@ from datetime import datetime, timedelta, timezone
 from typing import List, NamedTuple, Optional
 
 from .db import Database
+from .models import Estado, RevisionEstado
+
+# Estados de la propia noticia que congelan su espacio en la agenda: una vez
+# que un humano decidió (aprobó/rechazó) o la noticia ya se publicó, el
+# Motor Editorial nunca la reemplaza automáticamente. "pendiente" (sin
+# decisión humana todavía) y "sin_candidato" sí se pueden actualizar en cada
+# regeneración si aparece un candidato mejor.
+REVISIONES_PROTEGIDAS = (RevisionEstado.APROBADA.value, RevisionEstado.RECHAZADA.value)
 
 # Argentina (y Jujuy en particular) usa un único huso horario fijo, UTC-3,
 # sin horario de verano desde 2009. Se usa un offset fijo en vez de
@@ -22,7 +30,7 @@ class EntradaAgenda(NamedTuple):
     tipo: str  # "normal" | "urgente"
     territorio: Optional[str]
     noticia_id: Optional[int]
-    estado: str  # "creado" | "existente" | "sin_candidato"
+    estado: str  # "creado" | "actualizado" | "existente" | "sin_candidato"
 
 
 def _fecha_limite_antiguedad(ahora_utc: datetime) -> str:
@@ -76,28 +84,55 @@ def generar_agenda(
 
     for hora in horarios:
         existente = db.obtener_agenda_item(fecha, hora)
-        if existente and existente["noticia_id"]:
-            usados.add(existente["noticia_id"])
+        noticia_existente = db.obtener(existente["noticia_id"]) if existente and existente["noticia_id"] else None
+
+        protegido = noticia_existente is not None and (
+            noticia_existente["revision_estado"] in REVISIONES_PROTEGIDAS
+            or noticia_existente["estado"] == Estado.PUBLICADA.value
+        )
+        if protegido:
+            usados.add(noticia_existente["id"])
             entradas.append(
                 EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
             )
             continue
 
-        candidato = _buscar_candidato_cascada(db, usados, fecha_limite)
-        creada_en = datetime.now(timezone.utc).isoformat()
-        id_existente = existente["id"] if existente else None
+        # El espacio no está protegido (sin candidato todavía, o con una
+        # propuesta que sigue "pendiente" de decisión humana): se busca de
+        # nuevo el mejor candidato disponible. Se excluye temporalmente al
+        # propio ocupante actual de la búsqueda de "usados" para poder
+        # compararlo contra el resto sin descalificarlo a él mismo; si sigue
+        # siendo el mejor, la búsqueda lo vuelve a encontrar y no cambia nada.
+        id_existente_noticia = noticia_existente["id"] if noticia_existente else None
+        usados_para_busqueda = usados - {id_existente_noticia} if id_existente_noticia else usados
+        candidato = _buscar_candidato_cascada(db, usados_para_busqueda, fecha_limite)
+        id_existente_item = existente["id"] if existente else None
 
         if candidato:
-            db.guardar_agenda_item(
-                fecha, hora, "normal", candidato["territorio"], candidato["id"], creada_en,
-                id_existente=id_existente,
-            )
             usados.add(candidato["id"])
-            entradas.append(EntradaAgenda(fecha, hora, "normal", candidato["territorio"], candidato["id"], "creado"))
+            if candidato["id"] == id_existente_noticia:
+                # mismo candidato de antes: nada que actualizar en la base.
+                entradas.append(
+                    EntradaAgenda(fecha, hora, "normal", candidato["territorio"], candidato["id"], "existente")
+                )
+            else:
+                creada_en = datetime.now(timezone.utc).isoformat()
+                db.guardar_agenda_item(
+                    fecha, hora, "normal", candidato["territorio"], candidato["id"], creada_en,
+                    id_existente=id_existente_item,
+                )
+                estado_entrada = "actualizado" if id_existente_item else "creado"
+                entradas.append(
+                    EntradaAgenda(fecha, hora, "normal", candidato["territorio"], candidato["id"], estado_entrada)
+                )
         else:
-            db.guardar_agenda_item(
-                fecha, hora, "normal", None, None, creada_en, id_existente=id_existente
-            )
+            if id_existente_item is None or existente.get("noticia_id") is not None:
+                # o es la primera vez, o antes tenía candidato y ahora ya no
+                # (por ejemplo, envejeció): hay que dejar constancia.
+                creada_en = datetime.now(timezone.utc).isoformat()
+                db.guardar_agenda_item(
+                    fecha, hora, "normal", None, None, creada_en, id_existente=id_existente_item
+                )
             entradas.append(EntradaAgenda(fecha, hora, "normal", None, None, "sin_candidato"))
 
     return entradas

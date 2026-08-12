@@ -232,6 +232,132 @@ class TestPersistenciaYDecisionesHumanas(BaseAgendaTest):
         self.assertNotEqual(entradas[0].noticia_id, mas_fresca.id)
 
 
+class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
+    """Una propuesta sin decisión humana (revision_estado='pendiente') puede
+    mejorarse automáticamente al regenerar; aprobada/rechazada/publicada no."""
+
+    def test_propuesta_provincial_reemplazada_por_local(self):
+        provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        item_antes = self.db.obtener_agenda_item("2026-08-12", "10:30")
+        self.assertEqual(item_antes["noticia_id"], provincial.id)
+
+        local = _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, local.id)
+        self.assertEqual(entradas[0].territorio, "local")
+        self.assertEqual(entradas[0].estado, "actualizado")
+
+    def test_propuesta_nacional_reemplazada_por_departamental(self):
+        _crear_noticia(self.db, "nacional", fecha_recoleccion=_iso(timedelta(hours=2)))
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("19:00",), ahora=AHORA)
+
+        departamental = _crear_noticia(self.db, "departamental", fecha_recoleccion=_iso())
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("19:00",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, departamental.id)
+        self.assertEqual(entradas[0].territorio, "departamental")
+
+    def test_propuesta_local_no_reemplazada_por_provincial(self):
+        local = _crear_noticia(self.db, "local", fecha_recoleccion=_iso(timedelta(hours=2)))
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso())  # más fresca, pero nivel inferior
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, local.id)
+        self.assertEqual(entradas[0].territorio, "local")
+        self.assertEqual(entradas[0].estado, "existente")
+
+    def test_propuesta_del_mismo_territorio_reemplazada_por_otra_mas_reciente(self):
+        _crear_noticia(self.db, "local", fecha_recoleccion=_iso(timedelta(hours=2)))
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        mas_reciente = _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, mas_reciente.id)
+        self.assertEqual(entradas[0].estado, "actualizado")
+
+    def test_aprobada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
+        provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        item = self.db.obtener_agenda_item("2026-08-12", "10:30")
+        self.db.actualizar_revision(item["noticia_id"], "aprobada")
+
+        _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, provincial.id)
+        self.assertEqual(entradas[0].estado, "existente")
+
+    def test_rechazada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
+        provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        item = self.db.obtener_agenda_item("2026-08-12", "10:30")
+        self.db.actualizar_revision(item["noticia_id"], "rechazada")
+
+        _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, provincial.id)
+        self.assertEqual(entradas[0].estado, "existente")
+
+    def test_publicada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
+        publicada = _crear_noticia(
+            self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)), estado=Estado.PUBLICADA.value
+        )
+        creada_en = _iso(timedelta(hours=2))
+        self.db.guardar_agenda_item("2026-08-12", "10:30", "normal", "provincial", publicada.id, creada_en)
+
+        _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, publicada.id)
+        self.assertEqual(entradas[0].estado, "existente")
+
+    def test_sin_candidato_pasa_a_propuesta_cuando_aparece_noticia_valida(self):
+        entradas_antes = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        self.assertEqual(entradas_antes[0].estado, "sin_candidato")
+
+        departamental = _crear_noticia(self.db, "departamental")
+
+        entradas_despues = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+
+        self.assertEqual(entradas_despues[0].noticia_id, departamental.id)
+        self.assertEqual(entradas_despues[0].estado, "actualizado")
+
+    def test_regeneracion_identica_no_produce_cambios_innecesarios(self):
+        _crear_noticia(self.db, "local")
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        item_antes = self.db.obtener_agenda_item("2026-08-12", "08:00")
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        item_despues = self.db.obtener_agenda_item("2026-08-12", "08:00")
+        self.assertEqual(entradas[0].estado, "existente")
+        self.assertEqual(item_antes["noticia_id"], item_despues["noticia_id"])
+        self.assertEqual(item_antes["actualizada_en"], item_despues["actualizada_en"])
+
+    def test_regeneracion_identica_sin_candidato_no_produce_cambios(self):
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        item_antes = self.db.obtener_agenda_item("2026-08-12", "08:00")
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        item_despues = self.db.obtener_agenda_item("2026-08-12", "08:00")
+        self.assertEqual(entradas[0].estado, "sin_candidato")
+        self.assertEqual(item_antes["actualizada_en"], item_despues["actualizada_en"])
+
+
 class TestUrgentes(BaseAgendaTest):
     def test_urgente_local_aparece_fuera_de_las_franjas_normales(self):
         urgente = _crear_noticia(self.db, "local", urgente=True)

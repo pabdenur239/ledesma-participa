@@ -2,6 +2,7 @@ import http.client
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timezone
 from http.server import HTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -384,6 +385,119 @@ class TestPanelHTTPIntegracion(unittest.TestCase):
         conn.close()
 
         self.assertNotIn(self.noticia.titulo_original, cuerpo)
+
+
+class TestEstadoDelSistema(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        self.db = Database(self.db_path)
+        self.lock_path = Path(self.tmpdir.name) / "run_continuo.lock"
+
+        PanelHandler.db_path = self.db_path
+        PanelHandler.lock_path = self.lock_path
+        self.servidor = HTTPServer((HOST, 0), PanelHandler)
+        self.puerto = self.servidor.server_address[1]
+        self.hilo = threading.Thread(target=self.servidor.serve_forever, daemon=True)
+        self.hilo.start()
+
+    def tearDown(self):
+        self.servidor.shutdown()
+        self.servidor.server_close()
+        self.hilo.join(timeout=5)
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def _conexion(self):
+        return http.client.HTTPConnection(HOST, self.puerto, timeout=5)
+
+    def _get(self, ruta):
+        conn = self._conexion()
+        conn.request("GET", ruta)
+        resp = conn.getresponse()
+        cuerpo = resp.read().decode("utf-8")
+        conn.close()
+        return resp.status, cuerpo
+
+    def test_pagina_principal_enlaza_al_estado_del_sistema(self):
+        status, cuerpo = self._get("/")
+        self.assertEqual(status, 200)
+        self.assertIn('href="/estado"', cuerpo)
+
+    def test_estado_sin_ciclos_previos_indica_sin_datos(self):
+        status, cuerpo = self._get("/estado")
+        self.assertEqual(status, 200)
+        self.assertIn("Estado del sistema", cuerpo)
+        self.assertIn("inactivo", cuerpo)
+        self.assertIn("sin datos aún", cuerpo)
+
+    def test_estado_muestra_motor_activo_cuando_existe_el_lock(self):
+        self.lock_path.write_text("12345")
+
+        _, cuerpo = self._get("/estado")
+
+        self.assertIn("<strong>Motor continuo:</strong> activo", cuerpo)
+
+    def test_estado_muestra_ultimo_ciclo_y_totales(self):
+        self.db.registrar_ciclo(
+            "2026-08-12T10:00:00+00:00",
+            "2026-08-12T10:00:05+00:00",
+            total_fuentes=7,
+            total_noticias_nuevas=3,
+            total_errores=1,
+            intervalo_segundos=1800,
+        )
+
+        _, cuerpo = self._get("/estado")
+
+        self.assertIn("2026-08-12T10:00:05+00:00", cuerpo)
+        self.assertIn("Noticias nuevas en última ejecución:</strong> 3", cuerpo)
+
+    def test_estado_muestra_indicador_ok_para_fuente_sana(self):
+        self.db.registrar_salud_fuente("infoyungas", "ok", elementos_obtenidos=2, noticias_nuevas=1)
+
+        _, cuerpo = self._get("/estado")
+
+        self.assertIn("infoyungas", cuerpo)
+        self.assertIn("indicador-ok", cuerpo)
+
+    def test_estado_muestra_indicador_error_para_fuente_caida(self):
+        self.db.registrar_salud_fuente("infoyungas", "error", mensaje_error="HTTP 500")
+
+        _, cuerpo = self._get("/estado")
+
+        self.assertIn("indicador-error", cuerpo)
+        self.assertIn("HTTP 500", cuerpo)
+
+    def test_estado_muestra_alerta_activa_tras_tres_fallos(self):
+        for _ in range(3):
+            self.db.registrar_salud_fuente("infoyungas", "error", mensaje_error="HTTP 500")
+
+        _, cuerpo = self._get("/estado")
+
+        self.assertIn("Alertas activas", cuerpo)
+        self.assertIn("3 fallos consecutivos", cuerpo)
+
+    def test_estado_sin_alertas_lo_indica_explicitamente(self):
+        self.db.registrar_salud_fuente("infoyungas", "ok", elementos_obtenidos=1, noticias_nuevas=1)
+        noticia = Noticia(
+            id=None,
+            titulo_original="Obras en Libertador General San Martín",
+            texto_original="Texto",
+            url_fuente="https://ejemplo.test/1",
+            url_normalizada="https://ejemplo.test/1",
+            nombre_fuente="infoyungas",
+            fecha_fuente="",
+            fecha_recoleccion=datetime.now(timezone.utc).isoformat(),
+            estado=Estado.PREPARADA.value,
+            hash_contenido="hash-1",
+            relevancia_local=True,
+        )
+        self.db.guardar(noticia)
+
+        _, cuerpo = self._get("/estado")
+
+        self.assertIn("Sin alertas activas.", cuerpo)
 
 
 if __name__ == "__main__":

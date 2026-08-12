@@ -177,6 +177,44 @@ Si Ollama no está disponible, el pipeline informa el error y se
 detiene (no cambia automáticamente a otro proveedor). Las pruebas
 automáticas no se conectan a Ollama: simulan sus respuestas.
 
+## Motor continuo de noticias
+
+Servicio local (solo biblioteca estándar) que consulta automáticamente,
+cada 30 minutos por defecto, las siete fuentes reales ya incorporadas
+(Prensa Jujuy, Municipio Libertador, InfoYungas, Jujuy al Momento, El
+Tribuno de Jujuy, TodoJujuy y Somos Jujuy), reutilizando el mismo
+pipeline y las mismas reglas de relevancia, deduplicación y riesgo
+editorial que la ejecución manual — no publica nada, todo sigue
+requiriendo revisión humana en el panel.
+
+```bash
+python3 run_continuo.py
+```
+
+Ejecuta un primer ciclo de inmediato y luego repite cada
+`--intervalo` segundos (default `1800`, es decir 30 minutos). Se
+detiene de forma limpia con Ctrl+C. Evita dos instancias simultáneas
+mediante un archivo de lock (`data/run_continuo.lock`, se libera al
+cerrar); si un cierre previo no fue limpio, borrar ese archivo antes de
+reintentar. Registra logs entendibles tanto en la consola como en
+`data/logs/run_continuo.log`.
+
+Una fuente que falla (error de red, HTTP, parseo, etc.) nunca detiene
+el ciclo: se registra el error y se sigue con las demás. Por cada
+fuente se guarda en SQLite (tablas nuevas, no destructivas:
+`fuente_salud` y `ciclo_ejecucion`) su último resultado (`ok`/`error`),
+cantidad de elementos y noticias nuevas obtenidas, fecha de la última
+noticia recibida, último mensaje de error y fallos consecutivos.
+
+A partir de ese estado se calculan alertas internas (todavía sin
+enviar nada por fuera del sistema: sin WhatsApp, email ni
+notificaciones externas) — "fuente con fallas" tras 3 fallos
+consecutivos, "fuente inactiva" si una fuente que responde OK lleva 24
+horas sin traer ninguna noticia nueva, y "sin información local" si
+pasan 6 horas sin ninguna noticia relevante para Libertador o el
+Departamento Ledesma. Ninguna alerta asume que una fuente está caída
+solo por no publicar contenido nuevo.
+
 ## Panel de revisión humana
 
 Panel web local y mínimo (solo biblioteca estándar) para revisar a mano
@@ -194,6 +232,13 @@ se enlaza siempre a `127.0.0.1`, nunca a `0.0.0.0`). Permite filtrar
 noticias preparadas por estado de revisión, ver el contenido original y
 preparado, editar un título/texto revisado, y aprobar o rechazar. No
 implementa autenticación: está pensado para uso exclusivamente local.
+
+La sección **"Estado del sistema"** (`http://127.0.0.1:8000/estado`,
+enlazada desde la barra de navegación) muestra si el motor continuo
+está activo, su última ejecución y la próxima aproximada, las noticias
+nuevas del último ciclo, la última noticia local recibida, el estado
+de cada fuente (`OK` / `ADVERTENCIA` / `ERROR`) y las alertas internas
+activas descritas más arriba.
 
 ## Control de riesgo editorial político/institucional
 

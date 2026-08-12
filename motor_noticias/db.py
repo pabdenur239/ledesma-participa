@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Union
 
@@ -23,6 +24,30 @@ CREATE TABLE IF NOT EXISTS noticias (
     hash_contenido TEXT NOT NULL UNIQUE
 );
 CREATE INDEX IF NOT EXISTS idx_url_normalizada ON noticias(url_normalizada);
+
+-- Salud del motor continuo (una fila por fuente, se sobrescribe en cada
+-- ciclo) y el historial de ciclos ejecutados. Tablas nuevas: no afectan ni
+-- alteran ninguna fila existente de `noticias`.
+CREATE TABLE IF NOT EXISTS fuente_salud (
+    nombre_fuente TEXT PRIMARY KEY,
+    ultima_consulta TEXT,
+    ultimo_resultado TEXT,
+    elementos_obtenidos INTEGER NOT NULL DEFAULT 0,
+    noticias_nuevas INTEGER NOT NULL DEFAULT 0,
+    ultima_noticia_fecha TEXT,
+    ultimo_error TEXT,
+    fallos_consecutivos INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS ciclo_ejecucion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_inicio TEXT NOT NULL,
+    fecha_fin TEXT NOT NULL,
+    intervalo_segundos INTEGER,
+    total_fuentes INTEGER NOT NULL,
+    total_noticias_nuevas INTEGER NOT NULL,
+    total_errores INTEGER NOT NULL
+);
 """
 
 # Columnas agregadas en migraciones no destructivas: una base ya existente
@@ -176,6 +201,101 @@ class Database:
             (imagen_publicacion_ruta, imagen_generada_automaticamente, id_noticia),
         )
         self.conn.commit()
+
+    def registrar_salud_fuente(
+        self,
+        nombre_fuente: str,
+        resultado: str,
+        elementos_obtenidos: int = 0,
+        noticias_nuevas: int = 0,
+        mensaje_error: Optional[str] = None,
+        fecha_consulta: Optional[str] = None,
+    ) -> None:
+        """Registra el resultado de la última consulta a una fuente del motor
+        continuo. `resultado` es "ok" o "error". Acumula fallos consecutivos
+        (se resetea a 0 en cuanto la fuente vuelve a responder "ok") y solo
+        actualiza `ultima_noticia_fecha` cuando esta consulta trajo alguna
+        noticia nueva (no inferimos esa fecha de otra forma)."""
+        fecha_consulta = fecha_consulta or datetime.now(timezone.utc).isoformat()
+        existente = self.obtener_salud_fuente(nombre_fuente)
+
+        fallos_consecutivos = 0 if resultado == "ok" else (existente["fallos_consecutivos"] if existente else 0) + 1
+        ultima_noticia_fecha = existente["ultima_noticia_fecha"] if existente else None
+        if noticias_nuevas > 0:
+            ultima_noticia_fecha = fecha_consulta
+
+        self.conn.execute(
+            """
+            INSERT INTO fuente_salud (
+                nombre_fuente, ultima_consulta, ultimo_resultado, elementos_obtenidos,
+                noticias_nuevas, ultima_noticia_fecha, ultimo_error, fallos_consecutivos
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(nombre_fuente) DO UPDATE SET
+                ultima_consulta = excluded.ultima_consulta,
+                ultimo_resultado = excluded.ultimo_resultado,
+                elementos_obtenidos = excluded.elementos_obtenidos,
+                noticias_nuevas = excluded.noticias_nuevas,
+                ultima_noticia_fecha = excluded.ultima_noticia_fecha,
+                ultimo_error = excluded.ultimo_error,
+                fallos_consecutivos = excluded.fallos_consecutivos
+            """,
+            (
+                nombre_fuente,
+                fecha_consulta,
+                resultado,
+                elementos_obtenidos,
+                noticias_nuevas,
+                ultima_noticia_fecha,
+                mensaje_error,
+                fallos_consecutivos,
+            ),
+        )
+        self.conn.commit()
+
+    def obtener_salud_fuente(self, nombre_fuente: str) -> Optional[dict]:
+        cur = self.conn.execute(
+            "SELECT * FROM fuente_salud WHERE nombre_fuente = ?", (nombre_fuente,)
+        )
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def listar_salud_fuentes(self) -> list:
+        cur = self.conn.execute("SELECT * FROM fuente_salud ORDER BY nombre_fuente")
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def registrar_ciclo(
+        self,
+        fecha_inicio: str,
+        fecha_fin: str,
+        total_fuentes: int,
+        total_noticias_nuevas: int,
+        total_errores: int,
+        intervalo_segundos: Optional[int] = None,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO ciclo_ejecucion (
+                fecha_inicio, fecha_fin, intervalo_segundos, total_fuentes,
+                total_noticias_nuevas, total_errores
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (fecha_inicio, fecha_fin, intervalo_segundos, total_fuentes, total_noticias_nuevas, total_errores),
+        )
+        self.conn.commit()
+
+    def ultimo_ciclo(self) -> Optional[dict]:
+        cur = self.conn.execute("SELECT * FROM ciclo_ejecucion ORDER BY id DESC LIMIT 1")
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def ultima_noticia_relevante_fecha(self) -> Optional[str]:
+        """Fecha de recolección de la noticia relevante (para Libertador o el
+        Departamento Ledesma) más reciente, sin importar la fuente."""
+        cur = self.conn.execute(
+            "SELECT MAX(fecha_recoleccion) AS fecha FROM noticias WHERE relevancia_local = 1"
+        )
+        fila = cur.fetchone()
+        return fila["fecha"] if fila and fila["fecha"] else None
 
     def close(self):
         self.conn.close()

@@ -1,11 +1,13 @@
 import base64
 import html
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Optional
 
+from ..alertas import NIVEL_ERROR, calcular_alertas
+from ..continuo_runner import LOCK_PATH_DEFAULT
 from ..db import Database
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, RevisionEstado
@@ -58,10 +60,20 @@ pre {{ white-space: pre-wrap; border: 1px solid #ccc; padding: 0.75rem; backgrou
 .placa-preview {{ max-width: 100%; height: auto; border: 1px solid #ccc; }}
 .imagen-original {{ max-width: 100%; border: 1px solid #ccc; }}
 nav a {{ margin-right: 1rem; }}
+table {{ border-collapse: collapse; width: 100%; margin: 1rem 0; }}
+th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
+.indicador {{ display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px; font-weight: bold; color: #fff; }}
+.indicador-ok {{ background: #2e7d32; }}
+.indicador-advertencia {{ background: #b8860b; }}
+.indicador-error {{ background: #c62828; }}
+.alerta {{ padding: 0.5rem; margin-bottom: 0.5rem; border-radius: 3px; }}
+.alerta-advertencia {{ background: #fff3cd; border: 1px solid #b8860b; }}
+.alerta-error {{ background: #fdecea; border: 1px solid #c62828; }}
 </style>
 </head>
 <body>
 <h1><a href="/" style="text-decoration:none;color:inherit;">Ledesma Participa — Panel de revisión</a></h1>
+<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a></nav>
 {cuerpo}
 </body>
 </html>"""
@@ -185,8 +197,85 @@ def _facebook_preview_html(noticia: dict, contenido) -> str:
     return _pagina(f"Vista previa Facebook — noticia #{noticia['id']}", cuerpo)
 
 
+def _indicador(nivel: str) -> str:
+    clase = {"OK": "ok", "ADVERTENCIA": "advertencia", "ERROR": "error"}[nivel]
+    return f'<span class="indicador indicador-{clase}">{nivel}</span>'
+
+
+def _indicador_fuente(fuente: dict, alertas_por_fuente: dict) -> str:
+    if fuente["ultimo_resultado"] == "error":
+        return _indicador("ERROR")
+    if fuente["nombre_fuente"] in alertas_por_fuente:
+        return _indicador("ADVERTENCIA")
+    return _indicador("OK")
+
+
+def _fila_fuente(fuente: dict, alertas_por_fuente: dict) -> str:
+    return f"""<tr>
+<td>{_e(fuente['nombre_fuente'])}</td>
+<td>{_indicador_fuente(fuente, alertas_por_fuente)}</td>
+<td>{_e(fuente['ultima_consulta'])}</td>
+<td>{fuente['elementos_obtenidos']}</td>
+<td>{fuente['noticias_nuevas']}</td>
+<td>{_e(fuente['ultima_noticia_fecha'])}</td>
+<td>{fuente['fallos_consecutivos']}</td>
+<td>{_e(fuente['ultimo_error'])}</td>
+</tr>"""
+
+
+def _alerta_html(alerta: dict) -> str:
+    clase = "error" if alerta["nivel"] == NIVEL_ERROR else "advertencia"
+    return f'<p class="alerta alerta-{clase}">{_indicador(alerta["nivel"])} {_e(alerta["mensaje"])}</p>'
+
+
+def _proxima_ejecucion_aproximada(ultimo_ciclo: Optional[dict]) -> Optional[str]:
+    if not ultimo_ciclo or not ultimo_ciclo.get("fecha_fin") or not ultimo_ciclo.get("intervalo_segundos"):
+        return None
+    try:
+        fecha_fin = datetime.fromisoformat(ultimo_ciclo["fecha_fin"])
+    except ValueError:
+        return None
+    return (fecha_fin + timedelta(seconds=ultimo_ciclo["intervalo_segundos"])).isoformat()
+
+
+def _estado_sistema_html(db: Database, lock_path: Path) -> str:
+    motor_activo = lock_path.exists()
+    ultimo_ciclo = db.ultimo_ciclo()
+    fuentes = db.listar_salud_fuentes()
+    alertas = calcular_alertas(db)
+    alertas_por_fuente = {a["fuente"] for a in alertas if a.get("fuente")}
+
+    resumen = f"""
+<h2>Estado del sistema</h2>
+<p><strong>Motor continuo:</strong> {"activo" if motor_activo else "inactivo"}</p>
+<p><strong>Última ejecución:</strong> {_e(ultimo_ciclo['fecha_fin']) if ultimo_ciclo else "sin datos aún"}</p>
+<p><strong>Próxima ejecución aproximada:</strong> {_e(_proxima_ejecucion_aproximada(ultimo_ciclo)) or "sin datos aún"}</p>
+<p><strong>Noticias nuevas en última ejecución:</strong> {ultimo_ciclo['total_noticias_nuevas'] if ultimo_ciclo else "sin datos aún"}</p>
+<p><strong>Última noticia local recibida:</strong> {_e(db.ultima_noticia_relevante_fecha()) or "sin datos aún"}</p>
+"""
+
+    if alertas:
+        seccion_alertas = "<h3>Alertas activas</h3>\n" + "\n".join(_alerta_html(a) for a in alertas)
+    else:
+        seccion_alertas = "<h3>Alertas activas</h3>\n<p>Sin alertas activas.</p>"
+
+    if fuentes:
+        filas = "\n".join(_fila_fuente(f, alertas_por_fuente) for f in fuentes)
+        tabla_fuentes = f"""<h3>Estado de cada fuente</h3>
+<table>
+<tr><th>Fuente</th><th>Estado</th><th>Última consulta</th><th>Elementos</th>
+<th>Noticias nuevas</th><th>Última noticia</th><th>Fallos consecutivos</th><th>Último error</th></tr>
+{filas}
+</table>"""
+    else:
+        tabla_fuentes = "<h3>Estado de cada fuente</h3>\n<p>El motor continuo todavía no ejecutó ningún ciclo.</p>"
+
+    return _pagina("Estado del sistema — Ledesma Participa", resumen + seccion_alertas + tabla_fuentes)
+
+
 class PanelHandler(BaseHTTPRequestHandler):
     db_path = DB_PATH_DEFAULT
+    lock_path = LOCK_PATH_DEFAULT
 
     def _db(self) -> Database:
         return Database(self.db_path)
@@ -217,6 +306,10 @@ class PanelHandler(BaseHTTPRequestHandler):
                 if filtro not in FILTROS_VALIDOS:
                     filtro = "pendientes"
                 self._responder_html(_lista_html(db, filtro))
+                return
+
+            if partes.path == "/estado":
+                self._responder_html(_estado_sistema_html(db, self.lock_path))
                 return
 
             if partes.path == "/noticia":

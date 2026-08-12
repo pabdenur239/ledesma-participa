@@ -14,6 +14,8 @@ from .collectors.html_municipio_libertador import (
 )
 from .collectors.html_tribuno_jujuy import ErrorRecoleccionTribunoJujuy, TribunoJujuyHTMLCollector
 from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
+from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
+from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
 from .db import Database
 from .pipeline import ejecutar_pipeline
 from .redaccion.mock import RedactorMock
@@ -34,14 +36,17 @@ def main():
             "infoyungas",
             "jujuy-al-momento",
             "tribuno-jujuy",
+            "todojujuy",
+            "somos-jujuy",
         ],
         default="fixture",
         help=(
             "Fuente a recolectar: datos de prueba locales (default), "
             "el RSS real de Prensa Jujuy, la página real de actividades "
             "del Municipio Libertador, el listado real de InfoYungas, "
-            "el listado real de Jujuy al Momento, o el listado real de "
-            "El Tribuno de Jujuy"
+            "el listado real de Jujuy al Momento, el listado real de "
+            "El Tribuno de Jujuy, el RSS real de TodoJujuy, o el RSS "
+            "real de Somos Jujuy"
         ),
     )
     parser.add_argument(
@@ -66,6 +71,10 @@ def main():
         collector = JujuyAlMomentoHTMLCollector()
     elif args.fuente == "tribuno-jujuy":
         collector = TribunoJujuyHTMLCollector()
+    elif args.fuente == "todojujuy":
+        collector = TodoJujuyRSSCollector()
+    elif args.fuente == "somos-jujuy":
+        collector = SomosJujuyRSSCollector()
     else:
         collector = FixtureCollector(args.fixtures) if args.fixtures else FixtureCollector()
     redactor = RedactorOllama() if args.redactor == "ollama" else RedactorMock()
@@ -78,6 +87,8 @@ def main():
         ErrorRecoleccionInfoYungas,
         ErrorRecoleccionJujuyAlMomento,
         ErrorRecoleccionTribunoJujuy,
+        ErrorRecoleccionTodoJujuy,
+        ErrorRecoleccionSomosJujuy,
     ) as error:
         db.close()
         print(f"Error al recolectar noticias: {error}", file=sys.stderr)

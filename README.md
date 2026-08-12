@@ -119,6 +119,46 @@ python3 run.py --fuente tribuno-jujuy
 Las pruebas automáticas no acceden al sitio real: usan un fixture HTML
 local (`data/fixtures/tribuno_jujuy_html_prueba.html`).
 
+## Recolección real: TodoJujuy (RSS)
+
+Existe un collector real para el canal RSS "Jujuy" de TodoJujuy
+(configurado en `config/fuentes.json`), medio provincial. Es una fuente
+provincial: no asigna una localidad fija, la relevancia geográfica de
+cada noticia se deriva de su contenido con el clasificador existente.
+La imagen viene en el `<enclosure url="...">` de cada ítem (no todos los
+ítems la incluyen) y la fecha es el `pubDate` del feed tal como lo
+expone la fuente. Requiere acceso normal a internet desde el entorno
+donde se ejecute:
+
+```bash
+python3 run.py --fuente todojujuy
+```
+
+Las pruebas automáticas no acceden al feed real: usan un fixture XML
+local (`data/fixtures/todojujuy_rss_prueba.xml`).
+
+## Recolección real: Somos Jujuy (RSS)
+
+Existe un collector real para el feed RSS de Somos Jujuy (configurado
+en `config/fuentes.json`), medio provincial. Es una fuente provincial:
+no asigna una localidad fija, la relevancia geográfica de cada noticia
+se deriva de su contenido con el clasificador existente. A diferencia
+de TodoJujuy, la imagen no viene en un campo separado: está embebida
+como `<img src="...">` al principio del HTML de `<description>`, seguida
+de un `<p>` con el resumen; el collector extrae la imagen de ahí y
+limpia el resto del HTML para quedarse solo con el texto. El feed
+declara codificación `iso-8859-1`, por lo que el collector procesa la
+respuesta como bytes crudos (sin decodificarla de antemano) para que
+los acentos se interpreten correctamente. Requiere acceso normal a
+internet desde el entorno donde se ejecute:
+
+```bash
+python3 run.py --fuente somos-jujuy
+```
+
+Las pruebas automáticas no acceden al feed real: usan un fixture XML
+local (`data/fixtures/somosjujuy_rss_prueba.xml`).
+
 ## Redacción real: Ollama local
 
 Por defecto el pipeline redacta con `RedactorMock` (sin IA). Existe

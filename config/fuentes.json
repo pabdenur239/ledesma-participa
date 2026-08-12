@@ -19,5 +19,13 @@
   "tribuno_jujuy": {
     "nombre_fuente": "El Tribuno de Jujuy",
     "url": "https://eltribunodejujuy.com/"
+  },
+  "todojujuy": {
+    "nombre_fuente": "TodoJujuy",
+    "url": "https://www.todojujuy.com/rss/pages/jujuy.xml"
+  },
+  "somos_jujuy": {
+    "nombre_fuente": "Somos Jujuy",
+    "url": "https://www.somosjujuy.com.ar/feed/"
   }
 }

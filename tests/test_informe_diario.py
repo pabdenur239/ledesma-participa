@@ -70,6 +70,67 @@ def _urlopen_fake(clima=CLIMA_VALIDO, oficial=DOLAR_OFICIAL_VALIDO, blue=DOLAR_B
 
 
 # 3. conversión correcta del código meteorológico a texto
+class TestHeadersHttp(unittest.TestCase):
+    """Bug real detectado en producción: DolarApi (Cloudflare) devolvía
+    HTTP 403 a una petición sin User-Agent. Se verifica explícitamente que
+    toda solicitud saliente (clima y dólar, mismo cliente común) incluya
+    User-Agent y Accept."""
+
+    def _capturar_peticiones(self, respuesta_data):
+        peticiones = []
+
+        def _abrir(peticion, timeout=None):
+            peticiones.append(peticion)
+            return _respuesta_falsa(respuesta_data)
+
+        return peticiones, _abrir
+
+    def test_clima_envia_user_agent_y_accept(self):
+        peticiones, urlopen_fake = self._capturar_peticiones(CLIMA_VALIDO)
+        obtener_clima(urlopen=urlopen_fake)
+
+        self.assertEqual(len(peticiones), 1)
+        self.assertEqual(peticiones[0].get_header("User-agent"), "Mozilla/5.0 LedesmaParticipa/1.0")
+        self.assertEqual(peticiones[0].get_header("Accept"), "application/json")
+
+    def test_dolar_oficial_envia_user_agent_y_accept(self):
+        peticiones, urlopen_fake = self._capturar_peticiones(DOLAR_OFICIAL_VALIDO)
+        obtener_dolar("oficial", urlopen=urlopen_fake)
+
+        self.assertEqual(len(peticiones), 1)
+        self.assertEqual(peticiones[0].get_header("User-agent"), "Mozilla/5.0 LedesmaParticipa/1.0")
+        self.assertEqual(peticiones[0].get_header("Accept"), "application/json")
+
+    def test_dolar_blue_envia_user_agent_y_accept(self):
+        peticiones, urlopen_fake = self._capturar_peticiones(DOLAR_BLUE_VALIDO)
+        obtener_dolar("blue", urlopen=urlopen_fake)
+
+        self.assertEqual(len(peticiones), 1)
+        self.assertEqual(peticiones[0].get_header("User-agent"), "Mozilla/5.0 LedesmaParticipa/1.0")
+        self.assertEqual(peticiones[0].get_header("Accept"), "application/json")
+
+    def test_generar_informe_diario_envia_headers_en_las_tres_solicitudes(self):
+        peticiones = []
+        urlopen_original = _urlopen_fake()
+
+        def _urlopen_espia(peticion, timeout=None):
+            peticiones.append(peticion)
+            return urlopen_original(peticion, timeout=timeout)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "test.db")
+            try:
+                generar_informe_diario(db, urlopen=_urlopen_espia)
+            finally:
+                db.close()
+
+        self.assertEqual(len(peticiones), 3)  # clima + dólar oficial + dólar blue
+        for peticion in peticiones:
+            with self.subTest(url=peticion.full_url):
+                self.assertEqual(peticion.get_header("User-agent"), "Mozilla/5.0 LedesmaParticipa/1.0")
+                self.assertEqual(peticion.get_header("Accept"), "application/json")
+
+
 class TestCodigoClima(unittest.TestCase):
     def test_codigos_conocidos_se_traducen(self):
         self.assertEqual(_codigo_clima_a_texto(0), "despejado")

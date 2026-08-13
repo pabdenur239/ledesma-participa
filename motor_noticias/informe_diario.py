@@ -110,7 +110,18 @@ def _codigo_clima_a_texto(codigo: Optional[int]) -> str:
 
 
 def _pedir_json(url: str, timeout: int, urlopen) -> dict:
-    peticion = urllib.request.Request(url, headers={"Accept": "application/json"})
+    # Bug real detectado en producción: DolarApi (detrás de Cloudflare)
+    # devolvía HTTP 403 a una petición sin User-Agent (la que hace
+    # urllib.request por defecto no alcanza). Un identificador claro y un
+    # Accept explícito resuelven el rechazo, sin cambiar endpoints ni
+    # lógica. Mismo cliente para clima y dólar: aplica a ambas fuentes.
+    peticion = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 LedesmaParticipa/1.0",
+            "Accept": "application/json",
+        },
+    )
     try:
         with urlopen(peticion, timeout=timeout) as respuesta:
             estado = getattr(respuesta, "status", 200)

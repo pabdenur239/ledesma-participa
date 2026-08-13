@@ -357,5 +357,81 @@ class TestRotacionSimpleDeLogs(unittest.TestCase):
         self.assertIn("-gt 5", contenido)
 
 
+class TestWriteLogToleraConcurrencia(unittest.TestCase):
+    """Bug real: Motor y Panel arrancando casi al mismo tiempo escribían a
+    la vez logs\\startup.log y Add-Content fallaba con "el proceso no puede
+    obtener acceso al archivo...". Write-Log ahora serializa la escritura
+    entre procesos con un Mutex con nombre (solo .NET estándar) y reintenta
+    ante un bloqueo puntual, sin ocultar otros errores."""
+
+    def test_write_log_usa_mutex_con_nombre_para_serializar_entre_procesos(self):
+        contenido = _leer("common.ps1")
+        self.assertIn("System.Threading.Mutex", contenido)
+        self.assertIn("WaitOne", contenido)
+        self.assertIn("ReleaseMutex", contenido)
+
+    def test_write_log_reintenta_solo_ante_ioexception_no_oculta_otros_errores(self):
+        contenido = _leer("common.ps1")
+        self.assertIn("catch [System.IO.IOException]", contenido)
+        # tras agotar los reintentos, el error se relanza (throw), no se
+        # traga silenciosamente
+        cuerpo_catch = contenido.split("catch [System.IO.IOException]", 1)[1]
+        self.assertIn("throw", cuerpo_catch[: cuerpo_catch.index("Start-Sleep")])
+
+    def test_write_log_maneja_mutex_abandonado(self):
+        # Si el proceso dueño anterior del mutex terminó sin liberarlo
+        # (cierre inesperado), igual se debe poder seguir escribiendo.
+        contenido = _leer("common.ps1")
+        self.assertIn("AbandonedMutexException", contenido)
+
+    @unittest.skipUnless(PWSH, "pwsh no disponible en este entorno: se omite la prueba real de concurrencia")
+    def test_escrituras_concurrentes_no_pierden_lineas(self):
+        # Prueba funcional real (no solo estática): varios procesos de
+        # PowerShell escribiendo al mismo logs\startup.log en simultáneo,
+        # sin ninguna línea perdida.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "scripts" / "windows").mkdir(parents=True)
+            shutil.copy(SCRIPTS_DIR / "common.ps1", tmp_path / "scripts" / "windows" / "common.ps1")
+
+            num_jobs = 8
+            lineas_por_job = 5
+            comando = f"""
+            $jobs = @()
+            for ($i = 0; $i -lt {num_jobs}; $i++) {{
+                $jobs += Start-Job -ScriptBlock {{
+                    param($root, $idx, $n)
+                    . (Join-Path $root 'scripts/windows/common.ps1')
+                    for ($j = 0; $j -lt $n; $j++) {{
+                        Write-Log -LogFile 'startup.log' -Mensaje "P$idx-L$j"
+                    }}
+                }} -ArgumentList '{tmp_path}', $i, {lineas_por_job}
+            }}
+            Wait-Job -Job $jobs | Out-Null
+            $fallidos = ($jobs | Where-Object {{ $_.State -eq 'Failed' }}).Count
+            Remove-Job -Job $jobs
+            Write-Output "FALLIDOS:$fallidos"
+            """
+            resultado = subprocess.run(
+                [PWSH, "-NoProfile", "-NonInteractive", "-Command", comando],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertEqual(resultado.returncode, 0, resultado.stderr)
+            self.assertIn("FALLIDOS:0", resultado.stdout)
+
+            log_path = tmp_path / "logs" / "startup.log"
+            self.assertTrue(log_path.exists())
+            lineas = log_path.read_text(encoding="utf-8").splitlines()
+
+            esperadas = {f"P{i}-L{j}" for i in range(num_jobs) for j in range(lineas_por_job)}
+            encontradas = {marca for marca in esperadas if any(marca in linea for linea in lineas)}
+            faltantes = esperadas - encontradas
+            self.assertEqual(faltantes, set(), f"líneas perdidas bajo escritura concurrente: {faltantes}")
+
+
 if __name__ == "__main__":
     unittest.main()

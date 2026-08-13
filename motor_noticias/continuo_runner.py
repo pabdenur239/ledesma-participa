@@ -1,10 +1,13 @@
 import argparse
+import ctypes
+import json
 import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .ciclo_continuo import INTERVALO_SEGUNDOS_DEFAULT, ejecutar_ciclo
 from .db import Database
@@ -16,26 +19,122 @@ LOG_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "logs" / "r
 
 logger = logging.getLogger("motor_noticias.continuo")
 
+NOMBRE_SCRIPT_LOCK = "run_continuo.py"
+
 
 class InstanciaEnEjecucion(RuntimeError):
-    """Ya existe un lock activo: hay (o hubo) otra instancia corriendo."""
+    """Ya existe un lock activo y su proceso propietario sigue realmente
+    corriendo: hay otra instancia activa."""
 
 
-def tomar_lock(lock_path: Path) -> None:
-    """Mecanismo simple y portable (sin fcntl/msvcrt) para evitar dos
-    instancias simultáneas: crea el archivo de forma exclusiva y falla si ya
-    existe. No detecta automáticamente locks de procesos que ya terminaron
-    (best effort, ver mensaje de error)."""
+def _proceso_activo(pid: int) -> bool:
+    """Best-effort, sin dependencias externas (solo stdlib: os/ctypes):
+    True si existe un proceso vivo con ese PID en este sistema operativo.
+    Windows y POSIX requieren mecanismos distintos, ninguno de los cuales
+    necesita paquetes adicionales."""
+    if not pid or pid <= 0:
+        return False
+    if sys.platform == "win32":
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # existe, solo no tenemos permiso para señalizarlo
+    except OSError:
+        return False
+    return True
+
+
+def _leer_lock(lock_path: Path) -> Optional[dict]:
+    """Devuelve la info del lock (al menos {"pid": int}), o None si el
+    archivo no existe, está vacío o es ilegible/corrupto (lock inválido).
+    Compatible con locks viejos que solo tenían el PID como texto plano."""
+    try:
+        contenido = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not contenido:
+        return None
+    if contenido.isdigit():
+        return {"pid": int(contenido)}
+    try:
+        datos = json.loads(contenido)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(datos, dict) or "pid" not in datos:
+        return None
+    try:
+        datos["pid"] = int(datos["pid"])
+    except (TypeError, ValueError):
+        return None
+    return datos
+
+
+def _escribir_lock(lock_path: Path) -> None:
+    datos = {
+        "pid": os.getpid(),
+        "script": NOMBRE_SCRIPT_LOCK,
+        "iniciado_en": datetime.now(timezone.utc).isoformat(),
+    }
+    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps(datos))
+
+
+def tomar_lock(lock_path: Path, proceso_activo: Callable[[int], bool] = _proceso_activo) -> None:
+    """Evita dos instancias reales simultáneas, sin dejarse bloquear por un
+    lock obsoleto (p.ej. tras un apagado inesperado): si el archivo ya
+    existe, se lee el PID que guarda y se comprueba si ese proceso sigue
+    realmente activo.
+
+    - Si el proceso sigue activo: es una instancia real -> `InstanciaEnEjecucion`.
+    - Si el proceso ya no existe, o el archivo es inválido/corrupto/vacío
+      (lock obsoleto): se elimina automáticamente y se reintenta una vez.
+    - Si esa segunda escritura también choca (otra instancia lo tomó justo
+      en el medio): se trata como conflicto real, nunca se sobreescribe a
+      ciegas.
+
+    `proceso_activo` es inyectable para tests 100% offline."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        _escribir_lock(lock_path)
+        return
+    except FileExistsError:
+        pass
+
+    datos = _leer_lock(lock_path)
+    pid_existente = datos.get("pid") if datos else None
+
+    if pid_existente is not None and proceso_activo(pid_existente):
+        raise InstanciaEnEjecucion(
+            f"Ya hay una instancia de {NOMBRE_SCRIPT_LOCK} activa (PID {pid_existente}, lock en {lock_path})."
+        )
+
+    # Lock obsoleto (proceso ya no existe) o inválido (archivo corrupto/
+    # vacío/sin PID legible): se limpia automáticamente y se continúa.
+    logger.warning(
+        "Lock obsoleto o inválido en %s (PID registrado: %s). Se elimina y se continúa.",
+        lock_path,
+        pid_existente,
+    )
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
+
+    try:
+        _escribir_lock(lock_path)
     except FileExistsError as error:
         raise InstanciaEnEjecucion(
-            f"Ya existe un lock en {lock_path}. Si estás seguro de que no hay otra "
-            "instancia de run_continuo.py activa, borrá ese archivo y volvé a intentar."
+            f"Ya hay una instancia de {NOMBRE_SCRIPT_LOCK} activa (lock en {lock_path})."
         ) from error
-    with os.fdopen(fd, "w") as f:
-        f.write(str(os.getpid()))
 
 
 def liberar_lock(lock_path: Path) -> None:

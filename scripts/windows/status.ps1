@@ -24,7 +24,7 @@ try {
 
 Write-Host ""
 Write-Host "--- Tareas programadas ---"
-foreach ($tarea in @("LedesmaParticipa-Motor", "LedesmaParticipa-Panel")) {
+foreach ($tarea in @("LedesmaParticipa-Motor", "LedesmaParticipa-Panel", "LedesmaParticipa-InformeDiario")) {
     $t = Get-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
     if ($t) {
         $info = Get-ScheduledTaskInfo -TaskName $tarea

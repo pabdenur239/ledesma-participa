@@ -1,10 +1,10 @@
-﻿# uninstall_tasks.ps1 - elimina EXCLUSIVAMENTE las dos tareas programadas de
-# Ledesma Participa. No toca el proyecto, la base de datos, los logs,
+﻿# uninstall_tasks.ps1 - elimina EXCLUSIVAMENTE las tres tareas programadas
+# de Ledesma Participa. No toca el proyecto, la base de datos, los logs,
 # Ollama, los modelos ni Python.
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
-$Tareas = @("LedesmaParticipa-Motor", "LedesmaParticipa-Panel")
+$Tareas = @("LedesmaParticipa-Motor", "LedesmaParticipa-Panel", "LedesmaParticipa-InformeDiario")
 
 foreach ($tarea in $Tareas) {
     $existente = Get-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue

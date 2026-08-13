@@ -1,0 +1,8 @@
+{
+  "clima": {
+    "latitud": -23.8058,
+    "longitud": -64.7892,
+    "timezone": "America/Argentina/Jujuy"
+  },
+  "timeout_segundos": 10
+}

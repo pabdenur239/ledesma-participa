@@ -52,6 +52,7 @@ class TestArchivosExisten(unittest.TestCase):
             "check_ollama.ps1",
             "start_motor.ps1",
             "start_panel.ps1",
+            "start_informe_diario.ps1",
             "install_tasks.ps1",
             "uninstall_tasks.ps1",
             "status.ps1",
@@ -163,7 +164,15 @@ class TestResolucionDeRutas(unittest.TestCase):
 # 2. configuración compartida (no duplicada)
 class TestConfiguracionCompartida(unittest.TestCase):
     def test_start_motor_y_start_panel_reutilizan_common(self):
-        for nombre in ("start_motor.ps1", "start_panel.ps1", "check_ollama.ps1", "install_tasks.ps1", "status.ps1", "uninstall_tasks.ps1"):
+        for nombre in (
+            "start_motor.ps1",
+            "start_panel.ps1",
+            "start_informe_diario.ps1",
+            "check_ollama.ps1",
+            "install_tasks.ps1",
+            "status.ps1",
+            "uninstall_tasks.ps1",
+        ):
             with self.subTest(nombre=nombre):
                 contenido = _leer(nombre)
                 self.assertIn('common.ps1', contenido)
@@ -221,7 +230,7 @@ class TestScriptsUsanRutaYWorkingDirectoryCorrectos(unittest.TestCase):
 
     def test_install_tasks_fija_workingdirectory_explicito(self):
         contenido = _leer("install_tasks.ps1")
-        self.assertEqual(contenido.count("-WorkingDirectory $root"), 2)
+        self.assertEqual(contenido.count("-WorkingDirectory $root"), 3)
 
 
 # 9-10. nombres de tareas y trigger de inicio de sesión
@@ -230,8 +239,9 @@ class TestTareasProgramadas(unittest.TestCase):
         contenido = _leer("install_tasks.ps1")
         self.assertIn('"LedesmaParticipa-Motor"', contenido)
         self.assertIn('"LedesmaParticipa-Panel"', contenido)
+        self.assertIn('"LedesmaParticipa-InformeDiario"', contenido)
 
-    def test_trigger_es_atlogon_no_atstartup(self):
+    def test_trigger_motor_y_panel_es_atlogon_no_atstartup(self):
         contenido = _leer("install_tasks.ps1")
         self.assertIn("-AtLogOn", contenido)
         self.assertNotIn("-AtStartup", contenido)
@@ -250,6 +260,78 @@ class TestTareasProgramadas(unittest.TestCase):
     def test_no_limite_de_tiempo_de_ejecucion(self):
         contenido = _leer("install_tasks.ps1")
         self.assertIn("ExecutionTimeLimit ([TimeSpan]::Zero)", contenido)
+
+
+# 11. configuración de la tarea Windows del informe diario
+class TestTareaInformeDiario(unittest.TestCase):
+    def test_script_wrapper_existe_y_no_depende_de_ollama(self):
+        self.assertTrue((SCRIPTS_DIR / "start_informe_diario.ps1").exists())
+        contenido = _leer("start_informe_diario.ps1")
+        self.assertIn("generar_informe_diario.py", contenido)
+        # no hay ninguna invocación real a check_ollama (más allá de que un
+        # comentario explique por qué no hace falta)
+        lineas_invocacion = [l for l in contenido.splitlines() if l.strip().startswith("&")]
+        self.assertTrue(lineas_invocacion)
+        for linea in lineas_invocacion:
+            self.assertNotIn("check_ollama", linea)
+
+    def test_trigger_diario_a_las_0730(self):
+        contenido = _leer("install_tasks.ps1")
+        self.assertIn("-Daily", contenido)
+        self.assertIn("07:30", contenido)
+
+    def test_start_when_available_habilitado(self):
+        # Se ejecuta al volver a estar disponible si la notebook estaba
+        # apagada a las 07:30 — mismo $settings compartido por las 3 tareas.
+        contenido = _leer("install_tasks.ps1")
+        self.assertIn("-StartWhenAvailable", contenido)
+
+    def test_informe_diario_usa_la_misma_politica_de_reintentos_e_instancia_unica(self):
+        contenido = _leer("install_tasks.ps1")
+        self.assertIn("$accionInforme", contenido)
+        # se registra con el mismo objeto $settings (RestartCount/
+        # RestartInterval/IgnoreNew/ExecutionTimeLimit) que Motor y Panel:
+        # no hay un segundo bloque de $settings solo para esta tarea.
+        self.assertEqual(contenido.count("New-ScheduledTaskSettingsSet"), 1)
+        self.assertIn('Register-ScheduledTask -TaskName $TareaInforme', contenido)
+
+    def test_informe_diario_registrado_con_action_y_trigger_propios(self):
+        contenido = _leer("install_tasks.ps1")
+        self.assertIn("$triggerInforme", contenido)
+        self.assertIn("start_informe_diario.ps1", contenido)
+
+
+# 12. preservación de Motor y Panel al agregar la tercera tarea
+class TestPreservacionMotorYPanel(unittest.TestCase):
+    def test_motor_y_panel_conservan_su_trigger_y_retraso(self):
+        contenido = _leer("install_tasks.ps1")
+        self.assertIn('$DelayMotor = "PT30S"', contenido)
+        self.assertIn('$DelayPanel = "PT45S"', contenido)
+        self.assertIn("$triggerMotor = New-ScheduledTaskTrigger -AtLogOn", contenido)
+        self.assertIn("$triggerPanel = New-ScheduledTaskTrigger -AtLogOn", contenido)
+
+    def test_motor_y_panel_siguen_registrados(self):
+        contenido = _leer("install_tasks.ps1")
+        self.assertIn('Register-ScheduledTask -TaskName $TareaMotor', contenido)
+        self.assertIn('Register-ScheduledTask -TaskName $TareaPanel', contenido)
+
+    def test_start_motor_y_start_panel_sin_cambios_de_fondo(self):
+        # Siguen verificando (Motor) u omitiendo (Panel) Ollama exactamente
+        # igual que antes de agregar la tercera tarea.
+        self.assertIn("check_ollama.ps1", _leer("start_motor.ps1"))
+        self.assertNotIn("check_ollama", _leer("start_panel.ps1"))
+
+    def test_uninstall_incluye_las_tres_tareas(self):
+        contenido = _leer("uninstall_tasks.ps1")
+        self.assertIn('"LedesmaParticipa-Motor"', contenido)
+        self.assertIn('"LedesmaParticipa-Panel"', contenido)
+        self.assertIn('"LedesmaParticipa-InformeDiario"', contenido)
+
+    def test_status_reporta_las_tres_tareas(self):
+        contenido = _leer("status.ps1")
+        self.assertIn('"LedesmaParticipa-Motor"', contenido)
+        self.assertIn('"LedesmaParticipa-Panel"', contenido)
+        self.assertIn('"LedesmaParticipa-InformeDiario"', contenido)
 
 
 # 11. no contiene contraseña
@@ -303,10 +385,11 @@ class TestBindLocalhost(unittest.TestCase):
 
 # 13. uninstall solo elimina tareas del proyecto
 class TestUninstallAlcanceAcotado(unittest.TestCase):
-    def test_uninstall_solo_referencia_las_dos_tareas_del_proyecto(self):
+    def test_uninstall_solo_referencia_las_tareas_del_proyecto(self):
         contenido = _leer("uninstall_tasks.ps1")
         self.assertIn('"LedesmaParticipa-Motor"', contenido)
         self.assertIn('"LedesmaParticipa-Panel"', contenido)
+        self.assertIn('"LedesmaParticipa-InformeDiario"', contenido)
         # no debe operar sobre un listado sin filtrar (todas las tareas del sistema)
         self.assertNotIn("Get-ScheduledTask |", contenido)
         self.assertNotIn("Get-ScheduledTask -TaskName *", contenido)

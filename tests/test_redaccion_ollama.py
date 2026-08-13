@@ -1,7 +1,9 @@
 import json
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from motor_noticias.models import Estado, Noticia
@@ -9,7 +11,10 @@ from motor_noticias.redaccion.mock import RedactorMock
 from motor_noticias.redaccion.ollama import (
     ENDPOINT_DEFAULT,
     ESQUEMA_RESPUESTA,
+    KEEP_ALIVE_DEFAULT,
     MODELO_DEFAULT,
+    THINK_DEFAULT,
+    TIMEOUT_DEFAULT,
     ErrorRedaccionOllama,
     RedactorOllama,
 )
@@ -86,6 +91,35 @@ class TestPeticionOllama(unittest.TestCase):
         self.assertIs(cuerpo["stream"], False)
         self.assertIs(cuerpo["think"], False)
         self.assertEqual(cuerpo["options"]["temperature"], 0)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_request_incluye_keep_alive_configurado(self, urlopen_mock):
+        urlopen_mock.return_value = _respuesta_falsa(_respuesta_ollama())
+        redactor = RedactorOllama(keep_alive="35m")
+
+        redactor.redactar(self.noticia)
+
+        cuerpo = json.loads(urlopen_mock.call_args.args[0].data)
+        self.assertEqual(cuerpo["keep_alive"], "35m")
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_think_explicito_true_se_respeta_en_el_payload(self, urlopen_mock):
+        urlopen_mock.return_value = _respuesta_falsa(_respuesta_ollama())
+        redactor = RedactorOllama(think=True)
+
+        redactor.redactar(self.noticia)
+
+        cuerpo = json.loads(urlopen_mock.call_args.args[0].data)
+        self.assertIs(cuerpo["think"], True)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_timeout_configurado_se_usa_en_la_conexion(self, urlopen_mock):
+        urlopen_mock.return_value = _respuesta_falsa(_respuesta_ollama())
+        redactor = RedactorOllama(timeout=45)
+
+        redactor.redactar(self.noticia)
+
+        self.assertEqual(urlopen_mock.call_args.kwargs["timeout"], 45)
 
     @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
     def test_request_incluye_json_schema_de_respuesta(self, urlopen_mock):
@@ -223,6 +257,144 @@ class TestErroresOllama(unittest.TestCase):
 
         with self.assertRaises(ErrorRedaccionOllama):
             self.redactor.redactar(self.noticia)
+
+
+def _escribir_config(tmp: Path, contenido: dict) -> Path:
+    ruta = tmp / "redaccion.json"
+    ruta.write_text(json.dumps(contenido), encoding="utf-8")
+    return ruta
+
+
+class TestConfiguracionOllama(unittest.TestCase):
+    """keep_alive/timeout/think configurables desde config/redaccion.json,
+    con defaults seguros y compatibilidad con una configuración vieja que
+    no conoce estas claves (no debe romperse ni fallar)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self.tmpdir.name)
+        self.noticia = _noticia_de_prueba()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_defaults_de_clase_coinciden_con_la_configuracion_de_produccion_esperada(self):
+        self.assertEqual(TIMEOUT_DEFAULT, 120)
+        self.assertEqual(KEEP_ALIVE_DEFAULT, "35m")
+        self.assertIs(THINK_DEFAULT, False)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_config_completa_se_usa_tal_cual(self, urlopen_mock):
+        urlopen_mock.return_value = _respuesta_falsa(_respuesta_ollama())
+        config_path = _escribir_config(
+            self.tmp,
+            {
+                "endpoint": "http://localhost:11434/api/chat",
+                "modelo": "qwen3:1.7b",
+                "timeout": 120,
+                "keep_alive": "35m",
+                "think": False,
+            },
+        )
+        redactor = RedactorOllama(config_path=config_path)
+
+        redactor.redactar(self.noticia)
+
+        self.assertEqual(redactor.timeout, 120)
+        self.assertEqual(redactor.keep_alive, "35m")
+        self.assertIs(redactor.think, False)
+        cuerpo = json.loads(urlopen_mock.call_args.args[0].data)
+        self.assertEqual(cuerpo["keep_alive"], "35m")
+        self.assertIs(cuerpo["think"], False)
+        self.assertEqual(urlopen_mock.call_args.kwargs["timeout"], 120)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_configuracion_vieja_sin_keep_alive_ni_think_sigue_funcionando(self, urlopen_mock):
+        urlopen_mock.return_value = _respuesta_falsa(_respuesta_ollama())
+        config_path = _escribir_config(
+            self.tmp,
+            {
+                "proveedor": "ollama",
+                "endpoint": "http://localhost:11434/api/chat",
+                "modelo": "qwen3:1.7b",
+                "timeout": 60,
+            },
+        )
+        redactor = RedactorOllama(config_path=config_path)
+
+        titulo, texto = redactor.redactar(self.noticia)
+
+        self.assertTrue(titulo)
+        self.assertTrue(texto)
+        self.assertEqual(redactor.timeout, 60)  # respeta el valor viejo si está presente
+        self.assertEqual(redactor.keep_alive, KEEP_ALIVE_DEFAULT)  # default seguro
+        self.assertIs(redactor.think, THINK_DEFAULT)  # default seguro
+        cuerpo = json.loads(urlopen_mock.call_args.args[0].data)
+        self.assertEqual(cuerpo["keep_alive"], KEEP_ALIVE_DEFAULT)
+        self.assertIs(cuerpo["think"], THINK_DEFAULT)
+
+    @patch("motor_noticias.redaccion.ollama.urllib.request.urlopen")
+    def test_configuracion_inexistente_usa_defaults_seguros(self, urlopen_mock):
+        urlopen_mock.return_value = _respuesta_falsa(_respuesta_ollama())
+        redactor = RedactorOllama(config_path=self.tmp / "no-existe.json")
+
+        redactor.redactar(self.noticia)
+
+        self.assertEqual(redactor.timeout, TIMEOUT_DEFAULT)
+        self.assertEqual(redactor.keep_alive, KEEP_ALIVE_DEFAULT)
+        self.assertIs(redactor.think, THINK_DEFAULT)
+
+    def test_timeout_sigue_produciendo_error_controlado_con_el_nuevo_default(self):
+        with patch("motor_noticias.redaccion.ollama.urllib.request.urlopen") as urlopen_mock:
+            urlopen_mock.side_effect = TimeoutError("timed out")
+            redactor = RedactorOllama(config_path=self.tmp / "no-existe.json")
+
+            with self.assertRaises(ErrorRedaccionOllama) as contexto:
+                redactor.redactar(self.noticia)
+
+        self.assertIn("Ollama", str(contexto.exception))
+        self.assertEqual(urlopen_mock.call_args.kwargs["timeout"], TIMEOUT_DEFAULT)
+
+    def test_motor_continuo_sigue_vivo_ante_un_error_de_ollama(self):
+        # "Motor continúa ante error": un fallo real de Ollama (timeout) no
+        # debe interrumpir el ciclo ni las demás fuentes.
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+        from unittest.mock import patch as _patch
+
+        from motor_noticias.ciclo_continuo import ejecutar_ciclo
+        from motor_noticias.db import Database
+
+        class _ColectorDePrueba:
+            def recolectar(self):
+                return [
+                    {
+                        "titulo": "Obras en Libertador General San Martín continúan esta semana",
+                        "texto": "El municipio informó el avance de las obras en distintos barrios.",
+                        "url": "https://ejemplo.test/motor-vivo-ante-error-ollama",
+                        "fuente": "Fuente de prueba",
+                        "fecha": "",
+                    }
+                ]
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            db = Database(_Path(tmp) / "test.db")
+            try:
+                redactor = RedactorOllama(config_path=self.tmp / "no-existe.json")
+                fuentes_prueba = (("fuente-a", lambda: _ColectorDePrueba(), ErrorRedaccionOllama),)
+                with _patch("motor_noticias.ciclo_continuo.FUENTES_CONTINUAS", fuentes_prueba), _patch(
+                    "motor_noticias.redaccion.ollama.urllib.request.urlopen"
+                ) as urlopen_mock:
+                    urlopen_mock.side_effect = TimeoutError("timed out")
+                    resumen = ejecutar_ciclo(db, redactor, agenda_automatica=False)
+
+                self.assertEqual(resumen.total_errores, 1)
+                self.assertEqual(resumen.resultados[0].resultado, "error")
+                self.assertIn("Ollama", resumen.resultados[0].mensaje_error)
+                # el ciclo se registró igual pese al error del redactor
+                self.assertIsNotNone(db.ultimo_ciclo())
+            finally:
+                db.close()
 
 
 class TestProteccionAntiAlucinacion(unittest.TestCase):

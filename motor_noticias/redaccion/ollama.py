@@ -12,7 +12,17 @@ CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent.parent / "config" /
 
 ENDPOINT_DEFAULT = "http://localhost:11434/api/chat"
 MODELO_DEFAULT = "qwen3:1.7b"
-TIMEOUT_DEFAULT = 60
+# 120s (antes 60s): en producción el modelo queda "frío" entre ciclos del
+# Motor Continuo (cada 30 min) y la primera carga/redacción tras eso puede
+# superar los 60s.
+TIMEOUT_DEFAULT = 120
+# Motor Continuo corre cada 30 min: 35m mantiene el modelo cargado en
+# memoria entre ciclos y evita una recarga fría en cada ronda.
+KEEP_ALIVE_DEFAULT = "35m"
+# qwen3 soporta un modo "thinking" que no aporta nada para reescritura
+# periodística y puede ser más lento: se pide explícitamente apagado, sin
+# depender del default de Ollama.
+THINK_DEFAULT = False
 
 ESQUEMA_RESPUESTA = {
     "type": "object",
@@ -192,12 +202,18 @@ class RedactorOllama(Redactor):
         endpoint: Optional[str] = None,
         modelo: Optional[str] = None,
         timeout: Optional[int] = None,
+        keep_alive: Optional[str] = None,
+        think: Optional[bool] = None,
         config_path: Optional[Path] = None,
     ):
         config = _cargar_config(config_path)
         self.endpoint = endpoint or config.get("endpoint") or ENDPOINT_DEFAULT
         self.modelo = modelo or config.get("modelo") or MODELO_DEFAULT
         self.timeout = timeout or config.get("timeout") or TIMEOUT_DEFAULT
+        self.keep_alive = keep_alive or config.get("keep_alive") or KEEP_ALIVE_DEFAULT
+        # bool: "or" trataría a False como "no configurado" e ignoraría un
+        # think=False explícito, por eso se compara contra None.
+        self.think = think if think is not None else config.get("think", THINK_DEFAULT)
 
     def redactar(self, noticia: Noticia) -> Tuple[str, str]:
         if not _hay_informacion_suficiente(noticia):
@@ -218,7 +234,8 @@ class RedactorOllama(Redactor):
                 {"role": "user", "content": _construir_mensaje_usuario(noticia)},
             ],
             "stream": False,
-            "think": False,
+            "think": self.think,
+            "keep_alive": self.keep_alive,
             "options": {"temperature": 0},
             "format": ESQUEMA_RESPUESTA,
         }

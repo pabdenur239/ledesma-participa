@@ -374,10 +374,12 @@ Ninguno de los collectors actuales extrae todavía una imagen de la
 fuente, así que hoy toda noticia usa este mecanismo; el modelo de datos
 ya está preparado para cuando alguno la extraiga (`tiene_imagen_original`).
 Si la noticia no tiene imagen original, al preparar la publicación de
-Facebook se genera automáticamente una placa **PNG de 1200×1200**
-(`motor_noticias/meta/imagen.py`, dibujada con Pillow) con el branding
-"Ledesma Participa", el título, una bajada breve, la fuente y la
-localidad — usando exclusivamente `titulo_revisado`/`texto_revisado`
+Facebook se genera automáticamente una placa **PNG de 1080×1080**
+(cuadrado, tamaño recomendado por Meta tanto para Facebook como para
+Instagram), fondo oscuro con marca en dorado, título en blanco y acento
+naranja en el pie de fuente/localidad
+(`motor_noticias/meta/imagen.py`, dibujada con Pillow) — usando
+exclusivamente `titulo_revisado`/`texto_revisado`
 (o su fallback preparado), nunca IA. El recorte de líneas largas mide
 el ancho real en píxeles con la propia fuente tipográfica para no
 desbordar el lienzo, y nunca corta una palabra al medio.
@@ -409,6 +411,83 @@ genera incluso para noticias con riesgo político/institucional, ya que
 solo habilita la previsualización en DRY RUN, nunca publicación real,
 y nunca reemplaza la revisión humana.
 
+## Publicación automática en Facebook e Instagram
+
+A partir de esta fase, el sistema puede publicar contenido **realmente**
+y **sin revisión humana** en Facebook e Instagram para las categorías
+explícitamente aptas para eso — el resto sigue exactamente igual que
+antes: preparado y esperando aprobación en el panel.
+
+**Selección y horarios.** Reutiliza la misma Agenda Editorial en
+cascada territorial (local → departamental → provincial → nacional,
+`motor_noticias/motor_editorial.py`) con 10 franjas fijas por día:
+07:30 (reservada al informe diario de clima/dólar,
+`reservar_franja_informe_diario`) y 09:30/11:30/13:30/15:30/17:30/
+19:00/20:30/21:30/22:30 por cascada (`HORARIOS_DEFAULT`). Si no hay
+suficiente contenido apto, se publica solo lo que hay — nunca se rellena
+con contenido vencido, duplicado o de menor prioridad territorial
+existiendo uno mejor.
+
+**Qué se aprueba solo.** `motor_noticias/meta/elegibilidad_automatica.py`
+exige, para saltarse la revisión humana: `preparada`, no rechazada, sin
+`requiere_revision_especial`, título/texto/fuente presentes, territorio
+clasificado y dentro de `ANTIGUEDAD_MAXIMA_HORAS`. La lista taxativa de
+motivos de revisión humana obligatoria vive en
+`config/riesgo_editorial.json`: institucional/municipal, política
+partidaria, figura pública relacionada, **judicial, muertes, menores
+identificables, salud sensible y contenido violento** (categorías
+agregadas en esta fase). Una noticia aprobada así queda marcada
+`revision_automatica = 1` en la base, distinguible en cualquier momento
+de una aprobación humana.
+
+**Imágenes.** Antes de publicar, se genera (o reutiliza) la placa de
+marca 1080×1080; si no se puede generar una imagen segura, esa noticia
+**no se publica** y queda registrado el bloqueo — nunca se publica sin
+imagen.
+
+**Publicación real.** `motor_noticias/meta/cliente.py` (`ClienteMetaGraphAPI`)
+usa exclusivamente las APIs oficiales de Meta (Graph API v19, sin
+navegador ni extensiones): Facebook recibe la placa por subida directa
+(`/{page-id}/photos`) más un comentario con el texto completo/fuente/
+hashtags; Instagram usa el flujo oficial de dos pasos
+(`/{ig-user-id}/media` + `/media_publish`), que **exige una imagen
+públicamente accesible** — a diferencia de Facebook, no admite subir el
+archivo directamente. Los métodos de publicación real son nuevos y
+están separados de los de vista previa (`publicar_post_principal`,
+etc.), que se mantienen intactos y siguen siendo DRY RUN-only.
+
+**Idempotencia y reintentos.** Cada franja × red social es una fila en
+`programacion_meta` con estado independiente (`pendiente`/`publicado`/
+`error`), el ID real devuelto por Meta y un contador de intentos. Un
+fallo en Instagram nunca toca el estado de Facebook de la misma franja
+ni viceversa, y una fila ya `publicado` nunca se vuelve a publicar
+(chequeo antes de cada intento). `reintentar_publicaciones_meta.py`
+reintenta, de forma acotada (`max_intentos_reintento` en
+`config/meta.json`, default 3), solo las filas en error.
+
+**Credenciales.** Todas por variable de entorno (ver `.env.example`,
+nunca versionadas, `.env` ignorado por Git): `META_PAGE_ACCESS_TOKEN`
+(con permisos `pages_manage_posts`, `pages_read_engagement`,
+`instagram_content_publish`), `META_IG_USER_ID` (Instagram Business
+Account vinculado a la página) y `META_IMAGE_BASE_URL` (URL pública
+donde el panel expone las placas — ver `/placas/<archivo>` más abajo).
+El token nunca se loguea ni aparece en ningún mensaje de error.
+
+**Panel: `/placas/<archivo>`.** Sirve exclusivamente archivos
+`placa_<hex>.png` ya generados en `data/placas/`, con validación de
+nombre y de que la ruta resuelta siga dentro de ese directorio (sin
+recorrido de directorios). Instagram necesita poder alcanzar esta ruta
+por HTTPS público: **exponer el panel (hoy solo `127.0.0.1:8000`) detrás
+de un dominio o túnel HTTPS accesible desde Internet es una decisión de
+infraestructura del usuario**, fuera del alcance de este proyecto —
+mientras no esté resuelta, Facebook sigue publicando con normalidad
+(sube el archivo directamente) e Instagram queda en estado de error por
+franja, visible y reintentable, nunca silencioso.
+
+**CLIs:** `generar_programacion_meta.py`, `generar_placas_meta.py`,
+`publicar_meta.py` (detecta sola la franja más cercana a la hora
+actual) y `reintentar_publicaciones_meta.py`.
+
 ## Producción local en Windows
 
 Scripts en `scripts/windows/` para que el Motor Continuo y el Panel
@@ -422,9 +501,18 @@ registran.
 ```powershell
 .\scripts\windows\install_tasks.ps1
 ```
-Registra `LedesmaParticipa-Motor` y `LedesmaParticipa-Panel`, disparadas
-al iniciar sesión (con un pequeño retraso para darle tiempo a Ollama),
-con reintento automático ante fallo.
+Registra siete tareas, todas con reintento automático ante fallo:
+`LedesmaParticipa-Motor` y `LedesmaParticipa-Panel` (al iniciar sesión,
+con un pequeño retraso para darle tiempo a Ollama);
+`LedesmaParticipa-InformeDiario` (diaria, 07:30);
+`LedesmaParticipa-MetaProgramacion` (diaria, 07:00 y 07:35 — genera la
+programación del día y reincorpora el informe diario a su franja);
+`LedesmaParticipa-MetaPlacas` (diaria, 07:40 — genera las placas y
+aprueba automáticamente lo que sea apto); `LedesmaParticipa-MetaPublicar`
+(una vez por cada una de las 10 franjas fijas — publica de verdad en
+Facebook/Instagram); y `LedesmaParticipa-MetaReintentos` (cada 30
+minutos entre las 08:00 y las 00:00 — reintenta publicaciones en
+error).
 
 **Estado:**
 ```powershell
@@ -453,4 +541,6 @@ ni Ollama):
 ```
 
 **Logs:** `logs/` (`motor_continuo.log`, `panel.log`, `startup.log`,
-`ollama_check.log`), con rotación simple cuando superan ~5 MB.
+`ollama_check.log`, `informe_diario.log`, `meta_programacion.log`,
+`meta_placas.log`, `meta_publicar.log`, `meta_reintentos.log`), con
+rotación simple cuando superan ~5 MB.

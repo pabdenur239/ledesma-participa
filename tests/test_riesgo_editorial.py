@@ -37,6 +37,46 @@ class TestRiesgoEditorial(unittest.TestCase):
         self.assertTrue(r["requiere_revision_especial"])
         self.assertEqual(r["categoria_riesgo"], "politica_partidaria")
 
+    def test_noticia_judicial_requiere_revision_especial(self):
+        r = evaluar_riesgo_editorial(
+            "Un hombre quedó imputado por la causa judicial",
+            "La fiscalía confirmó que el detenido permanece con prisión preventiva.",
+        )
+        self.assertTrue(r["requiere_revision_especial"])
+        self.assertEqual(r["categoria_riesgo"], "judicial")
+
+    def test_noticia_sobre_fallecimiento_requiere_revision_especial(self):
+        r = evaluar_riesgo_editorial(
+            "Falleció un vecino de Libertador tras un accidente",
+            "El hombre falleció esta madrugada en el hospital local.",
+        )
+        self.assertTrue(r["requiere_revision_especial"])
+        self.assertEqual(r["categoria_riesgo"], "muertes")
+
+    def test_noticia_sobre_menor_identificable_requiere_revision_especial(self):
+        r = evaluar_riesgo_editorial(
+            "Investigan un caso de grooming en la ciudad",
+            "La policía investiga un caso de grooming ocurrido en la ciudad.",
+        )
+        self.assertTrue(r["requiere_revision_especial"])
+        self.assertEqual(r["categoria_riesgo"], "menores_identificables")
+
+    def test_noticia_de_salud_sensible_requiere_revision_especial(self):
+        r = evaluar_riesgo_editorial(
+            "Campaña de concientización sobre salud mental",
+            "Una organización local lanzó una campaña sobre salud mental en adolescentes.",
+        )
+        self.assertTrue(r["requiere_revision_especial"])
+        self.assertEqual(r["categoria_riesgo"], "salud_sensible")
+
+    def test_noticia_con_contenido_violento_requiere_revision_especial(self):
+        r = evaluar_riesgo_editorial(
+            "Hombre herido de bala en un ataque armado",
+            "El hombre quedó herido de bala tras un ataque armado en la zona.",
+        )
+        self.assertTrue(r["requiere_revision_especial"])
+        self.assertEqual(r["categoria_riesgo"], "contenido_violento")
+
     def test_noticia_deportiva_comun_no_requiere_revision_especial(self):
         r = evaluar_riesgo_editorial(
             "El club local ganó el torneo regional de fútbol",

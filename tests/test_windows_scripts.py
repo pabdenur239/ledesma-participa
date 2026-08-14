@@ -230,7 +230,7 @@ class TestScriptsUsanRutaYWorkingDirectoryCorrectos(unittest.TestCase):
 
     def test_install_tasks_fija_workingdirectory_explicito(self):
         contenido = _leer("install_tasks.ps1")
-        self.assertEqual(contenido.count("-WorkingDirectory $root"), 3)
+        self.assertEqual(contenido.count("-WorkingDirectory $root"), 7)
 
 
 # 9-10. nombres de tareas y trigger de inicio de sesión

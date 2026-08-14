@@ -110,3 +110,21 @@ def generar_contenido_facebook(
         imagen_url=None,
         menciones=menciones_activas,
     )
+
+
+def generar_caption_instagram(noticia: dict, config: Optional[dict] = None) -> str:
+    """Instagram no tiene un mecanismo equivalente al "primer comentario"
+    fijado de Facebook con el mismo alcance editorial: todo el contenido
+    (título, reseña, fuente y hashtags) va en un único caption."""
+    config = config or _cargar_config()
+    titulo, texto = _titulo_y_texto_finales(noticia)
+    reseña = _resena_breve(texto, config["longitud_maxima_resena"])
+    hashtags = generar_hashtags(noticia.get("localidad"), config)
+
+    partes = [titulo, reseña]
+    fuente = (noticia.get("nombre_fuente") or "").strip()
+    if fuente:
+        partes.append(f"Fuente: {fuente}")
+    partes.append(" ".join(hashtags))
+
+    return "\n\n".join(partes)

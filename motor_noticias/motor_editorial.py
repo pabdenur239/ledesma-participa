@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, NamedTuple, Optional
 
 from .db import Database
+from .dedupe import normalizar_url
 from .models import Estado, RevisionEstado
 
 # Estados de la propia noticia que congelan su espacio en la agenda: una vez
@@ -19,7 +20,15 @@ REVISIONES_PROTEGIDAS = (RevisionEstado.APROBADA.value, RevisionEstado.RECHAZADA
 # proyecto es exclusivamente stdlib + Pillow).
 ZONA_JUJUY = timezone(timedelta(hours=-3), name="America/Argentina/Jujuy")
 
-HORARIOS_DEFAULT = ("08:00", "10:30", "13:00", "16:00", "19:00", "21:30")
+# Franjas fijas de la Agenda Editorial / programación de publicación en Meta.
+# 07:30 está reservada exclusivamente al informe diario (clima/dólar, ver
+# `reservar_franja_informe_diario`); las 9 franjas restantes siguen la
+# cascada territorial normal. Entre las 10, cubren el volumen diario de 6-10
+# contenidos pedido para la publicación automática en Meta.
+HORA_INFORME_DIARIO = "07:30"
+HORARIOS_DEFAULT = (
+    "09:30", "11:30", "13:30", "15:30", "17:30", "19:00", "20:30", "21:30", "22:30",
+)
 ANTIGUEDAD_MAXIMA_HORAS = 48
 ORDEN_CASCADA = ("local", "departamental", "provincial", "nacional")
 
@@ -53,6 +62,61 @@ def _buscar_candidato_cascada(db: Database, usados: set, fecha_limite: str) -> O
         if candidato:
             return candidato
     return None
+
+
+def reservar_franja_informe_diario(
+    db: Database, fecha: Optional[str] = None, ahora: Optional[datetime] = None
+) -> EntradaAgenda:
+    """Reserva la franja fija 07:30 para el informe diario (clima/dólar) del
+    día, si ya fue generado (ver `informe_diario.generar_informe_diario`,
+    misma identidad determinística por URL). Se llama antes de `generar_agenda`
+    para que esa noticia quede excluida de la cascada de las demás franjas
+    (vía `noticias_ids_usadas_en_agenda`). Sigue exactamente las mismas
+    protecciones que cualquier otra franja: nunca pisa una decisión humana
+    (aprobada/rechazada) ni una franja ya pasada previamente evaluada."""
+    ahora = (ahora or datetime.now(ZONA_JUJUY)).astimezone(ZONA_JUJUY)
+    fecha = fecha or ahora.strftime("%Y-%m-%d")
+    hora = HORA_INFORME_DIARIO
+
+    existente = db.obtener_agenda_item(fecha, hora)
+    noticia_existente = db.obtener(existente["noticia_id"]) if existente and existente["noticia_id"] else None
+
+    protegido = noticia_existente is not None and (
+        noticia_existente["revision_estado"] in REVISIONES_PROTEGIDAS
+        or noticia_existente["estado"] == Estado.PUBLICADA.value
+    )
+    if protegido:
+        return EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
+
+    if existente is not None and _es_franja_pasada(fecha, hora, ahora):
+        if noticia_existente is not None:
+            return EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
+        return EntradaAgenda(fecha, hora, "normal", None, None, "sin_candidato")
+
+    id_existente_item = existente["id"] if existente else None
+    url_informe = normalizar_url(f"https://ledesma-participa.local/informe-diario/{fecha}")
+    informe = db.obtener_por_url(url_informe)
+
+    apto = (
+        informe is not None
+        and informe["estado"] == Estado.PREPARADA.value
+        and informe["revision_estado"] != RevisionEstado.RECHAZADA.value
+    )
+    if apto:
+        if informe["id"] == (noticia_existente["id"] if noticia_existente else None):
+            return EntradaAgenda(fecha, hora, "normal", informe.get("territorio"), informe["id"], "existente")
+        creada_en = datetime.now(timezone.utc).isoformat()
+        db.guardar_agenda_item(
+            fecha, hora, "normal", informe.get("territorio"), informe["id"], creada_en,
+            id_existente=id_existente_item,
+        )
+        estado_entrada = "actualizado" if id_existente_item else "creado"
+        return EntradaAgenda(fecha, hora, "normal", informe.get("territorio"), informe["id"], estado_entrada)
+
+    if id_existente_item is None or existente.get("noticia_id") is not None:
+        creada_en = datetime.now(timezone.utc).isoformat()
+        db.guardar_agenda_item(fecha, hora, "normal", None, None, creada_en, id_existente=id_existente_item)
+    return EntradaAgenda(fecha, hora, "normal", None, None, "sin_candidato")
 
 
 def generar_agenda(

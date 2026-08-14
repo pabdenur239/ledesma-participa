@@ -124,11 +124,11 @@ class TestGenerarImagenPlacaPng(unittest.TestCase):
         )
         self.assertTrue(datos.startswith(FIRMA_PNG))
 
-    def test_dimensiones_1200x1200(self):
+    def test_dimensiones_1080x1080(self):
         datos = generar_imagen_placa_png("Título", "Resumen.", "Fuente", "Jujuy")
         with Image.open(io.BytesIO(datos)) as imagen:
             self.assertEqual(imagen.size, (ANCHO_PLACA, ALTO_PLACA))
-            self.assertEqual((ANCHO_PLACA, ALTO_PLACA), (1200, 1200))
+            self.assertEqual((ANCHO_PLACA, ALTO_PLACA), (1080, 1080))
 
     def test_titulo_largo_no_rompe_el_render(self):
         titulo_largo = ("Palabra " * 60).strip()
@@ -170,7 +170,7 @@ class TestGenerarPlaca(unittest.TestCase):
     def test_dimensiones_del_archivo_generado(self):
         ruta = generar_placa("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)
         with Image.open(ruta) as imagen:
-            self.assertEqual(imagen.size, (1200, 1200))
+            self.assertEqual(imagen.size, (1080, 1080))
 
     def test_mismo_contenido_reutiliza_el_mismo_archivo_sin_regenerarlo(self):
         ruta1 = generar_placa("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)

@@ -166,7 +166,7 @@ class TestExclusiones(BaseAgendaTest):
 
 class TestSeisEspacios(BaseAgendaTest):
     def test_seis_espacios_con_candidatos_disponibles(self):
-        for _ in range(6):
+        for _ in range(len(HORARIOS_DEFAULT)):
             _crear_noticia(self.db, "local")
 
         entradas = generar_agenda(self.db, fecha="2026-08-12", ahora=AHORA)

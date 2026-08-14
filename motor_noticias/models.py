@@ -54,3 +54,4 @@ class Noticia:
     origen_ingreso: str = OrigenIngreso.AUTOMATICO.value
     localidad_informada: Optional[str] = None
     observacion_interna: Optional[str] = None
+    revision_automatica: bool = False

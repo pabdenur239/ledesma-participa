@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS programacion_meta (
     red_social TEXT NOT NULL,
     estado TEXT NOT NULL DEFAULT 'pendiente',
     meta_id TEXT,
+    referencia_extra TEXT,
     intentos INTEGER NOT NULL DEFAULT 0,
     ultimo_error TEXT,
     creada_en TEXT NOT NULL,
@@ -136,6 +137,14 @@ COLUMNAS_REVISION_AUTOMATICA = {
     "revision_automatica": "INTEGER NOT NULL DEFAULT 0",
 }
 
+# `referencia_extra` en programacion_meta: para la fila de Facebook, guarda
+# el photo_id (distinto del post_id) para poder reobtener la URL pública de
+# esa misma foto en un reintento posterior sin volver a subirla. Migración
+# separada porque es una tabla distinta de `noticias`.
+COLUMNAS_PROGRAMACION_META_EXTRA = {
+    "referencia_extra": "TEXT",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -151,14 +160,15 @@ class Database:
         self._migrar_columnas(COLUMNAS_TERRITORIO)
         self._migrar_columnas(COLUMNAS_INGRESO_MANUAL)
         self._migrar_columnas(COLUMNAS_REVISION_AUTOMATICA)
+        self._migrar_columnas(COLUMNAS_PROGRAMACION_META_EXTRA, tabla="programacion_meta")
 
-    def _migrar_columnas(self, columnas: dict):
+    def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
         columnas_existentes = {
-            fila[1] for fila in self.conn.execute("PRAGMA table_info(noticias)").fetchall()
+            fila[1] for fila in self.conn.execute(f"PRAGMA table_info({tabla})").fetchall()
         }
         for columna, definicion in columnas.items():
             if columna not in columnas_existentes:
-                self.conn.execute(f"ALTER TABLE noticias ADD COLUMN {columna} {definicion}")
+                self.conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
         self.conn.commit()
 
     def existe_duplicado(self, url_normalizada: str, hash_contenido: str) -> bool:
@@ -516,27 +526,34 @@ class Database:
         id_programacion: int,
         estado: str,
         meta_id: Optional[str] = None,
+        referencia_extra: Optional[str] = None,
         ultimo_error: Optional[str] = None,
         intentos: Optional[int] = None,
         actualizada_en: Optional[str] = None,
         publicada_en: Optional[str] = None,
     ) -> None:
+        """`referencia_extra`, si no se pasa explícitamente, conserva el
+        valor existente (mismo criterio que `intentos`): por ejemplo, un
+        reintento de Instagram no debe borrar el photo_id de Facebook que
+        ya se guardó en un intento anterior."""
         actual = self.conn.execute(
-            "SELECT intentos FROM programacion_meta WHERE id = ?", (id_programacion,)
+            "SELECT intentos, referencia_extra FROM programacion_meta WHERE id = ?", (id_programacion,)
         ).fetchone()
         if actual is None:
             return
         nuevos_intentos = intentos if intentos is not None else actual["intentos"]
+        nueva_referencia_extra = referencia_extra if referencia_extra is not None else actual["referencia_extra"]
         self.conn.execute(
             """
             UPDATE programacion_meta
-            SET estado = ?, meta_id = ?, ultimo_error = ?, intentos = ?,
+            SET estado = ?, meta_id = ?, referencia_extra = ?, ultimo_error = ?, intentos = ?,
                 actualizada_en = ?, publicada_en = ?
             WHERE id = ?
             """,
             (
                 estado,
                 meta_id,
+                nueva_referencia_extra,
                 ultimo_error,
                 nuevos_intentos,
                 actualizada_en,

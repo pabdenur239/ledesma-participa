@@ -69,7 +69,6 @@ Write-Host "--- Meta (Facebook/Instagram) ---"
 # valor acá para mantener la salida uniforme y simple.
 Write-Host "META_PAGE_ACCESS_TOKEN: $(if ($env:META_PAGE_ACCESS_TOKEN) { 'configurado' } else { 'FALTA' })"
 Write-Host "META_IG_USER_ID: $(if ($env:META_IG_USER_ID) { 'configurado' } else { 'FALTA (Instagram no podrá publicar)' })"
-Write-Host "META_IMAGE_BASE_URL: $(if ($env:META_IMAGE_BASE_URL) { 'configurado' } else { 'FALTA (Instagram no podrá publicar placas locales)' })"
 
 Write-Host ""
 Write-Host "Logs en: $(Join-Path $root 'logs')"

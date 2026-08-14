@@ -2,6 +2,7 @@ import json
 import mimetypes
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
@@ -36,6 +37,26 @@ class ResultadoDryRun:
     endpoint_comentario: str
     texto_post_principal: str
     texto_primer_comentario: str
+
+
+@dataclass
+class ResultadoFotoFacebook:
+    """`photo_id` es el ID del objeto foto (el que hace falta para
+    consultar después su URL pública vía `obtener_url_publica_foto`);
+    `post_id` es el ID de la publicación en el muro de la página (el que
+    hace falta para comentarla). Meta los devuelve como dos campos
+    distintos (`id` y `post_id`) en la misma respuesta de /photos."""
+
+    photo_id: str
+    post_id: str
+
+
+def _resultado_foto_desde_respuesta(resultado: dict) -> "ResultadoFotoFacebook":
+    photo_id = resultado.get("id")
+    post_id = resultado.get("post_id") or photo_id
+    if not photo_id or not post_id:
+        raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Facebook.")
+    return ResultadoFotoFacebook(photo_id=photo_id, post_id=post_id)
 
 
 def _multipart(campos: dict, archivo: Optional[Path] = None, nombre_campo_archivo: str = "source"):
@@ -135,10 +156,7 @@ class ClienteMetaGraphAPI:
 
     # -- Publicación real ---------------------------------------------------
 
-    def _peticion_json(self, url: str, cuerpo: bytes, content_type: str) -> dict:
-        peticion = urllib.request.Request(
-            url, data=cuerpo, headers={"Content-Type": content_type}, method="POST"
-        )
+    def _ejecutar_peticion(self, peticion: urllib.request.Request) -> dict:
         try:
             with self._urlopen(peticion, timeout=self.timeout) as respuesta:
                 crudo = respuesta.read()
@@ -159,6 +177,17 @@ class ClienteMetaGraphAPI:
             mensaje = (resultado.get("error") or {}).get("message", "error desconocido")
             raise ErrorClienteMeta(f"Meta rechazó la solicitud: {mensaje}")
         return resultado
+
+    def _peticion_json(self, url: str, cuerpo: bytes, content_type: str) -> dict:
+        peticion = urllib.request.Request(
+            url, data=cuerpo, headers={"Content-Type": content_type}, method="POST"
+        )
+        return self._ejecutar_peticion(peticion)
+
+    def _peticion_get_json(self, url: str, parametros: dict) -> dict:
+        query = urllib.parse.urlencode(parametros)
+        peticion = urllib.request.Request(f"{url}?{query}", method="GET")
+        return self._ejecutar_peticion(peticion)
 
     def publicar_foto_facebook(
         self, contenido: ContenidoFacebook, ruta_imagen: Path, dry_run: bool = True
@@ -189,10 +218,7 @@ class ClienteMetaGraphAPI:
             Path(ruta_imagen),
         )
         resultado = self._peticion_json(endpoint, cuerpo, content_type)
-        post_id = resultado.get("post_id") or resultado.get("id")
-        if not post_id:
-            raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Facebook.")
-        return post_id
+        return _resultado_foto_desde_respuesta(resultado)
 
     def publicar_foto_facebook_por_url(
         self, contenido: ContenidoFacebook, imagen_url: str, dry_run: bool = True
@@ -223,10 +249,27 @@ class ClienteMetaGraphAPI:
             }
         )
         resultado = self._peticion_json(endpoint, cuerpo, content_type)
-        post_id = resultado.get("post_id") or resultado.get("id")
-        if not post_id:
-            raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Facebook.")
-        return post_id
+        return _resultado_foto_desde_respuesta(resultado)
+
+    def obtener_url_publica_foto(self, photo_id: str) -> str:
+        """Consulta la Graph API para obtener la URL pública (CDN) de una
+        foto ya subida a Facebook: `images` devuelve las distintas
+        resoluciones disponibles, ordenadas de mayor a menor. Se usa esa
+        misma URL para publicar en Instagram, sin necesitar hosting propio:
+        Meta ya aloja la imagen apenas se publica en Facebook."""
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede consultar la foto en Meta.")
+
+        resultado = self._peticion_get_json(
+            f"{GRAPH_API_BASE}/{photo_id}", {"fields": "images", "access_token": self._access_token}
+        )
+        imagenes = resultado.get("images") or []
+        url = imagenes[0].get("source") if imagenes else None
+        if not url:
+            raise ErrorClienteMeta(
+                "Meta no devolvió una URL pública utilizable para la foto publicada en Facebook."
+            )
+        return url
 
     def publicar_comentario_facebook(self, post_id: str, texto: str, dry_run: bool = True):
         endpoint = f"{GRAPH_API_BASE}/{post_id}/comments"
@@ -272,8 +315,8 @@ class ClienteMetaGraphAPI:
             raise ErrorClienteMeta("Falta META_IG_USER_ID: no se puede publicar en Instagram.")
         if not imagen_url:
             raise ErrorClienteMeta(
-                "Falta una URL pública de imagen (META_IMAGE_BASE_URL): Instagram no admite "
-                "adjuntar el archivo directamente como Facebook."
+                "Falta una URL pública de imagen para Instagram (no admite adjuntar el archivo "
+                "directamente como Facebook)."
             )
 
         cuerpo_media, tipo_media = _multipart(

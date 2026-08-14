@@ -43,13 +43,14 @@ class TestPublicarFotoFacebook(BaseImagen):
         self.assertIsInstance(resultado, ResultadoDryRun)
         urlopen.assert_not_called()
 
-    def test_publicacion_real_devuelve_el_id_confirmado_por_meta(self):
-        urlopen = _urlopen_mock({"id": "post-real-123", "post_id": "post-real-123"})
+    def test_publicacion_real_devuelve_photo_id_y_post_id_confirmados_por_meta(self):
+        urlopen = _urlopen_mock({"id": "photo-real-999", "post_id": "post-real-123"})
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
 
-        post_id = cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
+        resultado = cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
 
-        self.assertEqual(post_id, "post-real-123")
+        self.assertEqual(resultado.photo_id, "photo-real-999")
+        self.assertEqual(resultado.post_id, "post-real-123")
         urlopen.assert_called_once()
 
     def test_sin_token_no_intenta_publicar(self):
@@ -133,6 +134,52 @@ class TestPublicarInstagram(BaseImagen):
         with self.assertRaises(ErrorClienteMeta):
             cliente.publicar_instagram("caption", "https://ejemplo.com/placa.png", dry_run=False)
         self.assertEqual(urlopen.call_count, 1)
+
+
+class TestObtenerUrlPublicaFoto(unittest.TestCase):
+    def test_devuelve_la_url_de_mayor_resolucion(self):
+        urlopen = _urlopen_mock(
+            {"images": [{"source": "https://scontent.fb/grande.jpg"}, {"source": "https://scontent.fb/chica.jpg"}]}
+        )
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+
+        url = cliente.obtener_url_publica_foto("photo-1")
+
+        self.assertEqual(url, "https://scontent.fb/grande.jpg")
+        urlopen.assert_called_once()
+
+    def test_hace_una_peticion_get_no_post(self):
+        urlopen = _urlopen_mock({"images": [{"source": "https://scontent.fb/grande.jpg"}]})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+
+        cliente.obtener_url_publica_foto("photo-1")
+
+        peticion = urlopen.call_args[0][0]
+        self.assertEqual(peticion.get_method(), "GET")
+        self.assertIn("photo-1", peticion.full_url)
+
+    def test_sin_token_no_intenta_consultar(self):
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token=None, urlopen=MagicMock())
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.obtener_url_publica_foto("photo-1")
+
+    def test_sin_imagenes_es_error_controlado(self):
+        urlopen = _urlopen_mock({"images": []})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.obtener_url_publica_foto("photo-1")
+
+    def test_respuesta_sin_campo_images_es_error_controlado(self):
+        urlopen = _urlopen_mock({})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.obtener_url_publica_foto("photo-1")
+
+    def test_error_de_meta_se_traduce_a_error_controlado(self):
+        urlopen = _urlopen_mock({"error": {"message": "foto no encontrada"}})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.obtener_url_publica_foto("photo-inexistente")
 
 
 def _make_ctx(cuerpo_json: dict):

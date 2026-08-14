@@ -447,42 +447,49 @@ imagen.
 
 **Publicación real.** `motor_noticias/meta/cliente.py` (`ClienteMetaGraphAPI`)
 usa exclusivamente las APIs oficiales de Meta (Graph API v19, sin
-navegador ni extensiones): Facebook recibe la placa por subida directa
-(`/{page-id}/photos`) más un comentario con el texto completo/fuente/
-hashtags; Instagram usa el flujo oficial de dos pasos
-(`/{ig-user-id}/media` + `/media_publish`), que **exige una imagen
-públicamente accesible** — a diferencia de Facebook, no admite subir el
-archivo directamente. Los métodos de publicación real son nuevos y
-están separados de los de vista previa (`publicar_post_principal`,
-etc.), que se mantienen intactos y siguen siendo DRY RUN-only.
+navegador ni extensiones). **Facebook siempre se publica primero**: recibe
+la placa por subida directa (`/{page-id}/photos`) más un comentario con el
+texto completo/fuente/hashtags. Instagram exige una `image_url`
+públicamente accesible (a diferencia de Facebook, no admite subir el
+archivo directamente) — en vez de necesitar hosting propio, el sistema
+reutiliza la URL pública (CDN) que la propia Meta ya le asignó a esa misma
+foto al publicarla en Facebook (`GET /{photo-id}?fields=images`,
+`ClienteMetaGraphAPI.obtener_url_publica_foto`), y publica el contenedor de
+Instagram (`/{ig-user-id}/media` + `/media_publish`) con esa URL. **Si
+Facebook falla, Instagram directamente no se intenta** (queda sin tocar,
+listo para reintentarse junto con Facebook); si Meta publicó en Facebook
+pero no devuelve una URL apta para Instagram, se detiene ahí y el bloqueo
+queda registrado en esa franja/red, nunca se sustituye por un hosting
+externo. Los métodos de publicación real son nuevos y están separados de
+los de vista previa (`publicar_post_principal`, etc.), que se mantienen
+intactos y siguen siendo DRY RUN-only.
 
 **Idempotencia y reintentos.** Cada franja × red social es una fila en
 `programacion_meta` con estado independiente (`pendiente`/`publicado`/
-`error`), el ID real devuelto por Meta y un contador de intentos. Un
-fallo en Instagram nunca toca el estado de Facebook de la misma franja
-ni viceversa, y una fila ya `publicado` nunca se vuelve a publicar
-(chequeo antes de cada intento). `reintentar_publicaciones_meta.py`
-reintenta, de forma acotada (`max_intentos_reintento` en
-`config/meta.json`, default 3), solo las filas en error.
+`error`), el ID real devuelto por Meta, el `photo_id` de Facebook
+(`referencia_extra`, para no volver a subir la imagen en un reintento de
+Instagram) y un contador de intentos. Un fallo en Instagram nunca toca el
+estado de Facebook de la misma franja ni viceversa, y una fila ya
+`publicado` nunca se vuelve a publicar (chequeo antes de cada intento).
+`reintentar_publicaciones_meta.py` reintenta, de forma acotada
+(`max_intentos_reintento` en `config/meta.json`, default 3), solo las
+filas en error — y solo intenta Instagram si Facebook ya está publicado.
 
 **Credenciales.** Todas por variable de entorno (ver `.env.example`,
 nunca versionadas, `.env` ignorado por Git): `META_PAGE_ACCESS_TOKEN`
 (con permisos `pages_manage_posts`, `pages_read_engagement`,
-`instagram_content_publish`), `META_IG_USER_ID` (Instagram Business
-Account vinculado a la página) y `META_IMAGE_BASE_URL` (URL pública
-donde el panel expone las placas — ver `/placas/<archivo>` más abajo).
-El token nunca se loguea ni aparece en ningún mensaje de error.
+`instagram_content_publish`) y `META_IG_USER_ID` (Instagram Business
+Account vinculado a la página). No hace falta ninguna variable de
+hosting: no se requiere exponer el panel a Internet para publicar en
+Instagram. El token nunca se loguea ni aparece en ningún mensaje de
+error.
 
 **Panel: `/placas/<archivo>`.** Sirve exclusivamente archivos
 `placa_<hex>.png` ya generados en `data/placas/`, con validación de
 nombre y de que la ruta resuelta siga dentro de ese directorio (sin
-recorrido de directorios). Instagram necesita poder alcanzar esta ruta
-por HTTPS público: **exponer el panel (hoy solo `127.0.0.1:8000`) detrás
-de un dominio o túnel HTTPS accesible desde Internet es una decisión de
-infraestructura del usuario**, fuera del alcance de este proyecto —
-mientras no esté resuelta, Facebook sigue publicando con normalidad
-(sube el archivo directamente) e Instagram queda en estado de error por
-franja, visible y reintentable, nunca silencioso.
+recorrido de directorios). No es necesaria para publicar (Instagram ya no
+depende de ella): queda disponible solo como utilidad para inspeccionar
+una placa manualmente desde el navegador.
 
 **CLIs:** `generar_programacion_meta.py`, `generar_placas_meta.py`,
 `publicar_meta.py` (detecta sola la franja más cercana a la hora

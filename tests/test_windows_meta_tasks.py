@@ -114,7 +114,6 @@ class TestUninstallYStatusIncluyenMeta(unittest.TestCase):
         contenido = _leer("status.ps1")
         self.assertIn("META_PAGE_ACCESS_TOKEN", contenido)
         self.assertIn("META_IG_USER_ID", contenido)
-        self.assertIn("META_IMAGE_BASE_URL", contenido)
         # nunca debe interpolar el valor real de una variable de entorno
         # sensible como texto plano fuera de un chequeo booleano
         self.assertNotIn("Write-Host $env:META_PAGE_ACCESS_TOKEN", contenido)

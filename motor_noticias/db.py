@@ -347,6 +347,14 @@ class Database:
         )
         self.conn.commit()
 
+    def marcar_publicada(self, id_noticia: int) -> None:
+        """Marca una noticia como `publicada` recién después de que Meta
+        confirmó el éxito de la publicación real (nunca antes)."""
+        self.conn.execute(
+            "UPDATE noticias SET estado = ? WHERE id = ?", (Estado.PUBLICADA.value, id_noticia)
+        )
+        self.conn.commit()
+
     def candidato_editorial(
         self, territorio: str, excluidos_ids: set, fecha_limite: str
     ) -> Optional[dict]:

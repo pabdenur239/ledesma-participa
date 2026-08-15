@@ -53,6 +53,12 @@ class TestDatabase(unittest.TestCase):
         self.db.guardar(self._noticia())
         self.assertFalse(self.db.existe_duplicado("https://otra.test/x", "otro-hash"))
 
+    def test_marcar_publicada(self):
+        noticia = self._noticia(estado=Estado.PREPARADA.value)
+        self.db.guardar(noticia)
+        self.db.marcar_publicada(noticia.id)
+        self.assertEqual(self.db.obtener(noticia.id)["estado"], Estado.PUBLICADA.value)
+
 
 if __name__ == "__main__":
     unittest.main()

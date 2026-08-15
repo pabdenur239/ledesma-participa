@@ -23,12 +23,10 @@ class FakeClienteMeta:
         fallar_facebook=False,
         fallar_instagram=False,
         fallar_obtener_url=False,
-        fallar_comentario=False,
     ):
         self.fallar_facebook = fallar_facebook
         self.fallar_instagram = fallar_instagram
         self.fallar_obtener_url = fallar_obtener_url
-        self.fallar_comentario = fallar_comentario
         self.llamadas = []
         self._contador_fotos = 0
 
@@ -50,8 +48,6 @@ class FakeClienteMeta:
 
     def publicar_comentario_facebook(self, post_id, texto, dry_run=True):
         self.llamadas.append(("publicar_comentario_facebook", post_id))
-        if self.fallar_comentario:
-            raise ErrorClienteMeta("fallo simulado del comentario (p.ej. falta pages_manage_engagement)")
         return "comentario-fb-1"
 
     def obtener_url_publica_foto(self, photo_id):
@@ -145,18 +141,16 @@ class TestPublicarFranja(BaseTest):
         self.assertEqual(fila_ig["meta_id"], "media-ig-456")
         self.assertEqual(self.db.obtener(n.id)["estado"], Estado.PUBLICADA.value)
 
-    def test_si_falla_el_comentario_facebook_igual_queda_publicado(self):
+    def test_nunca_usa_ni_intenta_el_primer_comentario(self):
         n = _noticia(self.db)
         self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
-        fake = FakeClienteMeta(fallar_comentario=True)
+        fake = FakeClienteMeta()
 
         resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
 
         estados = {r.red_social: r.estado for r in resultado.redes}
         self.assertEqual(estados["facebook"], "publicado")
-        fila_fb = self.db.obtener_programacion_meta("2026-08-12", "09:30", "facebook")
-        self.assertEqual(fila_fb["estado"], "publicado")
-        self.assertEqual(fila_fb["meta_id"], "post-1")
+        self.assertFalse(any(n == "publicar_comentario_facebook" for n, _ in fake.llamadas))
         self.assertEqual(self.db.obtener(n.id)["estado"], Estado.PUBLICADA.value)
 
     def test_si_facebook_falla_instagram_no_se_intenta(self):

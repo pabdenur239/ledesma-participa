@@ -231,8 +231,8 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
         )
         self.assertNotEqual(r["territorio"], "nacional")
 
-    # 14. La cascada usa una noticia nacional real (resultante del fallback, sin marcador explícito)
-    def test_cascada_usa_noticia_nacional_real_del_fallback(self):
+    # 14. Clasificación nacional real (fallback, sin marcador explícito) — la cascada nunca la elige
+    def test_clasificacion_nacional_real_del_fallback_nunca_ocupa_la_cascada(self):
         tmpdir = tempfile.TemporaryDirectory()
         try:
             db = Database(Path(tmpdir.name) / "test.db")
@@ -267,8 +267,8 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
 
             entradas = generar_agenda(db, fecha="2026-08-12", horarios=("08:00", "10:30"))
             territorios = [e.territorio for e in entradas]
-            self.assertIn("nacional", territorios)
-            self.assertLess(territorios.index("local"), territorios.index("nacional"))
+            self.assertIn("local", territorios)
+            self.assertNotIn("nacional", territorios)  # nacional nunca se elige automáticamente
         finally:
             db.close()
             tmpdir.cleanup()

@@ -12,9 +12,20 @@ from motor_noticias.motor_editorial import (
     ZONA_JUJUY,
     generar_agenda,
 )
+from motor_noticias.verificacion_fuente import ResultadoVerificacionLocal
 
 AHORA = datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
 _CONTADOR = itertools.count(1)
+
+
+def _verificador(impacto_local: bool):
+    """Verificador de impacto provincial falso para pruebas offline: nunca
+    hace red real, devuelve siempre el mismo resultado inyectado."""
+
+    def _fake(url_fuente):
+        return ResultadoVerificacionLocal(impacto_local, "prueba")
+
+    return _fake
 
 
 def _iso(delta: timedelta = timedelta()) -> str:
@@ -84,22 +95,53 @@ class TestCascadaTerritorial(BaseAgendaTest):
         self.assertEqual(entradas[0].noticia_id, departamental.id)
         self.assertEqual(entradas[0].territorio, "departamental")
 
-    def test_provincial_antes_que_nacional(self):
+    def test_provincial_verificado_se_elige_por_falta_de_local_o_departamental(self):
         provincial = _crear_noticia(self.db, "provincial")
-        _crear_noticia(self.db, "nacional")
 
-        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        entradas = generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
 
         self.assertEqual(entradas[0].noticia_id, provincial.id)
         self.assertEqual(entradas[0].territorio, "provincial")
 
-    def test_nacional_como_ultimo_recurso(self):
-        nacional = _crear_noticia(self.db, "nacional")
+    def test_provincial_sin_verificar_deja_la_franja_vacia(self):
+        _crear_noticia(self.db, "provincial")
 
-        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        entradas = generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(False),
+        )
 
-        self.assertEqual(entradas[0].noticia_id, nacional.id)
-        self.assertEqual(entradas[0].territorio, "nacional")
+        self.assertEqual(entradas[0].estado, "sin_candidato")
+        self.assertIsNone(entradas[0].noticia_id)
+
+    def test_nacional_nunca_se_elige_automaticamente(self):
+        _crear_noticia(self.db, "nacional")
+
+        entradas = generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
+
+        self.assertEqual(entradas[0].estado, "sin_candidato")
+        self.assertIsNone(entradas[0].noticia_id)
+
+    def test_provincial_rechazado_no_se_reverifica_en_otra_franja_vacia(self):
+        _crear_noticia(self.db, "provincial")
+        llamadas = []
+
+        def _verificador_contador(url_fuente):
+            llamadas.append(url_fuente)
+            return ResultadoVerificacionLocal(False, "prueba")
+
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("08:00", "10:30", "13:00"), ahora=AHORA,
+            verificar_impacto_provincial=_verificador_contador,
+        )
+
+        self.assertEqual(len(llamadas), 1)
 
     def test_nacional_vacio_sin_ningun_otro_nivel_da_sin_candidato(self):
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
@@ -255,7 +297,10 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
     def test_propuesta_provincial_reemplazada_por_local(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item_antes = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.assertEqual(item_antes["noticia_id"], provincial.id)
 
@@ -267,9 +312,10 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
         self.assertEqual(entradas[0].territorio, "local")
         self.assertEqual(entradas[0].estado, "actualizado")
 
-    def test_propuesta_nacional_reemplazada_por_departamental(self):
+    def test_nacional_nunca_ocupa_la_franja_departamental_la_toma(self):
         _crear_noticia(self.db, "nacional", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("19:00",), ahora=AHORA)
+        antes = generar_agenda(self.db, fecha="2026-08-12", horarios=("19:00",), ahora=AHORA)
+        self.assertEqual(antes[0].estado, "sin_candidato")
 
         departamental = _crear_noticia(self.db, "departamental", fecha_recoleccion=_iso())
 
@@ -305,7 +351,10 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
     def test_aprobada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.db.actualizar_revision(item["noticia_id"], "aprobada")
 
@@ -318,7 +367,10 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
     def test_rechazada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.db.actualizar_revision(item["noticia_id"], "rechazada")
 

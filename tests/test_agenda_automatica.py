@@ -23,7 +23,7 @@ from tests.test_ciclo_continuo import (
     _colector_ok,
     _cruda,
 )
-from tests.test_motor_editorial import AHORA, _crear_noticia
+from tests.test_motor_editorial import AHORA, _crear_noticia, _verificador
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -220,7 +220,10 @@ class TestFranjasTemporales(BaseAgendaFranjasTest):
     # 6. pendiente provincial futura reemplazada por local
     def test_pendiente_provincial_futura_reemplazada_por_local(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
 
         local = _crear_noticia(self.db, "local", fecha_recoleccion=_iso())
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
@@ -246,7 +249,10 @@ class TestFranjasTemporales(BaseAgendaFranjasTest):
     def test_franja_pasada_pendiente_no_se_reemplaza(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
         # 08:00 Jujuy ya pasó respecto de AHORA (09:00 Jujuy).
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item_antes = self.db.obtener_agenda_item("2026-08-12", "08:00")
         self.assertEqual(item_antes["noticia_id"], provincial.id)
 
@@ -259,7 +265,10 @@ class TestFranjasTemporales(BaseAgendaFranjasTest):
     # 9. aprobada no se modifica
     def test_aprobada_no_se_modifica(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.db.actualizar_revision(item["noticia_id"], "aprobada")
 
@@ -272,7 +281,10 @@ class TestFranjasTemporales(BaseAgendaFranjasTest):
     # 10. rechazada no se modifica
     def test_rechazada_no_se_modifica(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.db.actualizar_revision(item["noticia_id"], "rechazada")
 
@@ -302,7 +314,10 @@ class TestFranjasTemporales(BaseAgendaFranjasTest):
     def test_noticia_llegada_despues_de_franja_compite_por_siguiente(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
         # A las 09:30 Jujuy (AHORA), 10:30 es futura: la provincial la ocupa.
-        entradas_1030 = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+        entradas_1030 = generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         self.assertEqual(entradas_1030[0].noticia_id, provincial.id)
 
         # A las 11:45 Jujuy, 10:30 ya pasó: no se toca retroactivamente.

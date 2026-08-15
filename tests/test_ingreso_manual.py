@@ -22,7 +22,7 @@ from motor_noticias.motor_editorial import ZONA_JUJUY, generar_agenda
 from motor_noticias.panel.server import HOST, PanelHandler
 from motor_noticias.redaccion.mock import RedactorMock
 
-from tests.test_motor_editorial import AHORA, _crear_noticia
+from tests.test_motor_editorial import AHORA, _crear_noticia, _verificador
 
 TEXTO_LOCAL = (
     "Vecinos de Libertador General San Martín reclamaron por el estado de una plaza del barrio "
@@ -288,7 +288,10 @@ class TestIntegracionRevisionYAgenda(BaseIngresoManualTest):
 class TestIntegracionAgendaFranjas(BaseIngresoManualTest):
     def test_carga_local_mejora_franja_futura_provincial(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item_antes = self.db.obtener_agenda_item("2026-08-12", "13:00")
         self.assertEqual(item_antes["noticia_id"], provincial.id)
 
@@ -307,7 +310,10 @@ class TestIntegracionAgendaFranjas(BaseIngresoManualTest):
         # con horario/ahora controlados, no el disparo automático en sí
         # (que ya tiene su propia cobertura en test_agenda_automatica.py).
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)  # 08:00 ya pasó (AHORA=09:00)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,  # 08:00 ya pasó (AHORA=09:00)
+            verificar_impacto_provincial=_verificador(True),
+        )
 
         with patch("motor_noticias.ingreso_manual.generar_agenda"):
             cargar_noticia_manual(self.db, self.redactor, fuente="Ledesma Soy", texto=TEXTO_LOCAL)
@@ -318,7 +324,10 @@ class TestIntegracionAgendaFranjas(BaseIngresoManualTest):
 
     def test_carga_no_reemplaza_aprobada(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item = self.db.obtener_agenda_item("2026-08-12", "13:00")
         self.db.actualizar_revision(item["noticia_id"], "aprobada")
 
@@ -331,7 +340,10 @@ class TestIntegracionAgendaFranjas(BaseIngresoManualTest):
 
     def test_carga_no_reemplaza_rechazada(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA)
+        generar_agenda(
+            self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA,
+            verificar_impacto_provincial=_verificador(True),
+        )
         item = self.db.obtener_agenda_item("2026-08-12", "13:00")
         self.db.actualizar_revision(item["noticia_id"], "rechazada")
 

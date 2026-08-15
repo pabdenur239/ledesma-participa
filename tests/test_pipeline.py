@@ -85,6 +85,27 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(noticia.estado, Estado.DESCARTADA.value)
         self.assertEqual(noticia.territorio, "sin_clasificar")
 
+    def test_noticia_sin_clasificar_de_entretenimiento_se_prepara_como_ultimo_recurso(self):
+        # sin_clasificar, pero de entretenimiento/curiosidad: se prepara para
+        # poder usarse como último nivel de la cascada editorial.
+        items = [
+            {
+                "titulo": "Un video insólito se hizo viral en las redes sociales",
+                "texto": (
+                    "El curioso momento fue grabado por un usuario y generó furor en redes, "
+                    "acumulando millones de reproducciones en pocas horas."
+                ),
+                "url": "https://ejemplo.test/sin-clasificar-viral-1",
+                "fuente": "Prueba",
+                "fecha": "2026-08-01",
+            }
+        ]
+        resultados = ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
+        noticia, resultado = resultados[0]
+        self.assertEqual(resultado, "preparada")
+        self.assertEqual(noticia.estado, Estado.PREPARADA.value)
+        self.assertEqual(noticia.territorio, "sin_clasificar")
+
     def test_noticia_municipal_requiere_revision_especial(self):
         items = [
             {

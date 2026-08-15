@@ -15,7 +15,6 @@ from motor_noticias.db import Database
 from motor_noticias.motor_editorial import generar_agenda
 from motor_noticias.pipeline import ejecutar_pipeline
 from motor_noticias.redaccion.mock import RedactorMock
-from motor_noticias.verificacion_fuente import ResultadoVerificacionLocal
 
 FIXTURE_PATH = Path(__file__).resolve().parent.parent / "data" / "fixtures" / "infobae_rss_prueba.xml"
 NOMBRE_FUENTE = "Infobae"
@@ -301,18 +300,16 @@ class TestIntegracionMotorEditorial(unittest.TestCase):
         self.db.close()
         self.tmpdir.cleanup()
 
-    def test_provincial_verificado_se_usa_pero_nacional_nunca_se_elige(self):
+    def test_nacional_solo_llena_el_pool_no_desplaza_niveles_superiores(self):
         ejecutar_pipeline(self.db, ColectorRSSDePrueba(self.contenido), self.redactor)
 
-        entradas = generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("08:00", "10:30", "13:00"),
-            verificar_impacto_provincial=lambda titulo, url: ResultadoVerificacionLocal(True, "prueba"),
-        )
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00", "10:30", "13:00"))
 
         territorios = [e.territorio for e in entradas]
         self.assertEqual(territorios[0], "local")
         self.assertIn("provincial", territorios)
-        self.assertNotIn("nacional", territorios)
+        self.assertLess(territorios.index("local"), territorios.index("nacional"))
+        self.assertLess(territorios.index("provincial"), territorios.index("nacional"))
 
 
 if __name__ == "__main__":

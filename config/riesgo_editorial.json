@@ -20,7 +20,11 @@
       "partido político",
       "candidato",
       "candidata",
-      "elecciones"
+      "elecciones",
+      "gobernador",
+      "gobernadora",
+      "vicegobernador",
+      "vicegobernadora"
     ],
     "figura_publica_relacionada": [
       "Pablo Abdenur"
@@ -46,7 +50,11 @@
       "detenida",
       "arrestado",
       "arrestada",
-      "prisión preventiva"
+      "prisión preventiva",
+      "policial",
+      "policiales",
+      "fuerzas de seguridad",
+      "antecedentes policiales"
     ],
     "muertes": [
       "falleció",

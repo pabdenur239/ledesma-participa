@@ -3,8 +3,8 @@ from typing import List, NamedTuple, Optional
 
 from .db import Database
 from .dedupe import normalizar_url
+from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Estado, RevisionEstado
-from .verificacion_fuente import ResultadoVerificacionLocal, verificar_impacto_local_concreto
 
 # Estados de la propia noticia que congelan su espacio en la agenda: una vez
 # que un humano decidió (aprobó/rechazó) o la noticia ya se publicó, el
@@ -31,15 +31,13 @@ HORARIOS_DEFAULT = (
     "09:30", "11:30", "13:30", "15:30", "17:30", "19:00", "20:30", "21:30", "22:30",
 )
 ANTIGUEDAD_MAXIMA_HORAS = 48
-# Línea editorial: local y departamental son siempre elegibles (ya vienen
-# verificados por su propio título/texto). "provincial" ya NO es un nivel de
-# respaldo automático: solo se acepta si `verificar_impacto_local_concreto`
-# confirma, contra el HTML real de la fuente, que el artículo completo sí
-# tiene relación directa con Libertador o el Departamento Ledesma (un
-# extracto recortado por el recolector puede perder esa mención). "nacional"
-# nunca se elige de forma automática: una franja sin candidato local,
-# departamental o provincial-verificado queda vacía en vez de rellenarse.
-ORDEN_CASCADA_AUTOMATICA = ("local", "departamental")
+# Línea editorial (prioridad acumulativa, no cuota rígida diaria): Libertador
+# General San Martín primero, Departamento Ledesma segundo, la provincia de
+# Jujuy tercero, noticias nacionales cuarto y, como último recurso para no
+# dejar una franja vacía pudiendo completarla, contenido de entretenimiento/
+# espectáculos/curiosidades/tendencias virales verificable (nunca elige un
+# nivel inferior si existe uno superior apto).
+ORDEN_CASCADA = ("local", "departamental", "provincial", "nacional")
 
 
 class EntradaAgenda(NamedTuple):
@@ -62,35 +60,25 @@ def _es_franja_pasada(fecha: str, hora: str, ahora: datetime) -> bool:
     return momento <= ahora
 
 
-def _buscar_candidato_cascada(
-    db: Database,
-    usados: set,
-    fecha_limite: str,
-    verificar_impacto_provincial,
-    provinciales_rechazados: set,
-) -> Optional[dict]:
-    """Recorre local → departamental (siempre elegibles) y, solo si ninguno
-    tiene candidato, intenta UNA excepción provincial verificada contra la
-    fuente real. Nunca elige nacional. Nunca elige un nivel inferior si
-    existe uno superior apto."""
-    for territorio in ORDEN_CASCADA_AUTOMATICA:
+def _buscar_candidato_cascada(db: Database, usados: set, fecha_limite: str) -> Optional[dict]:
+    """Recorre la cascada territorial obligatoria (local → departamental →
+    provincial → nacional) y devuelve el primer candidato apto que
+    encuentre. Nunca elige un nivel inferior si existe uno superior apto.
+    Como último recurso, si ningún nivel territorial tiene candidato, prueba
+    con la mejor noticia `sin_clasificar` disponible, pero solo si es
+    contenido de entretenimiento/espectáculos/curiosidades/tendencia viral
+    (nunca una noticia sin_clasificar cualquiera, para no publicar algo sin
+    criterio editorial)."""
+    for territorio in ORDEN_CASCADA:
         candidato = db.candidato_editorial(territorio, usados, fecha_limite)
         if candidato:
             return candidato
 
-    candidato_provincial = db.candidato_editorial(
-        "provincial", usados | provinciales_rechazados, fecha_limite
-    )
-    if not candidato_provincial:
-        return None
-
-    resultado: ResultadoVerificacionLocal = verificar_impacto_provincial(
-        candidato_provincial["titulo_original"], candidato_provincial["url_fuente"]
-    )
-    if resultado.impacto_local:
-        return candidato_provincial
-
-    provinciales_rechazados.add(candidato_provincial["id"])
+    candidato_sin_clasificar = db.candidato_editorial("sin_clasificar", usados, fecha_limite)
+    if candidato_sin_clasificar and es_entretenimiento_o_curiosidad(
+        candidato_sin_clasificar["titulo_original"], candidato_sin_clasificar["texto_original"]
+    ):
+        return candidato_sin_clasificar
     return None
 
 
@@ -154,7 +142,6 @@ def generar_agenda(
     fecha: Optional[str] = None,
     horarios=HORARIOS_DEFAULT,
     ahora: Optional[datetime] = None,
-    verificar_impacto_provincial=None,
 ) -> List[EntradaAgenda]:
     """Genera (o completa) la agenda editorial de un día: un candidato por
     franja horaria siguiendo la cascada territorial, más cualquier noticia
@@ -171,16 +158,7 @@ def generar_agenda(
       ya fue evaluada antes queda congelada tal cual quedó, tenga o no
       candidato: no se generan propuestas retrospectivas. Solo se completa
       por primera vez si el ciclo corrió más tarde de lo previsto y esa
-      franja nunca llegó a evaluarse.
-
-    `verificar_impacto_provincial`: inyectable para pruebas offline (recibe
-    una URL y devuelve `ResultadoVerificacionLocal`); por defecto,
-    `verificar_impacto_local_concreto` (hace una petición GET real)."""
-    verificar_impacto_provincial = verificar_impacto_provincial or verificar_impacto_local_concreto
-    # Provinciales ya descartados por no verificar impacto local en esta
-    # misma corrida: evita repetir la misma petición de red fallida en cada
-    # franja vacía subsiguiente del día.
-    provinciales_rechazados: set = set()
+      franja nunca llegó a evaluarse."""
     # Se normaliza siempre a Jujuy, sin importar en qué huso venga `ahora`
     # (propio o inyectado en un test), para que la fecha del día se calcule
     # de forma consistente con America/Argentina/Jujuy y no con UTC u otro
@@ -242,9 +220,7 @@ def generar_agenda(
         # siendo el mejor, la búsqueda lo vuelve a encontrar y no cambia nada.
         id_existente_noticia = noticia_existente["id"] if noticia_existente else None
         usados_para_busqueda = usados - {id_existente_noticia} if id_existente_noticia else usados
-        candidato = _buscar_candidato_cascada(
-            db, usados_para_busqueda, fecha_limite, verificar_impacto_provincial, provinciales_rechazados
-        )
+        candidato = _buscar_candidato_cascada(db, usados_para_busqueda, fecha_limite)
         id_existente_item = existente["id"] if existente else None
 
         if candidato:

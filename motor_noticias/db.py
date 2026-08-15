@@ -408,10 +408,14 @@ class Database:
     ) -> Optional[dict]:
         """Mejor candidato `preparada` de un territorio dado para la cascada
         del Motor Editorial: no rechazado, no usado en ninguna agenda previa,
-        y dentro de la antigüedad máxima permitida. El más reciente primero."""
+        no marcado con riesgo editorial obligatorio (esos quedan disponibles
+        para revisión humana en el panel, pero nunca ocupan automáticamente
+        una franja), y dentro de la antigüedad máxima permitida. El más
+        reciente primero."""
         query = (
             "SELECT * FROM noticias WHERE estado = ? AND territorio = ? "
-            "AND revision_estado != ? AND fecha_recoleccion >= ?"
+            "AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
         )
         params: list = [Estado.PREPARADA.value, territorio, RevisionEstado.RECHAZADA.value, fecha_limite]
         if excluidos_ids:
@@ -425,11 +429,13 @@ class Database:
 
     def candidatos_urgentes(self, excluidos_ids: set, fecha_limite: str) -> list:
         """Noticias locales/departamentales marcadas urgentes, `preparada`,
-        no rechazadas, no usadas todavía en ninguna agenda."""
+        no rechazadas, sin riesgo editorial obligatorio, no usadas todavía
+        en ninguna agenda."""
         query = (
             "SELECT * FROM noticias WHERE estado = ? AND urgente = 1 "
             "AND territorio IN ('local', 'departamental') "
-            "AND revision_estado != ? AND fecha_recoleccion >= ?"
+            "AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
         )
         params: list = [Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value, fecha_limite]
         if excluidos_ids:

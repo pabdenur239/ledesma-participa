@@ -12,20 +12,9 @@ from motor_noticias.motor_editorial import (
     ZONA_JUJUY,
     generar_agenda,
 )
-from motor_noticias.verificacion_fuente import ResultadoVerificacionLocal
 
 AHORA = datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
 _CONTADOR = itertools.count(1)
-
-
-def _verificador(impacto_local: bool):
-    """Verificador de impacto provincial falso para pruebas offline: nunca
-    hace red real, devuelve siempre el mismo resultado inyectado."""
-
-    def _fake(titulo_original, url_fuente):
-        return ResultadoVerificacionLocal(impacto_local, "prueba")
-
-    return _fake
 
 
 def _iso(delta: timedelta = timedelta()) -> str:
@@ -95,55 +84,51 @@ class TestCascadaTerritorial(BaseAgendaTest):
         self.assertEqual(entradas[0].noticia_id, departamental.id)
         self.assertEqual(entradas[0].territorio, "departamental")
 
-    def test_provincial_verificado_se_elige_por_falta_de_local_o_departamental(self):
+    def test_provincial_antes_que_nacional(self):
         provincial = _crear_noticia(self.db, "provincial")
+        _crear_noticia(self.db, "nacional")
 
-        entradas = generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
-            verificar_impacto_provincial=_verificador(True),
-        )
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 
         self.assertEqual(entradas[0].noticia_id, provincial.id)
         self.assertEqual(entradas[0].territorio, "provincial")
 
-    def test_provincial_sin_verificar_deja_la_franja_vacia(self):
-        _crear_noticia(self.db, "provincial")
+    def test_nacional_como_ultimo_recurso_territorial(self):
+        nacional = _crear_noticia(self.db, "nacional")
 
-        entradas = generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
-            verificar_impacto_provincial=_verificador(False),
-        )
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 
-        self.assertEqual(entradas[0].estado, "sin_candidato")
-        self.assertIsNone(entradas[0].noticia_id)
+        self.assertEqual(entradas[0].noticia_id, nacional.id)
+        self.assertEqual(entradas[0].territorio, "nacional")
 
-    def test_nacional_nunca_se_elige_automaticamente(self):
-        _crear_noticia(self.db, "nacional")
-
-        entradas = generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA,
-            verificar_impacto_provincial=_verificador(True),
-        )
+    def test_sin_ningun_nivel_territorial_ni_entretenimiento_da_sin_candidato(self):
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 
         self.assertEqual(entradas[0].estado, "sin_candidato")
         self.assertIsNone(entradas[0].noticia_id)
 
-    def test_provincial_rechazado_no_se_reverifica_en_otra_franja_vacia(self):
-        _crear_noticia(self.db, "provincial")
-        llamadas = []
-
-        def _verificador_contador(titulo_original, url_fuente):
-            llamadas.append(url_fuente)
-            return ResultadoVerificacionLocal(False, "prueba")
-
-        generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("08:00", "10:30", "13:00"), ahora=AHORA,
-            verificar_impacto_provincial=_verificador_contador,
+    def test_entretenimiento_como_ultimo_recurso_si_no_hay_ningun_nivel_territorial(self):
+        viral = _crear_noticia(
+            self.db, "sin_clasificar", titulo="Un video se hizo viral en las redes sociales"
         )
 
-        self.assertEqual(len(llamadas), 1)
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 
-    def test_nacional_vacio_sin_ningun_otro_nivel_da_sin_candidato(self):
+        self.assertEqual(entradas[0].noticia_id, viral.id)
+        self.assertEqual(entradas[0].territorio, "sin_clasificar")
+
+    def test_nacional_se_prefiere_a_entretenimiento(self):
+        nacional = _crear_noticia(self.db, "nacional")
+        _crear_noticia(self.db, "sin_clasificar", titulo="Un video se hizo viral en las redes")
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, nacional.id)
+        self.assertEqual(entradas[0].territorio, "nacional")
+
+    def test_sin_clasificar_sin_entretenimiento_no_se_elige(self):
+        _crear_noticia(self.db, "sin_clasificar", titulo="Noticia genérica sin clasificar")
+
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 
         self.assertEqual(entradas[0].estado, "sin_candidato")
@@ -297,10 +282,7 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
     def test_propuesta_provincial_reemplazada_por_local(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
-            verificar_impacto_provincial=_verificador(True),
-        )
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
         item_antes = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.assertEqual(item_antes["noticia_id"], provincial.id)
 
@@ -312,10 +294,9 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
         self.assertEqual(entradas[0].territorio, "local")
         self.assertEqual(entradas[0].estado, "actualizado")
 
-    def test_nacional_nunca_ocupa_la_franja_departamental_la_toma(self):
+    def test_propuesta_nacional_reemplazada_por_departamental(self):
         _crear_noticia(self.db, "nacional", fecha_recoleccion=_iso(timedelta(hours=2)))
-        antes = generar_agenda(self.db, fecha="2026-08-12", horarios=("19:00",), ahora=AHORA)
-        self.assertEqual(antes[0].estado, "sin_candidato")
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("19:00",), ahora=AHORA)
 
         departamental = _crear_noticia(self.db, "departamental", fecha_recoleccion=_iso())
 
@@ -351,10 +332,7 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
     def test_aprobada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
-            verificar_impacto_provincial=_verificador(True),
-        )
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
         item = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.db.actualizar_revision(item["noticia_id"], "aprobada")
 
@@ -367,10 +345,7 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
     def test_rechazada_no_reemplazada_aunque_aparezca_mejor_candidato(self):
         provincial = _crear_noticia(self.db, "provincial", fecha_recoleccion=_iso(timedelta(hours=2)))
-        generar_agenda(
-            self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA,
-            verificar_impacto_provincial=_verificador(True),
-        )
+        generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
         item = self.db.obtener_agenda_item("2026-08-12", "10:30")
         self.db.actualizar_revision(item["noticia_id"], "rechazada")
 
@@ -500,7 +475,7 @@ class TestIntegracionConMotorContinuo(BaseAgendaTest):
 
         item_local = {
             "titulo": "Obras en Libertador General San Martín continúan esta semana",
-            "texto": "El municipio informó el avance de las obras en distintos barrios de la ciudad.",
+            "texto": "Continúa el avance de las obras viales en distintos barrios de la ciudad.",
             "url": "https://ejemplo.test/integracion-local",
             "fuente": "Fuente de prueba",
             "fecha": "",

@@ -56,8 +56,15 @@ class TestElegibilidadAutomatica(unittest.TestCase):
         r = evaluar_elegibilidad_publicacion_automatica(_noticia(nombre_fuente=""), ahora=AHORA)
         self.assertFalse(r.elegible)
 
-    def test_territorio_sin_clasificar_no_es_elegible(self):
+    def test_territorio_sin_clasificar_es_elegible_como_ultimo_recurso(self):
+        # sin_clasificar solo llega a 'preparada' vía el gate de
+        # entretenimiento/curiosidad (pipeline.py): si llegó hasta acá, es
+        # válido como último nivel de la cascada editorial.
         r = evaluar_elegibilidad_publicacion_automatica(_noticia(territorio="sin_clasificar"), ahora=AHORA)
+        self.assertTrue(r.elegible)
+
+    def test_territorio_desconocido_no_es_elegible(self):
+        r = evaluar_elegibilidad_publicacion_automatica(_noticia(territorio="territorio-invalido"), ahora=AHORA)
         self.assertFalse(r.elegible)
 
     def test_territorio_ausente_no_es_elegible(self):

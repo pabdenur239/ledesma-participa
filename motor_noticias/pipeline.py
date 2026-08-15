@@ -5,6 +5,7 @@ from .collectors.base import Collector
 from .db import Database
 from .dedupe import hash_contenido, normalizar_url
 from .elegibilidad_editorial import evaluar_elegibilidad_editorial
+from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Estado, Noticia, RevisionEstado
 from .redaccion.base import Redactor
 from .riesgo_editorial import evaluar_riesgo_editorial
@@ -86,8 +87,14 @@ def procesar_noticia(
         apta_para_preparar = evaluar_elegibilidad_editorial(
             noticia.titulo_original, noticia.texto_original, noticia.nombre_fuente
         )["elegible"]
-    else:  # sin_clasificar: nunca se prepara automáticamente
-        apta_para_preparar = False
+    else:  # sin_clasificar: solo se prepara como último recurso editorial
+        # (cascada nivel 5) si además de pasar el mismo gate mínimo de
+        # calidad que provincial/nacional, es contenido de entretenimiento/
+        # espectáculos/curiosidades/tendencia viral verificable. Cualquier
+        # otro contenido sin_clasificar sigue sin prepararse, igual que hoy.
+        apta_para_preparar = evaluar_elegibilidad_editorial(
+            noticia.titulo_original, noticia.texto_original, noticia.nombre_fuente
+        )["elegible"] and es_entretenimiento_o_curiosidad(noticia.titulo_original, noticia.texto_original)
 
     if not apta_para_preparar:
         noticia.estado = Estado.DESCARTADA.value

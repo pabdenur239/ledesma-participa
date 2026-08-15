@@ -23,7 +23,7 @@ from typing import List, Optional
 from ..motor_editorial import ANTIGUEDAD_MAXIMA_HORAS
 from ..models import Estado, RevisionEstado
 
-TERRITORIOS_VALIDOS = ("local", "departamental", "provincial", "nacional")
+TERRITORIOS_VALIDOS = ("local", "departamental", "provincial", "nacional", "sin_clasificar")
 
 
 @dataclass

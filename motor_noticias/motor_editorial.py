@@ -84,7 +84,9 @@ def _buscar_candidato_cascada(
     if not candidato_provincial:
         return None
 
-    resultado: ResultadoVerificacionLocal = verificar_impacto_provincial(candidato_provincial["url_fuente"])
+    resultado: ResultadoVerificacionLocal = verificar_impacto_provincial(
+        candidato_provincial["titulo_original"], candidato_provincial["url_fuente"]
+    )
     if resultado.impacto_local:
         return candidato_provincial
 

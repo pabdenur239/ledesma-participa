@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from .relevancia import clasificar_relevancia
+from .relevancia import _sin_acentos, clasificar_relevancia
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; LedesmaParticipa/1.0; VerificadorFuente)",
@@ -22,6 +22,15 @@ HEADERS = {
 }
 TIMEOUT_DEFAULT_SEGUNDOS = 8
 TAGS_SIN_TEXTO = {"script", "style", "noscript"}
+# Ventana de texto, a partir de donde aparece el propio título, que se
+# considera "cuerpo del artículo". Calibrada empíricamente: alcanza para
+# cubrir el cuerpo real (una mención genuina de Libertador apareció a ~2200
+# caracteres del título) sin llegar a widgets de "Te puede interesar" /
+# notas relacionadas de otros artículos (que en la práctica aparecen bastante
+# más lejos, ~5700 caracteres en el caso que motivó este ajuste) — esos
+# widgets, si no se acotara la ventana, producen falsos positivos: matchean
+# localidades mencionadas en OTRA nota, no en la que se está verificando.
+LONGITUD_VENTANA_ARTICULO = 3000
 
 
 @dataclass
@@ -59,11 +68,19 @@ def _texto_plano(html_crudo: str) -> str:
 
 
 def verificar_impacto_local_concreto(
-    url_fuente: str, timeout: int = TIMEOUT_DEFAULT_SEGUNDOS
+    titulo_original: str, url_fuente: str, timeout: int = TIMEOUT_DEFAULT_SEGUNDOS
 ) -> ResultadoVerificacionLocal:
-    """Descarga la fuente real y confirma si el artículo completo menciona
-    Libertador o el Departamento Ledesma. Falla siempre hacia "no
-    verificado": cualquier error de red, HTTP o de parseo se trata como sin
+    """Descarga la fuente real y confirma si el CUERPO del artículo (no la
+    página entera) menciona Libertador o el Departamento Ledesma. Ubica el
+    propio título dentro del texto extraído y solo busca dentro de la
+    ventana que sigue: una página de noticias real trae, además del
+    artículo, navegación, notas relacionadas y "también te puede interesar"
+    con títulos de OTRAS notas — sin acotar la búsqueda al cuerpo, esas
+    secciones producen falsos positivos (mencionan una localidad, pero de
+    una nota distinta a la que se está verificando).
+
+    Falla siempre hacia "no verificado": cualquier error de red, HTTP, de
+    parseo, o no poder ubicar el título en la página, se trata como sin
     impacto local (nunca se asume relación local sin confirmarla), para no
     rellenar una franja con contenido provincial sin evidencia real."""
     if not url_fuente:
@@ -77,9 +94,18 @@ def verificar_impacto_local_concreto(
         return ResultadoVerificacionLocal(False, f"No se pudo verificar la fuente: {error}")
 
     texto = _texto_plano(crudo)
-    resultado = clasificar_relevancia("", texto)
+    texto_norm = _sin_acentos(texto)
+    titulo_norm = _sin_acentos(titulo_original or "")
+    inicio = texto_norm.find(titulo_norm) if titulo_norm else -1
+    if inicio == -1:
+        return ResultadoVerificacionLocal(
+            False, "No se pudo ubicar el título original dentro del contenido de la fuente."
+        )
+
+    cuerpo_articulo = texto[inicio : inicio + LONGITUD_VENTANA_ARTICULO]
+    resultado = clasificar_relevancia("", cuerpo_articulo)
     if resultado["relevante"]:
-        return ResultadoVerificacionLocal(True, f"La nota completa {resultado['motivo'].lower()}.")
+        return ResultadoVerificacionLocal(True, f"El cuerpo de la nota {resultado['motivo'].lower()}.")
     return ResultadoVerificacionLocal(
-        False, "La nota completa no menciona Libertador ni el Departamento Ledesma."
+        False, "El cuerpo de la nota no menciona Libertador ni el Departamento Ledesma."
     )

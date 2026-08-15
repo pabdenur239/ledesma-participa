@@ -296,7 +296,7 @@ class TestIntegracionMotorEditorial(unittest.TestCase):
 
         entradas = generar_agenda(
             self.db, fecha="2026-08-12", horarios=("08:00", "10:30", "13:00"),
-            verificar_impacto_provincial=lambda url: ResultadoVerificacionLocal(True, "prueba"),
+            verificar_impacto_provincial=lambda titulo, url: ResultadoVerificacionLocal(True, "prueba"),
         )
 
         territorios = [e.territorio for e in entradas]

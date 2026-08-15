@@ -22,7 +22,7 @@ def _verificador(impacto_local: bool):
     """Verificador de impacto provincial falso para pruebas offline: nunca
     hace red real, devuelve siempre el mismo resultado inyectado."""
 
-    def _fake(url_fuente):
+    def _fake(titulo_original, url_fuente):
         return ResultadoVerificacionLocal(impacto_local, "prueba")
 
     return _fake
@@ -132,7 +132,7 @@ class TestCascadaTerritorial(BaseAgendaTest):
         _crear_noticia(self.db, "provincial")
         llamadas = []
 
-        def _verificador_contador(url_fuente):
+        def _verificador_contador(titulo_original, url_fuente):
             llamadas.append(url_fuente)
             return ResultadoVerificacionLocal(False, "prueba")
 

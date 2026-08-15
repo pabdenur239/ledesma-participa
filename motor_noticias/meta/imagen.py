@@ -9,18 +9,23 @@ from PIL import Image, ImageDraw, ImageFont
 
 DIRECTORIO_PLACAS_DEFAULT = Path(__file__).resolve().parent.parent.parent / "data" / "placas"
 
-ANCHO_PLACA = 1200
-ALTO_PLACA = 1200
+# 1080x1080: tamaño cuadrado recomendado por Meta tanto para Facebook como
+# para Instagram (evita recortes automáticos distintos por plataforma).
+ANCHO_PLACA = 1080
+ALTO_PLACA = 1080
 MARGEN_X = 80
 ALTO_BANDA_SUPERIOR = 160
 ALTO_BANDA_FOOTER = 140
 
-COLOR_MARCA = "#0d47a1"
-COLOR_FONDO = "#ffffff"
-COLOR_TITULO = "#1a1a1a"
-COLOR_RESUMEN = "#444444"
-COLOR_FOOTER_FONDO = "#f2f2f2"
-COLOR_FOOTER_TEXTO = "#333333"
+# Identidad "Ledesma Participa": fondo oscuro, marca en dorado, título en
+# blanco, acento naranja en el pie (fuente/localidad).
+COLOR_MARCA = "#1f1a10"
+COLOR_MARCA_TEXTO = "#d4af37"
+COLOR_FONDO = "#141414"
+COLOR_TITULO = "#ffffff"
+COLOR_RESUMEN = "#e0d8c8"
+COLOR_FOOTER_FONDO = "#1f1a10"
+COLOR_FOOTER_TEXTO = "#e8631c"
 
 # Usados por generar_svg_placa (envoltorio de texto por cantidad de
 # caracteres, ya que el navegador es quien mide el ancho real).
@@ -116,7 +121,7 @@ def generar_svg_placa(titulo: str, resumen: str, fuente: str = "", localidad: st
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{ANCHO_PLACA}" height="{ALTO_PLACA}" viewBox="0 0 {ANCHO_PLACA} {ALTO_PLACA}">
 <rect x="0" y="0" width="{ANCHO_PLACA}" height="{ALTO_PLACA}" fill="{COLOR_FONDO}"/>
 <rect x="0" y="0" width="{ANCHO_PLACA}" height="160" fill="{COLOR_MARCA}"/>
-<text x="80" y="100" font-family="sans-serif" font-size="48" font-weight="bold" fill="#ffffff">LEDESMA PARTICIPA</text>
+<text x="80" y="100" font-family="sans-serif" font-size="48" font-weight="bold" fill="{COLOR_MARCA_TEXTO}">LEDESMA PARTICIPA</text>
 {elementos_titulo}{elementos_resumen}<rect x="0" y="{ALTO_PLACA - 140}" width="{ANCHO_PLACA}" height="140" fill="{COLOR_FOOTER_FONDO}"/>
 <text x="80" y="{ALTO_PLACA - 85}" font-family="sans-serif" font-size="28" fill="{COLOR_FOOTER_TEXTO}">{_escapar_xml(pie_fuente)}</text>
 <text x="80" y="{ALTO_PLACA - 45}" font-family="sans-serif" font-size="28" fill="{COLOR_FOOTER_TEXTO}">{_escapar_xml(pie_localidad)}</text>
@@ -134,7 +139,7 @@ def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", locali
 
     dibujo.rectangle([(0, 0), (ANCHO_PLACA, ALTO_BANDA_SUPERIOR)], fill=COLOR_MARCA)
     fuente_marca = ImageFont.load_default(size=44)
-    dibujo.text((MARGEN_X, 55), "LEDESMA PARTICIPA", font=fuente_marca, fill="#ffffff")
+    dibujo.text((MARGEN_X, 55), "LEDESMA PARTICIPA", font=fuente_marca, fill=COLOR_MARCA_TEXTO)
 
     fuente_titulo = ImageFont.load_default(size=52)
     lineas_titulo = _envolver_texto_pixeles(

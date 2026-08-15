@@ -20,7 +20,7 @@ from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSColl
 from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
 from .db import Database
-from .motor_editorial import generar_agenda
+from .motor_editorial import generar_agenda, reservar_franja_informe_diario
 from .pipeline import ejecutar_pipeline
 from .redaccion.base import Redactor
 from .redaccion.mock import RedactorMock
@@ -113,7 +113,8 @@ def _actualizar_agenda(db: Database) -> "tuple[bool, Optional[str]]":
     registra como salud "error" y las próximas rondas siguen funcionando
     igual."""
     try:
-        entradas = generar_agenda(db)
+        entrada_informe = reservar_franja_informe_diario(db)
+        entradas = [entrada_informe] + generar_agenda(db)
     except Exception as error:  # nunca debe interrumpir el ciclo continuo
         mensaje = f"Error actualizando agenda: {error}"
         logger.error(mensaje)

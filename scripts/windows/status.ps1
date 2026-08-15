@@ -24,7 +24,16 @@ try {
 
 Write-Host ""
 Write-Host "--- Tareas programadas ---"
-foreach ($tarea in @("LedesmaParticipa-Motor", "LedesmaParticipa-Panel", "LedesmaParticipa-InformeDiario")) {
+$Tareas = @(
+    "LedesmaParticipa-Motor",
+    "LedesmaParticipa-Panel",
+    "LedesmaParticipa-InformeDiario",
+    "LedesmaParticipa-MetaProgramacion",
+    "LedesmaParticipa-MetaPlacas",
+    "LedesmaParticipa-MetaPublicar",
+    "LedesmaParticipa-MetaReintentos"
+)
+foreach ($tarea in $Tareas) {
     $t = Get-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
     if ($t) {
         $info = Get-ScheduledTaskInfo -TaskName $tarea
@@ -52,6 +61,14 @@ try {
 } catch {
     Write-Host "No responde."
 }
+
+Write-Host ""
+Write-Host "--- Meta (Facebook/Instagram) ---"
+# Solo indica SI hay credenciales configuradas, nunca su valor: ver
+# .env.example. META_PAGE_ID no es secreto, pero igual no se imprime su
+# valor acá para mantener la salida uniforme y simple.
+Write-Host "META_PAGE_ACCESS_TOKEN: $(if ($env:META_PAGE_ACCESS_TOKEN) { 'configurado' } else { 'FALTA' })"
+Write-Host "META_IG_USER_ID: $(if ($env:META_IG_USER_ID) { 'configurado' } else { 'FALTA (Instagram no podrá publicar)' })"
 
 Write-Host ""
 Write-Host "Logs en: $(Join-Path $root 'logs')"

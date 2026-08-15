@@ -65,6 +65,30 @@ CREATE TABLE IF NOT EXISTS agenda_item (
     actualizada_en TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agenda_fecha ON agenda_item(fecha);
+
+-- Programación de publicación en Meta (Facebook/Instagram): una fila por
+-- franja horaria fija x red social. UNIQUE(fecha, hora, red_social) impide
+-- programar dos veces la misma franja en la misma red (sin duplicados). El
+-- estado de cada red es independiente: un fallo en Instagram nunca toca la
+-- fila de Facebook de la misma franja, y viceversa.
+CREATE TABLE IF NOT EXISTS programacion_meta (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL,
+    hora TEXT NOT NULL,
+    noticia_id INTEGER NOT NULL,
+    red_social TEXT NOT NULL,
+    estado TEXT NOT NULL DEFAULT 'pendiente',
+    meta_id TEXT,
+    referencia_extra TEXT,
+    intentos INTEGER NOT NULL DEFAULT 0,
+    ultimo_error TEXT,
+    creada_en TEXT NOT NULL,
+    actualizada_en TEXT,
+    publicada_en TEXT,
+    UNIQUE(fecha, hora, red_social)
+);
+CREATE INDEX IF NOT EXISTS idx_programacion_meta_fecha ON programacion_meta(fecha);
+CREATE INDEX IF NOT EXISTS idx_programacion_meta_estado ON programacion_meta(estado);
 """
 
 # Columnas agregadas en migraciones no destructivas: una base ya existente
@@ -105,6 +129,22 @@ COLUMNAS_INGRESO_MANUAL = {
     "observacion_interna": "TEXT",
 }
 
+# Auditoría de aprobación automática (publicación en Meta sin revisión
+# humana): distingue, para siempre, si una noticia llegó a "aprobada" por
+# una persona en el panel o por el motor de elegibilidad automática. No
+# cambia el significado de revision_estado, solo deja constancia del origen.
+COLUMNAS_REVISION_AUTOMATICA = {
+    "revision_automatica": "INTEGER NOT NULL DEFAULT 0",
+}
+
+# `referencia_extra` en programacion_meta: para la fila de Facebook, guarda
+# el photo_id (distinto del post_id) para poder reobtener la URL pública de
+# esa misma foto en un reintento posterior sin volver a subirla. Migración
+# separada porque es una tabla distinta de `noticias`.
+COLUMNAS_PROGRAMACION_META_EXTRA = {
+    "referencia_extra": "TEXT",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -119,14 +159,16 @@ class Database:
         self._migrar_columnas(COLUMNAS_IMAGEN)
         self._migrar_columnas(COLUMNAS_TERRITORIO)
         self._migrar_columnas(COLUMNAS_INGRESO_MANUAL)
+        self._migrar_columnas(COLUMNAS_REVISION_AUTOMATICA)
+        self._migrar_columnas(COLUMNAS_PROGRAMACION_META_EXTRA, tabla="programacion_meta")
 
-    def _migrar_columnas(self, columnas: dict):
+    def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
         columnas_existentes = {
-            fila[1] for fila in self.conn.execute("PRAGMA table_info(noticias)").fetchall()
+            fila[1] for fila in self.conn.execute(f"PRAGMA table_info({tabla})").fetchall()
         }
         for columna, definicion in columnas.items():
             if columna not in columnas_existentes:
-                self.conn.execute(f"ALTER TABLE noticias ADD COLUMN {columna} {definicion}")
+                self.conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
         self.conn.commit()
 
     def existe_duplicado(self, url_normalizada: str, hash_contenido: str) -> bool:
@@ -148,8 +190,8 @@ class Database:
                 requiere_revision_especial, motivo_revision_especial, categoria_riesgo,
                 tiene_imagen_original, imagen_publicacion_ruta, imagen_generada_automaticamente,
                 territorio, motivo_territorio, urgente,
-                origen_ingreso, localidad_informada, observacion_interna
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                origen_ingreso, localidad_informada, observacion_interna, revision_automatica
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 noticia.titulo_original,
@@ -182,6 +224,7 @@ class Database:
                 noticia.origen_ingreso,
                 noticia.localidad_informada,
                 noticia.observacion_interna,
+                int(noticia.revision_automatica),
             ),
         )
         self.conn.commit()
@@ -219,16 +262,29 @@ class Database:
         titulo_revisado: Optional[str] = None,
         texto_revisado: Optional[str] = None,
         fecha_revision: Optional[str] = None,
+        automatica: bool = False,
     ) -> None:
         self.conn.execute(
             """
             UPDATE noticias
-            SET revision_estado = ?, titulo_revisado = ?, texto_revisado = ?, fecha_revision = ?
+            SET revision_estado = ?, titulo_revisado = ?, texto_revisado = ?, fecha_revision = ?,
+                revision_automatica = ?
             WHERE id = ?
             """,
-            (revision_estado, titulo_revisado, texto_revisado, fecha_revision, id_noticia),
+            (revision_estado, titulo_revisado, texto_revisado, fecha_revision, int(automatica), id_noticia),
         )
         self.conn.commit()
+
+    def actualizar_estado_noticia(self, id_noticia: int, estado: str) -> None:
+        self.conn.execute("UPDATE noticias SET estado = ? WHERE id = ?", (estado, id_noticia))
+        self.conn.commit()
+
+    def obtener_por_url(self, url_normalizada: str) -> Optional[dict]:
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE url_normalizada = ? LIMIT 1", (url_normalizada,)
+        )
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
 
     def actualizar_imagen_publicacion(
         self,
@@ -347,14 +403,6 @@ class Database:
         )
         self.conn.commit()
 
-    def marcar_publicada(self, id_noticia: int) -> None:
-        """Marca una noticia como `publicada` recién después de que Meta
-        confirmó el éxito de la publicación real (nunca antes)."""
-        self.conn.execute(
-            "UPDATE noticias SET estado = ? WHERE id = ?", (Estado.PUBLICADA.value, id_noticia)
-        )
-        self.conn.commit()
-
     def candidato_editorial(
         self, territorio: str, excluidos_ids: set, fecha_limite: str
     ) -> Optional[dict]:
@@ -444,6 +492,94 @@ class Database:
             cur = self.conn.execute(
                 "SELECT * FROM agenda_item ORDER BY fecha DESC, tipo DESC, hora IS NULL, hora"
             )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def obtener_programacion_meta(self, fecha: str, hora: str, red_social: str) -> Optional[dict]:
+        cur = self.conn.execute(
+            "SELECT * FROM programacion_meta WHERE fecha = ? AND hora = ? AND red_social = ?",
+            (fecha, hora, red_social),
+        )
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def reservar_programacion_meta(
+        self, fecha: str, hora: str, noticia_id: int, red_social: str, creada_en: str
+    ) -> int:
+        """Crea (o devuelve, sin tocar) la fila de programación de una franja
+        x red social. Idempotente: si ya existe una fila para esa franja y
+        red, nunca la duplica ni la pisa (evita reprogramar/republicar)."""
+        existente = self.obtener_programacion_meta(fecha, hora, red_social)
+        if existente:
+            return existente["id"]
+        cur = self.conn.execute(
+            """
+            INSERT INTO programacion_meta (fecha, hora, noticia_id, red_social, estado, creada_en)
+            VALUES (?, ?, ?, ?, 'pendiente', ?)
+            """,
+            (fecha, hora, noticia_id, red_social, creada_en),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def actualizar_programacion_meta(
+        self,
+        id_programacion: int,
+        estado: str,
+        meta_id: Optional[str] = None,
+        referencia_extra: Optional[str] = None,
+        ultimo_error: Optional[str] = None,
+        intentos: Optional[int] = None,
+        actualizada_en: Optional[str] = None,
+        publicada_en: Optional[str] = None,
+    ) -> None:
+        """`referencia_extra`, si no se pasa explícitamente, conserva el
+        valor existente (mismo criterio que `intentos`): por ejemplo, un
+        reintento de Instagram no debe borrar el photo_id de Facebook que
+        ya se guardó en un intento anterior."""
+        actual = self.conn.execute(
+            "SELECT intentos, referencia_extra FROM programacion_meta WHERE id = ?", (id_programacion,)
+        ).fetchone()
+        if actual is None:
+            return
+        nuevos_intentos = intentos if intentos is not None else actual["intentos"]
+        nueva_referencia_extra = referencia_extra if referencia_extra is not None else actual["referencia_extra"]
+        self.conn.execute(
+            """
+            UPDATE programacion_meta
+            SET estado = ?, meta_id = ?, referencia_extra = ?, ultimo_error = ?, intentos = ?,
+                actualizada_en = ?, publicada_en = ?
+            WHERE id = ?
+            """,
+            (
+                estado,
+                meta_id,
+                nueva_referencia_extra,
+                ultimo_error,
+                nuevos_intentos,
+                actualizada_en,
+                publicada_en,
+                id_programacion,
+            ),
+        )
+        self.conn.commit()
+
+    def listar_programacion_meta(self, fecha: Optional[str] = None) -> list:
+        if fecha:
+            cur = self.conn.execute(
+                "SELECT * FROM programacion_meta WHERE fecha = ? ORDER BY hora, red_social", (fecha,)
+            )
+        else:
+            cur = self.conn.execute(
+                "SELECT * FROM programacion_meta ORDER BY fecha DESC, hora, red_social"
+            )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def listar_programacion_meta_para_reintentar(self, max_intentos: int) -> list:
+        cur = self.conn.execute(
+            "SELECT * FROM programacion_meta WHERE estado = 'error' AND intentos < ? "
+            "ORDER BY fecha, hora",
+            (max_intentos,),
+        )
         return [dict(fila) for fila in cur.fetchall()]
 
     def close(self):

@@ -24,6 +24,69 @@
     ],
     "figura_publica_relacionada": [
       "Pablo Abdenur"
+    ],
+    "judicial": [
+      "causa judicial",
+      "imputado",
+      "imputada",
+      "fiscalía",
+      "fiscal federal",
+      "denuncia penal",
+      "denunciado",
+      "denunciada",
+      "acusación",
+      "condena",
+      "condenado",
+      "condenada",
+      "sentencia",
+      "tribunal",
+      "juzgado",
+      "allanamiento",
+      "detenido",
+      "detenida",
+      "arrestado",
+      "arrestada",
+      "prisión preventiva"
+    ],
+    "muertes": [
+      "falleció",
+      "fallecimiento",
+      "murió",
+      "muerte de",
+      "homicidio",
+      "femicidio",
+      "asesinato",
+      "asesinado",
+      "asesinada",
+      "víctima fatal"
+    ],
+    "menores_identificables": [
+      "menor de edad",
+      "niño identificado",
+      "niña identificada",
+      "adolescente identificado",
+      "adolescente identificada",
+      "abuso infantil",
+      "grooming"
+    ],
+    "salud_sensible": [
+      "VIH",
+      "salud mental",
+      "intento de suicidio",
+      "suicidio",
+      "enfermedad terminal",
+      "aborto",
+      "abuso sexual"
+    ],
+    "contenido_violento": [
+      "violación",
+      "violencia de género",
+      "herido de bala",
+      "ataque armado",
+      "arma de fuego",
+      "apuñalado",
+      "apuñalada",
+      "secuestro"
     ]
   }
 }

@@ -1,6 +1,7 @@
 import base64
 import html
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,11 +15,18 @@ from ..ciclo_continuo import NOMBRE_SALUD_AGENDA, agenda_automatica_habilitada
 from ..continuo_runner import LOCK_PATH_DEFAULT
 from ..db import Database
 from ..ingreso_manual import ErrorIngresoManual, ResultadoIngresoManual, cargar_noticia_manual
+from ..meta.imagen import DIRECTORIO_PLACAS_DEFAULT
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, OrigenIngreso, RevisionEstado
 from ..motor_editorial import HORARIOS_DEFAULT, ZONA_JUJUY
 from ..redaccion import crear_redactor
 from ..redaccion import _cargar_config_redaccion
+
+# Nombre de archivo de placa válido (ver motor_noticias/meta/imagen.py
+# `generar_placa`): solo hex + ".png". Cualquier otra cosa (intentos de
+# recorrido de directorios, extensiones distintas) se rechaza sin tocar el
+# sistema de archivos.
+NOMBRE_ARCHIVO_PLACA_VALIDO = re.compile(r"^placa_[0-9a-f]+\.png$")
 
 # Timeout corto: /estado nunca debe quedar colgado esperando a Ollama.
 TIMEOUT_ESTADO_OLLAMA_SEGUNDOS = 2
@@ -632,8 +640,33 @@ class PanelHandler(BaseHTTPRequestHandler):
     def _no_encontrada(self) -> None:
         self._responder_html(_pagina("No encontrada", "<p>Página no encontrada.</p>"), status=404)
 
+    def _responder_placa(self, nombre_archivo: str) -> None:
+        """Expone `data/placas/<archivo>.png` para que Instagram (que exige
+        una `image_url` públicamente accesible, a diferencia de Facebook)
+        pueda buscar la imagen. Solo sirve nombres con el formato exacto que
+        genera `generar_placa` (placa_<hex>.png): nunca un path arbitrario."""
+        if not NOMBRE_ARCHIVO_PLACA_VALIDO.match(nombre_archivo):
+            self._no_encontrada()
+            return
+        directorio = DIRECTORIO_PLACAS_DEFAULT.resolve()
+        ruta = (directorio / nombre_archivo).resolve()
+        if directorio not in ruta.parents or not ruta.is_file():
+            self._no_encontrada()
+            return
+        datos = ruta.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(datos)))
+        self.end_headers()
+        self.wfile.write(datos)
+
     def do_GET(self):
         partes = urllib.parse.urlsplit(self.path)
+
+        if partes.path.startswith("/placas/"):
+            self._responder_placa(partes.path[len("/placas/"):])
+            return
+
         query = urllib.parse.parse_qs(partes.query)
         db = self._db()
         try:

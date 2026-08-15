@@ -114,7 +114,8 @@ $settings = New-ScheduledTaskSettingsSet `
     -RestartInterval $RestartInterval `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -StartWhenAvailable `
-    -DontStopOnIdleEnd
+    -DontStopOnIdleEnd `
+    -RunOnlyIfNetworkAvailable
 
 # LogonType Interactive + RunLevel Limited: corre bajo la sesión del usuario
 # actual, sin privilegios elevados y sin necesidad de guardar contraseña.

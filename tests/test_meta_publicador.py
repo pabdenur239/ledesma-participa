@@ -23,10 +23,12 @@ class FakeClienteMeta:
         fallar_facebook=False,
         fallar_instagram=False,
         fallar_obtener_url=False,
+        fallar_verificacion=False,
     ):
         self.fallar_facebook = fallar_facebook
         self.fallar_instagram = fallar_instagram
         self.fallar_obtener_url = fallar_obtener_url
+        self.fallar_verificacion = fallar_verificacion
         self.llamadas = []
         self._contador_fotos = 0
 
@@ -49,6 +51,10 @@ class FakeClienteMeta:
     def publicar_comentario_facebook(self, post_id, texto, dry_run=True):
         self.llamadas.append(("publicar_comentario_facebook", post_id))
         return "comentario-fb-1"
+
+    def verificar_publicacion(self, id_publicacion):
+        self.llamadas.append(("verificar_publicacion", id_publicacion))
+        return not self.fallar_verificacion
 
     def obtener_url_publica_foto(self, photo_id):
         self.llamadas.append(("obtener_url_publica_foto", photo_id))
@@ -152,6 +158,36 @@ class TestPublicarFranja(BaseTest):
         self.assertEqual(estados["facebook"], "publicado")
         self.assertFalse(any(n == "publicar_comentario_facebook" for n, _ in fake.llamadas))
         self.assertEqual(self.db.obtener(n.id)["estado"], Estado.PUBLICADA.value)
+
+    def test_verificacion_fallida_no_marca_publicado_y_no_duplica_en_reintento(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake_falla_verificacion = FakeClienteMeta(fallar_verificacion=True)
+
+        resultado = publicar_franja(
+            self.db, "2026-08-12", "09:30",
+            cliente_fb=fake_falla_verificacion, cliente_ig=fake_falla_verificacion, ahora=AHORA,
+        )
+        estados = {r.red_social: r.estado for r in resultado.redes}
+        self.assertEqual(estados["facebook"], "error")
+        fila_fb = self.db.obtener_programacion_meta("2026-08-12", "09:30", "facebook")
+        self.assertEqual(fila_fb["meta_id"], "post-1")  # se conserva: ya lo publicó Meta
+
+        # Reintento con verificación ahora exitosa: nunca vuelve a publicar
+        # (mismo post-1), solo confirma y recién ahí marca "publicado".
+        fake_ok = FakeClienteMeta()
+        resultado_reintento = publicar_franja(
+            self.db, "2026-08-12", "09:30", cliente_fb=fake_ok, cliente_ig=fake_ok, ahora=AHORA
+        )
+        estados_reintento = {r.red_social: r.estado for r in resultado_reintento.redes}
+        self.assertEqual(estados_reintento["facebook"], "publicado")
+        self.assertEqual(
+            [r.meta_id for r in resultado_reintento.redes if r.red_social == "facebook"][0], "post-1"
+        )
+        self.assertFalse(
+            any(nombre in ("publicar_foto_facebook", "publicar_foto_facebook_por_url") for nombre, _ in fake_ok.llamadas)
+        )
+        self.assertIn(("verificar_publicacion", "post-1"), fake_ok.llamadas)
 
     def test_si_facebook_falla_instagram_no_se_intenta(self):
         n = _noticia(self.db)

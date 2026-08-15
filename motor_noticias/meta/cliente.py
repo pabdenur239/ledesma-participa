@@ -271,6 +271,19 @@ class ClienteMetaGraphAPI:
             )
         return url
 
+    def verificar_publicacion(self, id_publicacion: str) -> bool:
+        """Confirma con un GET, contra la propia Graph API, que un post de
+        Facebook o un media de Instagram realmente existe en Meta. Se usa
+        siempre antes de marcar cualquier publicación real como
+        'publicado': nunca se confía únicamente en la respuesta del POST."""
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede verificar la publicación.")
+
+        resultado = self._peticion_get_json(
+            f"{GRAPH_API_BASE}/{id_publicacion}", {"fields": "id", "access_token": self._access_token}
+        )
+        return bool(resultado.get("id"))
+
     def editar_caption_foto_facebook(self, photo_id: str, caption: str, dry_run: bool = True):
         """Corrige el caption de una foto de Facebook ya publicada (no crea
         una publicación nueva). Pensado para arreglar un texto principal que

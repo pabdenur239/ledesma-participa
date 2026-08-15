@@ -174,6 +174,33 @@ class TestEditarCaptionFotoFacebook(unittest.TestCase):
         self.assertNotIn("token-secreto", str(ctx.exception))
 
 
+class TestVerificarPublicacion(unittest.TestCase):
+    def test_confirma_publicacion_existente(self):
+        urlopen = _urlopen_mock({"id": "post-real-123"})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+
+        self.assertTrue(cliente.verificar_publicacion("post-real-123"))
+        peticion = urlopen.call_args[0][0]
+        self.assertEqual(peticion.get_method(), "GET")
+        self.assertIn("post-real-123", peticion.full_url)
+
+    def test_respuesta_sin_id_no_confirma(self):
+        urlopen = _urlopen_mock({})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        self.assertFalse(cliente.verificar_publicacion("post-inexistente"))
+
+    def test_sin_token_no_intenta_verificar(self):
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token=None, urlopen=MagicMock())
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.verificar_publicacion("post-1")
+
+    def test_error_de_meta_se_traduce_a_error_controlado(self):
+        urlopen = _urlopen_mock({"error": {"message": "publicación no encontrada"}})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.verificar_publicacion("post-1")
+
+
 class TestObtenerUrlPublicaFoto(unittest.TestCase):
     def test_devuelve_la_url_de_mayor_resolucion(self):
         urlopen = _urlopen_mock(

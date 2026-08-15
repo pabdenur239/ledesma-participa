@@ -11,6 +11,7 @@ def _noticia(**overrides) -> dict:
         texto_revisado=None,
         nombre_fuente="Prensa Jujuy (Gobierno de Jujuy)",
         localidad="Libertador General San Martín",
+        url_fuente="https://prensa.jujuy.gob.ar/nota-original",
     )
     base.update(overrides)
     return base
@@ -56,9 +57,18 @@ class TestGenerarContenidoFacebook(unittest.TestCase):
         self.assertIn("Título preparado por IA", contenido.post_principal)
         self.assertIn("Texto preparado por IA", contenido.primer_comentario)
 
-    def test_post_principal_tiene_cierre_obligatorio(self):
+    def test_post_principal_es_autosuficiente_con_fuente_y_enlace(self):
         contenido = generar_contenido_facebook(_noticia())
-        self.assertIn("Información completa en el primer comentario.", contenido.post_principal)
+        self.assertIn("Fuente y nota completa: https://prensa.jujuy.gob.ar/nota-original", contenido.post_principal)
+
+    def test_post_principal_nunca_promete_informacion_en_el_comentario(self):
+        contenido = generar_contenido_facebook(_noticia())
+        self.assertNotIn("primer comentario", contenido.post_principal.lower())
+
+    def test_post_principal_sin_url_fuente_no_rompe_ni_promete_comentario(self):
+        contenido = generar_contenido_facebook(_noticia(url_fuente=""))
+        self.assertNotIn("primer comentario", contenido.post_principal.lower())
+        self.assertNotIn("Fuente y nota completa:", contenido.post_principal)
 
     def test_primer_comentario_incluye_fuente_y_hashtags(self):
         contenido = generar_contenido_facebook(_noticia())

@@ -136,6 +136,44 @@ class TestPublicarInstagram(BaseImagen):
         self.assertEqual(urlopen.call_count, 1)
 
 
+class TestEditarCaptionFotoFacebook(unittest.TestCase):
+    def test_dry_run_no_llama_a_meta(self):
+        urlopen = MagicMock()
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        resultado = cliente.editar_caption_foto_facebook("photo-1", "caption nuevo", dry_run=True)
+        self.assertIsInstance(resultado, ResultadoDryRun)
+        urlopen.assert_not_called()
+
+    def test_edicion_real_confirmada_devuelve_true(self):
+        urlopen = _urlopen_mock({"success": True})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+
+        resultado = cliente.editar_caption_foto_facebook("photo-1", "caption nuevo", dry_run=False)
+
+        self.assertTrue(resultado)
+        peticion = urlopen.call_args[0][0]
+        self.assertIn("photo-1", peticion.full_url)
+        self.assertEqual(peticion.get_method(), "POST")
+
+    def test_sin_token_no_intenta_editar(self):
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token=None, urlopen=MagicMock())
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.editar_caption_foto_facebook("photo-1", "caption nuevo", dry_run=False)
+
+    def test_respuesta_sin_success_es_error_controlado(self):
+        urlopen = _urlopen_mock({"success": False})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.editar_caption_foto_facebook("photo-1", "caption nuevo", dry_run=False)
+
+    def test_error_de_meta_no_expone_token(self):
+        urlopen = _urlopen_mock({"error": {"message": "permiso insuficiente"}})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="token-secreto", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta) as ctx:
+            cliente.editar_caption_foto_facebook("photo-1", "caption nuevo", dry_run=False)
+        self.assertNotIn("token-secreto", str(ctx.exception))
+
+
 class TestObtenerUrlPublicaFoto(unittest.TestCase):
     def test_devuelve_la_url_de_mayor_resolucion(self):
         urlopen = _urlopen_mock(

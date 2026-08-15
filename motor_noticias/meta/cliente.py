@@ -271,6 +271,30 @@ class ClienteMetaGraphAPI:
             )
         return url
 
+    def editar_caption_foto_facebook(self, photo_id: str, caption: str, dry_run: bool = True):
+        """Corrige el caption de una foto de Facebook ya publicada (no crea
+        una publicación nueva). Pensado para arreglar un texto principal que
+        haya quedado incorrecto — p.ej. una promesa de información en el
+        primer comentario cuando ese comentario falló."""
+        endpoint = f"{GRAPH_API_BASE}/{photo_id}"
+        if dry_run:
+            return ResultadoDryRun(
+                dry_run=True,
+                page_id=self.page_id,
+                endpoint_post=endpoint,
+                endpoint_comentario="",
+                texto_post_principal=caption,
+                texto_primer_comentario="",
+            )
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede editar la publicación de Facebook.")
+
+        cuerpo, content_type = _multipart({"caption": caption, "access_token": self._access_token})
+        resultado = self._peticion_json(endpoint, cuerpo, content_type)
+        if not resultado.get("success"):
+            raise ErrorClienteMeta("Meta no confirmó la edición de la publicación de Facebook.")
+        return True
+
     def publicar_comentario_facebook(self, post_id: str, texto: str, dry_run: bool = True):
         endpoint = f"{GRAPH_API_BASE}/{post_id}/comments"
         if dry_run:

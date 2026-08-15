@@ -80,12 +80,22 @@ def generar_contenido_facebook(
     """Genera el post principal y el primer comentario a partir de
     información ya validada de la noticia (titulo_revisado/texto_revisado,
     con fallback a titulo_preparado/texto_preparado). No vuelve a pedirle a
-    ninguna IA que invente o amplíe hechos: es solo formateo editorial."""
+    ninguna IA que invente o amplíe hechos: es solo formateo editorial.
+
+    El post principal es autosuficiente: siempre incluye la fuente y el
+    enlace original, nunca promete información en el primer comentario (que
+    es solo un complemento opcional — el texto completo, la fuente y los
+    hashtags — cuya falla no debe dejar al post principal remitiendo a algo
+    que no existe)."""
     config = config or _cargar_config()
     titulo, texto = _titulo_y_texto_finales(noticia)
     reseña = _resena_breve(texto, config["longitud_maxima_resena"])
 
-    post_principal = f"{titulo}\n\n{reseña}\n\n{config['cierre_post_principal']}"
+    url_fuente = (noticia.get("url_fuente") or "").strip()
+    partes_post = [titulo, reseña]
+    if url_fuente:
+        partes_post.append(f"Fuente y nota completa: {url_fuente}")
+    post_principal = "\n\n".join(partes_post)
 
     if incluir_menciones is None:
         incluir_menciones = config["menciones_habilitadas_por_defecto"]

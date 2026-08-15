@@ -54,19 +54,30 @@ def _publicar_en_facebook(db, prog_id, fila, cliente_fb, contenido):
             resultado_fb = cliente_fb.publicar_foto_facebook_por_url(contenido, contenido.imagen_url, dry_run=False)
         else:
             resultado_fb = cliente_fb.publicar_foto_facebook(contenido, Path(contenido.imagen_url), dry_run=False)
-        cliente_fb.publicar_comentario_facebook(resultado_fb.post_id, contenido.primer_comentario, dry_run=False)
-
-        db.actualizar_programacion_meta(
-            prog_id, "publicado", meta_id=resultado_fb.post_id, referencia_extra=resultado_fb.photo_id,
-            intentos=fila["intentos"] + 1, actualizada_en=ahora_iso, publicada_en=ahora_iso,
-        )
-        return ResultadoRed("facebook", "publicado", resultado_fb.post_id), resultado_fb.photo_id
     except ErrorClienteMeta as error:
         logger.error("Error publicando en facebook (franja %s): %s", prog_id, error)
         db.actualizar_programacion_meta(
             prog_id, "error", ultimo_error=str(error), intentos=fila["intentos"] + 1, actualizada_en=ahora_iso
         )
         return ResultadoRed("facebook", "error", detalle=str(error)), None
+
+    # El post principal ya es autosuficiente (incluye fuente y enlace): el
+    # primer comentario es solo un complemento. Si falla (p.ej. falta el
+    # permiso pages_manage_engagement), la publicación ya confirmada por
+    # Meta no se marca como error ni se reintenta desde cero.
+    try:
+        cliente_fb.publicar_comentario_facebook(resultado_fb.post_id, contenido.primer_comentario, dry_run=False)
+    except ErrorClienteMeta as error:
+        logger.warning(
+            "Facebook publicó el post %s pero el comentario complementario falló: %s",
+            resultado_fb.post_id, error,
+        )
+
+    db.actualizar_programacion_meta(
+        prog_id, "publicado", meta_id=resultado_fb.post_id, referencia_extra=resultado_fb.photo_id,
+        intentos=fila["intentos"] + 1, actualizada_en=ahora_iso, publicada_en=ahora_iso,
+    )
+    return ResultadoRed("facebook", "publicado", resultado_fb.post_id), resultado_fb.photo_id
 
 
 def _publicar_en_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia, photo_id):

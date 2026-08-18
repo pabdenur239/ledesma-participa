@@ -250,6 +250,16 @@ class Database:
             )
         return [dict(fila) for fila in cur.fetchall()]
 
+    def listar_publicadas(self) -> list:
+        """Noticias ya publicadas, más nuevas primero: única lectura que usa
+        el generador del sitio web público (motor_noticias/sitio). No
+        escribe nada; no interfiere con el pipeline de publicación."""
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE estado = ? ORDER BY fecha_recoleccion DESC, id DESC",
+            (Estado.PUBLICADA.value,),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
     def obtener(self, id_noticia: int) -> Optional[dict]:
         cur = self.conn.execute("SELECT * FROM noticias WHERE id = ?", (id_noticia,))
         fila = cur.fetchone()

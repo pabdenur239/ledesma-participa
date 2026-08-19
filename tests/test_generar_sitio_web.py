@@ -1,7 +1,9 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from motor_noticias.db import Database
 from motor_noticias.models import Estado, Noticia, RevisionEstado
@@ -193,6 +195,48 @@ class TestGenerarSitioWeb(unittest.TestCase):
         contenido = articulo.read_text(encoding="utf-8")
         self.assertIn("Fuente y nota completa:", contenido)
         self.assertIn("https://ejemplo.test/nota-original", contenido)
+
+
+class TestCliDespliegaDespuesDeGenerar(unittest.TestCase):
+    """Bug real corregido: la tarea Windows SitioWeb invoca este script
+    directamente (no la función `generar_sitio` en sí), y hasta ahora solo
+    regeneraba `docs/` en el disco local sin nunca desplegarla — el deploy
+    solo vivía en el respaldo del Motor Continuo. Ahora el propio CLI
+    también despliega, así la cadencia de 15 minutos de la tarea SitioWeb
+    (más rápida que los 30 minutos del Motor) alcanza para publicar."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        db = Database(self.db_path)
+        db.close()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    @patch("generar_sitio_web.desplegar_sitio")
+    @patch("generar_sitio_web.deploy_automatico_habilitado", return_value=True)
+    def test_deploy_habilitado_despliega_despues_de_generar(self, _habilitado_mock, desplegar_mock):
+        import generar_sitio_web
+        from motor_noticias.sitio.deploy import ResultadoDeploy
+
+        desplegar_mock.return_value = ResultadoDeploy("desplegado")
+        argv = ["generar_sitio_web.py", "--db", str(self.db_path), "--salida", str(Path(self.tmpdir.name) / "salida")]
+        with patch.object(sys, "argv", argv):
+            generar_sitio_web.main()
+
+        desplegar_mock.assert_called_once()
+
+    @patch("generar_sitio_web.desplegar_sitio")
+    @patch("generar_sitio_web.deploy_automatico_habilitado", return_value=False)
+    def test_deploy_deshabilitado_no_llama_git(self, _habilitado_mock, desplegar_mock):
+        import generar_sitio_web
+
+        argv = ["generar_sitio_web.py", "--db", str(self.db_path), "--salida", str(Path(self.tmpdir.name) / "salida")]
+        with patch.object(sys, "argv", argv):
+            generar_sitio_web.main()
+
+        desplegar_mock.assert_not_called()
 
 
 if __name__ == "__main__":

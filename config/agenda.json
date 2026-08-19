@@ -1,3 +1,4 @@
 {
-  "agenda_automatica": true
+  "agenda_automatica": true,
+  "publicacion_meta_automatica": true
 }

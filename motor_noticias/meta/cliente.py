@@ -224,6 +224,26 @@ class ClienteMetaGraphAPI:
         post_id = _post_id_desde_respuesta_feed(resultado)
         return ResultadoFotoFacebook(photo_id=photo_id, post_id=post_id)
 
+    def _subir_foto_sin_publicar(self, endpoint_foto: str, ruta_imagen: Path) -> str:
+        """Paso compartido de subida en dos pasos (foto `published=false`,
+        sin adjuntar archivo remoto): lo usan tanto `publicar_foto_facebook`
+        (que después la referencia en un post de `/feed`) como
+        `alojar_imagen_para_story` (que nunca crea ningún post — solo
+        necesita la URL de CDN que Meta le asigna a la foto para poder
+        publicar la Story real en Instagram)."""
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede subir la imagen a Meta.")
+
+        cuerpo_foto, content_type_foto = _multipart(
+            {
+                "published": "false",
+                "access_token": self._access_token,
+            },
+            Path(ruta_imagen),
+        )
+        resultado_foto = self._peticion_json(endpoint_foto, cuerpo_foto, content_type_foto)
+        return _photo_id_desde_respuesta_no_publicada(resultado_foto)
+
     def publicar_foto_facebook(
         self, contenido: ContenidoFacebook, ruta_imagen: Path, dry_run: bool = True
     ):
@@ -244,19 +264,30 @@ class ClienteMetaGraphAPI:
                 texto_post_principal=contenido.post_principal,
                 texto_primer_comentario=contenido.primer_comentario,
             )
-        if not self.tiene_token_configurado():
-            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede publicar en Facebook.")
-
-        cuerpo_foto, content_type_foto = _multipart(
-            {
-                "published": "false",
-                "access_token": self._access_token,
-            },
-            Path(ruta_imagen),
-        )
-        resultado_foto = self._peticion_json(endpoint_foto, cuerpo_foto, content_type_foto)
-        photo_id = _photo_id_desde_respuesta_no_publicada(resultado_foto)
+        photo_id = self._subir_foto_sin_publicar(endpoint_foto, Path(ruta_imagen))
         return self._crear_post_feed_con_foto(endpoint_post, contenido.post_principal, photo_id)
+
+    def alojar_imagen_para_story(self, ruta_imagen: Path, dry_run: bool = True) -> str:
+        """Sube una imagen a Facebook como foto NO publicada (`published=false`)
+        únicamente para obtener de Meta una URL pública (CDN) donde alojarla:
+        a diferencia de `publicar_foto_facebook`, nunca crea un post de
+        `/feed` a partir de ella — no queda ningún rastro visible en la
+        Página de Facebook. Se usa solo como hosting para poder publicar la
+        Story real de Instagram (que exige una `image_url` pública), mismo
+        truco que ya se usa para el post de feed de Instagram: reutilizar el
+        CDN de Meta en vez de necesitar hosting propio. Devuelve el photo_id
+        de la foto subida, o un ResultadoDryRun si dry_run=True."""
+        endpoint_foto = f"{GRAPH_API_BASE}/{self.page_id}/photos"
+        if dry_run:
+            return ResultadoDryRun(
+                dry_run=True,
+                page_id=self.page_id,
+                endpoint_post=endpoint_foto,
+                endpoint_comentario="",
+                texto_post_principal="",
+                texto_primer_comentario="",
+            )
+        return self._subir_foto_sin_publicar(endpoint_foto, Path(ruta_imagen))
 
     def publicar_foto_facebook_por_url(
         self, contenido: ContenidoFacebook, imagen_url: str, dry_run: bool = True
@@ -411,4 +442,52 @@ class ClienteMetaGraphAPI:
         media_id = publicado.get("id")
         if not media_id:
             raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Instagram.")
+        return media_id
+
+    def publicar_instagram_story(self, imagen_url: Optional[str], dry_run: bool = True):
+        """Publica una Instagram Story real: mismo flujo oficial de dos
+        pasos que `publicar_instagram` (contenedor de media + publish), con
+        `media_type=STORIES`. A diferencia del feed, las Stories publicadas
+        por la Graph API no admiten un caption visible aparte — por eso no
+        recibe `caption`: todo el texto ya viene impreso en la propia
+        imagen (ver `motor_noticias.meta.imagen.generar_story`).
+
+        No existe un equivalente de esto para Facebook: Meta no ofrece
+        ningún endpoint público de Graph API para publicar Stories en una
+        Página de Facebook desde una app de terceros (a diferencia de
+        Instagram, donde sí es una función soportada) — limitación de la
+        plataforma, no de este cliente."""
+        endpoint_media = f"{GRAPH_API_BASE}/{self.ig_user_id}/media"
+        endpoint_publish = f"{GRAPH_API_BASE}/{self.ig_user_id}/media_publish"
+        if dry_run:
+            return ResultadoDryRun(
+                dry_run=True,
+                page_id=self.ig_user_id or "",
+                endpoint_post=endpoint_media,
+                endpoint_comentario=endpoint_publish,
+                texto_post_principal="",
+                texto_primer_comentario="",
+            )
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede publicar la Story de Instagram.")
+        if not self.tiene_instagram_configurado():
+            raise ErrorClienteMeta("Falta META_IG_USER_ID: no se puede publicar la Story de Instagram.")
+        if not imagen_url:
+            raise ErrorClienteMeta("Falta una URL pública de imagen para la Story de Instagram.")
+
+        cuerpo_media, tipo_media = _multipart(
+            {"image_url": imagen_url, "media_type": "STORIES", "access_token": self._access_token}
+        )
+        contenedor = self._peticion_json(endpoint_media, cuerpo_media, tipo_media)
+        creation_id = contenedor.get("id")
+        if not creation_id:
+            raise ErrorClienteMeta("Meta no devolvió un ID de contenedor de Instagram Story.")
+
+        cuerpo_publish, tipo_publish = _multipart(
+            {"creation_id": creation_id, "access_token": self._access_token}
+        )
+        publicado = self._peticion_json(endpoint_publish, cuerpo_publish, tipo_publish)
+        media_id = publicado.get("id")
+        if not media_id:
+            raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Instagram Story.")
         return media_id

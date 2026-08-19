@@ -145,6 +145,14 @@ COLUMNAS_PROGRAMACION_META_EXTRA = {
     "referencia_extra": "TEXT",
 }
 
+# Placa vertical (9:16) para Instagram Stories: columna aparte de
+# `imagen_publicacion_ruta` (la placa cuadrada del feed) porque son dos
+# imágenes distintas de la misma noticia. Igual criterio de reutilización:
+# una vez generada, no se regenera en reintentos posteriores.
+COLUMNAS_STORY = {
+    "imagen_story_ruta": "TEXT",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -161,14 +169,29 @@ class Database:
         self._migrar_columnas(COLUMNAS_INGRESO_MANUAL)
         self._migrar_columnas(COLUMNAS_REVISION_AUTOMATICA)
         self._migrar_columnas(COLUMNAS_PROGRAMACION_META_EXTRA, tabla="programacion_meta")
+        self._migrar_columnas(COLUMNAS_STORY)
 
     def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
+        """Migración no destructiva, aditiva y segura entre procesos: varios
+        procesos cortos (MetaPublicar, MetaUrgentes, SitioWeb, etc.) pueden
+        abrir la misma base casi al mismo tiempo, cada uno con su propio
+        `PRAGMA table_info` desactualizado en el instante en que otro ya
+        agregó la columna — bug real visto en producción (dos tareas
+        arrancando en el mismo segundo). Si el `ALTER TABLE` choca porque
+        la columna ya existe (el otro proceso ganó la carrera), se trata
+        como éxito: la columna ya está, que es exactamente lo que se
+        buscaba. Cualquier otro error de `ALTER TABLE` sigue propagándose
+        tal cual (nunca se oculta un fallo real de esquema)."""
         columnas_existentes = {
             fila[1] for fila in self.conn.execute(f"PRAGMA table_info({tabla})").fetchall()
         }
         for columna, definicion in columnas.items():
             if columna not in columnas_existentes:
-                self.conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
+                try:
+                    self.conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
+                except sqlite3.OperationalError as error:
+                    if "duplicate column name" not in str(error):
+                        raise
         self.conn.commit()
 
     def existe_duplicado(self, url_normalizada: str, hash_contenido: str) -> bool:
@@ -326,6 +349,13 @@ class Database:
             WHERE id = ?
             """,
             (imagen_publicacion_ruta, imagen_generada_automaticamente, id_noticia),
+        )
+        self.conn.commit()
+
+    def actualizar_imagen_story(self, id_noticia: int, imagen_story_ruta: Optional[str]) -> None:
+        self.conn.execute(
+            "UPDATE noticias SET imagen_story_ruta = ? WHERE id = ?",
+            (imagen_story_ruta, id_noticia),
         )
         self.conn.commit()
 
@@ -545,19 +575,39 @@ class Database:
     ) -> int:
         """Crea (o devuelve, sin tocar) la fila de programación de una franja
         x red social. Idempotente: si ya existe una fila para esa franja y
-        red, nunca la duplica ni la pisa (evita reprogramar/republicar)."""
+        red, nunca la duplica ni la pisa (evita reprogramar/republicar).
+
+        Claim atómico entre workers concurrentes: el SELECT previo no basta
+        por sí solo (dos procesos pueden pasar ambos el SELECT antes de que
+        cualquiera haga el INSERT — ventana de carrera real). La garantía de
+        unicidad real es `UNIQUE(fecha, hora, red_social)` en el propio
+        motor de SQLite: si dos workers intentan reservar la misma franja al
+        mismo tiempo, solo uno consigue insertar; el otro recibe
+        `IntegrityError` acá mismo y, en vez de propagar el error (lo que
+        tumbaría a ese worker antes de llegar a publicar), relee la fila que
+        el otro worker ya creó y la devuelve — igual que si hubiera llegado
+        un instante después. Así nunca hay dos filas para la misma franja x
+        red, y el worker que pierde la carrera queda bloqueado antes de
+        cualquier POST a Meta, no crasheado."""
         existente = self.obtener_programacion_meta(fecha, hora, red_social)
         if existente:
             return existente["id"]
-        cur = self.conn.execute(
-            """
-            INSERT INTO programacion_meta (fecha, hora, noticia_id, red_social, estado, creada_en)
-            VALUES (?, ?, ?, ?, 'pendiente', ?)
-            """,
-            (fecha, hora, noticia_id, red_social, creada_en),
-        )
-        self.conn.commit()
-        return cur.lastrowid
+        try:
+            cur = self.conn.execute(
+                """
+                INSERT INTO programacion_meta (fecha, hora, noticia_id, red_social, estado, creada_en)
+                VALUES (?, ?, ?, ?, 'pendiente', ?)
+                """,
+                (fecha, hora, noticia_id, red_social, creada_en),
+            )
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            self.conn.rollback()
+            ganador = self.obtener_programacion_meta(fecha, hora, red_social)
+            if ganador is None:
+                raise  # no debería pasar: el conflicto UNIQUE implica que existe
+            return ganador["id"]
 
     def actualizar_programacion_meta(
         self,

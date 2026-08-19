@@ -7,13 +7,17 @@ from PIL import Image, ImageDraw, ImageFont
 
 from motor_noticias.meta.imagen import (
     ALTO_PLACA,
+    ALTO_STORY,
     ANCHO_PLACA,
+    ANCHO_STORY,
     _cargar_fuente,
     _envolver_texto,
     _envolver_texto_pixeles,
     _ruta_fuente_unicode,
     generar_imagen_placa_png,
+    generar_imagen_story_png,
     generar_placa,
+    generar_story,
     generar_svg_placa,
 )
 
@@ -233,6 +237,76 @@ class TestGenerarPlaca(unittest.TestCase):
         ruta1 = generar_placa("Título A", "Resumen A.", "Fuente", "Jujuy", self.directorio)
         ruta2 = generar_placa("Título B", "Resumen B.", "Fuente", "Jujuy", self.directorio)
         self.assertNotEqual(ruta1, ruta2)
+
+
+class TestGenerarImagenStoryPng(unittest.TestCase):
+    def test_produce_png_valido(self):
+        datos = generar_imagen_story_png(
+            "Título corto",
+            "El municipio inauguró la nueva plaza para los vecinos.",
+            fuente="Ejemplo Noticias (prueba)",
+            localidad="Libertador General San Martín",
+        )
+        self.assertTrue(datos.startswith(FIRMA_PNG))
+
+    def test_dimensiones_1080x1920_formato_9_16(self):
+        datos = generar_imagen_story_png("Título", "Resumen.", "Fuente", "Jujuy")
+        with Image.open(io.BytesIO(datos)) as imagen:
+            self.assertEqual(imagen.size, (ANCHO_STORY, ALTO_STORY))
+            self.assertEqual((ANCHO_STORY, ALTO_STORY), (1080, 1920))
+
+    def test_es_un_formato_distinto_al_de_la_placa_de_feed(self):
+        self.assertNotEqual((ANCHO_STORY, ALTO_STORY), (ANCHO_PLACA, ALTO_PLACA))
+
+    def test_titulo_y_resumen_largos_no_rompen_el_render(self):
+        titulo_largo = ("Palabra " * 60).strip()
+        resumen_largo = ("Palabra " * 120).strip()
+        datos = generar_imagen_story_png(titulo_largo, resumen_largo, "Fuente", "Localidad")
+        with Image.open(io.BytesIO(datos)) as imagen:
+            self.assertEqual(imagen.size, (ANCHO_STORY, ALTO_STORY))
+
+    def test_sin_fuente_ni_localidad_no_rompe_el_render(self):
+        datos = generar_imagen_story_png("Título", "Resumen.")
+        self.assertTrue(datos.startswith(FIRMA_PNG))
+
+
+class TestGenerarStory(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.directorio = Path(self.tmpdir.name)
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_genera_archivo_png_valido(self):
+        ruta = generar_story(
+            "Título", "Resumen.", fuente="Fuente", localidad="Jujuy", directorio_salida=self.directorio
+        )
+        self.assertTrue(ruta.exists())
+        self.assertEqual(ruta.suffix, ".png")
+        self.assertTrue(ruta.name.startswith("story_"))
+        self.assertTrue(ruta.read_bytes().startswith(FIRMA_PNG))
+
+    def test_dimensiones_del_archivo_generado(self):
+        ruta = generar_story("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)
+        with Image.open(ruta) as imagen:
+            self.assertEqual(imagen.size, (1080, 1920))
+
+    def test_mismo_contenido_reutiliza_el_mismo_archivo_sin_regenerarlo(self):
+        ruta1 = generar_story("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)
+        mtime_original = ruta1.stat().st_mtime_ns
+
+        ruta2 = generar_story("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)
+
+        self.assertEqual(ruta1, ruta2)
+        self.assertEqual(ruta2.stat().st_mtime_ns, mtime_original)
+
+    def test_no_colisiona_con_la_placa_de_feed_del_mismo_contenido(self):
+        ruta_story = generar_story("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)
+        ruta_placa = generar_placa("Título", "Resumen.", "Fuente", "Jujuy", self.directorio)
+        self.assertNotEqual(ruta_story, ruta_placa)
+        self.assertTrue(ruta_story.exists())
+        self.assertTrue(ruta_placa.exists())
 
 
 if __name__ == "__main__":

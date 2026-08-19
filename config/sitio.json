@@ -4,5 +4,6 @@
   "email_contacto": "ledesmaparticipa@gmail.com",
   "facebook_url": "https://www.facebook.com/1174992842373499",
   "instagram_url": "",
-  "base_url_produccion": "https://ledesmaparticipa.com.ar"
+  "base_url_produccion": "https://ledesmaparticipa.com.ar",
+  "deploy_automatico": true
 }

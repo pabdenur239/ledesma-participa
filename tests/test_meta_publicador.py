@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from motor_noticias.db import Database
 from motor_noticias.dedupe import hash_contenido, normalizar_url
@@ -29,13 +30,20 @@ class FakeClienteMeta:
         fallar_instagram=False,
         fallar_obtener_url=False,
         fallar_verificacion=False,
+        fallar_alojar_story=False,
+        fallar_instagram_story=False,
+        fallar_verificacion_story=False,
     ):
         self.fallar_facebook = fallar_facebook
         self.fallar_instagram = fallar_instagram
         self.fallar_obtener_url = fallar_obtener_url
         self.fallar_verificacion = fallar_verificacion
+        self.fallar_alojar_story = fallar_alojar_story
+        self.fallar_instagram_story = fallar_instagram_story
+        self.fallar_verificacion_story = fallar_verificacion_story
         self.llamadas = []
         self._contador_fotos = 0
+        self._contador_stories = 0
 
     def _nueva_foto(self):
         self._contador_fotos += 1
@@ -59,6 +67,8 @@ class FakeClienteMeta:
 
     def verificar_publicacion(self, id_publicacion):
         self.llamadas.append(("verificar_publicacion", id_publicacion))
+        if str(id_publicacion).startswith("media-story"):
+            return not self.fallar_verificacion_story
         return not self.fallar_verificacion
 
     def obtener_url_publica_foto(self, photo_id):
@@ -72,6 +82,19 @@ class FakeClienteMeta:
         if self.fallar_instagram:
             raise ErrorClienteMeta("fallo simulado de Instagram")
         return "media-ig-456"
+
+    def alojar_imagen_para_story(self, ruta_imagen, dry_run=True):
+        self.llamadas.append(("alojar_imagen_para_story", str(ruta_imagen)))
+        if self.fallar_alojar_story:
+            raise ErrorClienteMeta("fallo simulado al alojar la imagen de la Story")
+        self._contador_stories += 1
+        return f"photo-story-{self._contador_stories}"
+
+    def publicar_instagram_story(self, imagen_url, dry_run=True):
+        self.llamadas.append(("publicar_instagram_story", imagen_url))
+        if self.fallar_instagram_story:
+            raise ErrorClienteMeta("fallo simulado de Instagram Story")
+        return f"media-story-{self._contador_stories}"
 
 
 def _noticia(db, n=1, **overrides):
@@ -130,7 +153,9 @@ class TestPublicarFranja(BaseTest):
 
         self.assertEqual(resultado.resultado, "procesada")
         estados = {r.red_social: r.estado for r in resultado.redes}
-        self.assertEqual(estados, {"facebook": "publicado", "instagram": "publicado"})
+        self.assertEqual(
+            estados, {"facebook": "publicado", "instagram": "publicado", "instagram_story": "publicado"}
+        )
 
         # Facebook se publica antes de que se consulte su URL pública, y esa
         # URL (la de Facebook, no un hosting propio) es la que usa Instagram.
@@ -205,7 +230,10 @@ class TestPublicarFranja(BaseTest):
         self.assertEqual(estados["facebook"], "error")
         self.assertEqual(estados["instagram"], "omitido")
         self.assertFalse(any(n == "publicar_instagram" for n, _ in fake.llamadas))
-        self.assertFalse(any(n == "obtener_url_publica_foto" for n, _ in fake.llamadas))
+        # obtener_url_publica_foto sí se llama para la Story (independiente
+        # del feed), pero nunca con la foto del feed de Facebook (que ni
+        # siquiera llegó a crearse, porque Facebook falló).
+        self.assertFalse(any(n == "obtener_url_publica_foto" and v == "photo-1" for n, v in fake.llamadas))
 
         fila_ig = self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram")
         self.assertEqual(fila_ig["estado"], "pendiente")  # nunca se tocó
@@ -234,7 +262,9 @@ class TestPublicarFranja(BaseTest):
         resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
 
         estados = {r.red_social: r.estado for r in resultado.redes}
-        self.assertEqual(estados, {"facebook": "omitido", "instagram": "omitido"})
+        self.assertEqual(
+            estados, {"facebook": "omitido", "instagram": "omitido", "instagram_story": "omitido"}
+        )
         self.assertEqual(len(fake.llamadas), llamadas_primera_vez)  # ninguna llamada nueva
 
     def test_reintento_de_instagram_reutiliza_el_photo_id_sin_resubir_a_facebook(self):
@@ -424,7 +454,140 @@ class TestDeduplicacionEntreCircuitos(BaseTest):
 
         self.assertEqual(resultado_b.resultado, "procesada")
         estados = {r.red_social: r.estado for r in resultado_b.redes}
-        self.assertEqual(estados, {"facebook": "publicado", "instagram": "publicado"})
+        self.assertEqual(
+            estados, {"facebook": "publicado", "instagram": "publicado", "instagram_story": "publicado"}
+        )
+
+
+class TestPublicarStoryInstagram(BaseTest):
+    """Cobertura de la Instagram Story como paso adicional, independiente
+    del feed, dentro de `_publicar_noticia_en_clave` — mismos tres circuitos
+    (franja fija, urgente, reintento) porque los tres pasan por ahí."""
+
+    def test_publica_la_story_junto_con_el_feed(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        estados = {r.red_social: r.estado for r in resultado.redes}
+        self.assertEqual(estados["instagram_story"], "publicado")
+        fila_story = self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story")
+        self.assertIsNotNone(fila_story["meta_id"])
+        self.assertIsNotNone(fila_story["publicada_en"])
+
+    def test_nunca_genera_una_fila_de_facebook_story_no_existe_ese_circuito(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        filas = self.db.listar_programacion_meta("2026-08-12")
+        redes = {f["red_social"] for f in filas}
+        self.assertEqual(redes, {"facebook", "instagram", "instagram_story"})
+
+    def test_story_se_publica_aunque_el_feed_de_facebook_falle(self):
+        # Regla explícita: la Story no depende de que el feed haya publicado.
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta(fallar_facebook=True)
+
+        resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        estados = {r.red_social: r.estado for r in resultado.redes}
+        self.assertEqual(estados["facebook"], "error")
+        self.assertEqual(estados["instagram_story"], "publicado")
+
+    def test_error_de_meta_en_la_story_no_marca_publicado(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta(fallar_instagram_story=True)
+
+        resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        estados = {r.red_social: r.estado for r in resultado.redes}
+        self.assertEqual(estados["instagram_story"], "error")
+        fila_story = self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story")
+        self.assertIsNone(fila_story["meta_id"])
+
+    def test_verificacion_fallida_de_story_no_marca_publicado_y_reintento_no_duplica(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake_falla_verificacion = FakeClienteMeta(fallar_verificacion_story=True)
+
+        publicar_franja(
+            self.db, "2026-08-12", "09:30",
+            cliente_fb=fake_falla_verificacion, cliente_ig=fake_falla_verificacion, ahora=AHORA,
+        )
+        fila_story = self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story")
+        self.assertEqual(fila_story["estado"], "error")
+        media_id_ya_confirmado = fila_story["meta_id"]
+        self.assertIsNotNone(media_id_ya_confirmado)  # Meta ya la publicó, solo falló el GET
+
+        fake_ok = FakeClienteMeta()
+        resultado_reintento = publicar_franja(
+            self.db, "2026-08-12", "09:30", cliente_fb=fake_ok, cliente_ig=fake_ok, ahora=AHORA
+        )
+
+        estados = {r.red_social: r.estado for r in resultado_reintento.redes}
+        self.assertEqual(estados["instagram_story"], "publicado")
+        # nunca se vuelve a alojar la imagen ni a crear el contenedor: solo se reverifica
+        self.assertFalse(any(nombre == "alojar_imagen_para_story" for nombre, _ in fake_ok.llamadas))
+        self.assertFalse(any(nombre == "publicar_instagram_story" for nombre, _ in fake_ok.llamadas))
+        fila_final = self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story")
+        self.assertEqual(fila_final["meta_id"], media_id_ya_confirmado)
+
+    def test_idempotente_no_vuelve_a_publicar_una_story_ya_publicada(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        llamadas_antes = len(fake.llamadas)
+        resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        estados = {r.red_social: r.estado for r in resultado.redes}
+        self.assertEqual(estados["instagram_story"], "omitido")
+        self.assertEqual(len(fake.llamadas), llamadas_antes)
+
+    def test_deshabilitada_por_configuracion_no_intenta_nada(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        with patch("motor_noticias.meta.publicador._historias_instagram_habilitadas", return_value=False):
+            resultado = publicar_franja(
+                self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA
+            )
+
+        redes = {r.red_social for r in resultado.redes}
+        self.assertNotIn("instagram_story", redes)
+        self.assertIsNone(self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story"))
+        self.assertFalse(any(n in ("alojar_imagen_para_story", "publicar_instagram_story") for n, _ in fake.llamadas))
+
+    def test_story_tambien_se_publica_por_el_circuito_de_urgentes(self):
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", None, "urgente", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        resultados = publicar_urgentes(self.db, "2026-08-12", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(len(resultados), 1)
+        estados = {r.red_social: r.estado for r in resultados[0].redes}
+        self.assertEqual(estados["instagram_story"], "publicado")
+
+    def test_story_no_se_publica_si_la_noticia_esta_pendiente_de_revision(self):
+        n = _noticia(self.db, requiere_revision_especial=True, categoria_riesgo="judicial")
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        resultado = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado.resultado, "pendiente_revision_humana")
+        self.assertIsNone(self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story"))
+        self.assertEqual(fake.llamadas, [])
 
 
 if __name__ == "__main__":

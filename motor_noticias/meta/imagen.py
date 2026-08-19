@@ -61,6 +61,18 @@ MARGEN_X = 80
 ALTO_BANDA_SUPERIOR = 160
 ALTO_BANDA_FOOTER = 140
 
+# 1080x1920 (9:16): formato vertical exigido por Meta para Instagram Stories
+# (un feed placa 1:1 se recortaría). Mismo branding e identidad visual que
+# la placa de feed, con bandas y márgenes reescalados para el lienzo más
+# alto — no es una imagen distinta en estilo, solo en proporción.
+ANCHO_STORY = 1080
+ALTO_STORY = 1920
+MARGEN_X_STORY = 80
+ALTO_BANDA_SUPERIOR_STORY = 200
+ALTO_BANDA_FOOTER_STORY = 180
+MAXIMO_LINEAS_TITULO_STORY = 6
+MAXIMO_LINEAS_RESUMEN_STORY = 8
+
 # Identidad "Ledesma Participa": fondo oscuro, marca en dorado, título en
 # blanco, acento naranja en el pie (fuente/localidad).
 COLOR_MARCA = "#1f1a10"
@@ -242,6 +254,83 @@ def generar_placa(
 
     if not ruta.exists():
         datos_png = generar_imagen_placa_png(titulo, resumen, fuente or "", localidad or "")
+        ruta.write_bytes(datos_png)
+
+    return ruta
+
+
+def generar_imagen_story_png(titulo: str, resumen: str, fuente: str = "", localidad: str = "") -> bytes:
+    """Misma identidad visual que `generar_imagen_placa_png` (marca, colores,
+    envoltorio de texto medido en píxeles) pero en el lienzo vertical 9:16
+    que exige Meta para Instagram Stories. Todo el texto queda impreso en la
+    propia imagen: las Stories publicadas por la API no admiten un caption
+    aparte, así que no hay contenido "que dependa" de otro paso."""
+    imagen = Image.new("RGB", (ANCHO_STORY, ALTO_STORY), COLOR_FONDO)
+    dibujo = ImageDraw.Draw(imagen)
+    ancho_maximo_px = ANCHO_STORY - 2 * MARGEN_X_STORY
+
+    dibujo.rectangle([(0, 0), (ANCHO_STORY, ALTO_BANDA_SUPERIOR_STORY)], fill=COLOR_MARCA)
+    fuente_marca = _cargar_fuente(52)
+    dibujo.text((MARGEN_X_STORY, 75), "LEDESMA PARTICIPA", font=fuente_marca, fill=COLOR_MARCA_TEXTO)
+
+    fuente_titulo = _cargar_fuente(60)
+    lineas_titulo = _envolver_texto_pixeles(
+        dibujo, titulo, fuente_titulo, ancho_maximo_px, MAXIMO_LINEAS_TITULO_STORY
+    )
+    y = 480
+    for linea in lineas_titulo:
+        dibujo.text((MARGEN_X_STORY, y), linea, font=fuente_titulo, fill=COLOR_TITULO)
+        y += 74
+
+    fuente_resumen = _cargar_fuente(38)
+    lineas_resumen = _envolver_texto_pixeles(
+        dibujo, resumen, fuente_resumen, ancho_maximo_px, MAXIMO_LINEAS_RESUMEN_STORY
+    )
+    y += 40
+    for linea in lineas_resumen:
+        dibujo.text((MARGEN_X_STORY, y), linea, font=fuente_resumen, fill=COLOR_RESUMEN)
+        y += 50
+
+    y_footer = ALTO_STORY - ALTO_BANDA_FOOTER_STORY
+    dibujo.rectangle([(0, y_footer), (ANCHO_STORY, ALTO_STORY)], fill=COLOR_FOOTER_FONDO)
+    fuente_footer = _cargar_fuente(32)
+    if fuente:
+        dibujo.text(
+            (MARGEN_X_STORY, y_footer + 45), f"Fuente: {fuente}", font=fuente_footer, fill=COLOR_FOOTER_TEXTO
+        )
+    if localidad:
+        dibujo.text(
+            (MARGEN_X_STORY, y_footer + 100),
+            f"Localidad: {localidad}",
+            font=fuente_footer,
+            fill=COLOR_FOOTER_TEXTO,
+        )
+
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def generar_story(
+    titulo: str,
+    resumen: str,
+    fuente: Optional[str] = None,
+    localidad: Optional[str] = None,
+    directorio_salida: Optional[Path] = None,
+) -> Path:
+    """Genera el archivo PNG de la Story (9:16) para este contenido, o
+    reutiliza el ya existente sin volver a escribirlo — mismo criterio que
+    `generar_placa`. Prefijo `story_` (en vez de `placa_`) para que ambas
+    imágenes de una misma noticia convivan en el mismo directorio sin
+    pisarse: son archivos distintos, un formato distinto cada uno."""
+    directorio_salida = Path(directorio_salida or DIRECTORIO_PLACAS_DEFAULT)
+    directorio_salida.mkdir(parents=True, exist_ok=True)
+
+    identificador = _hash_contenido_placa(titulo, resumen, fuente or "", localidad or "")
+    ruta = directorio_salida / f"story_{identificador}.png"
+
+    if not ruta.exists():
+        datos_png = generar_imagen_story_png(titulo, resumen, fuente or "", localidad or "")
         ruta.write_bytes(datos_png)
 
     return ruta

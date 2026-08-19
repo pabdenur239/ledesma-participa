@@ -23,3 +23,7 @@ data/*.sqlite3
 
 # Placas generadas automáticamente
 data/placas/
+
+# Lock de instancia única del Motor Continuo (runtime, con el PID vivo de
+# esta máquina — nunca debe versionarse)
+data/*.lock

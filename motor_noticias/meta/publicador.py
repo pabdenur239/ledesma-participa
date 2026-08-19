@@ -11,6 +11,7 @@ Instagram — sin necesitar hosting, túnel ni URL pública propia. Esa URL se
 reobtiene, no se recalcula: si Facebook ya publicó en un intento anterior,
 el `photo_id` queda persistido (`referencia_extra`) para no volver a subir
 la imagen en un reintento."""
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,12 +22,28 @@ from ..dedupe import es_mismo_contenido, palabras_clave
 from ..models import Estado, RevisionEstado
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
-from .preparacion import ErrorPreparacionFacebook, preparar_publicacion
+from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
 from .programacion import aprobar_si_elegible
 
 logger = logging.getLogger("motor_noticias.meta.publicador")
 
 MAX_INTENTOS_DEFAULT = 3
+
+CONFIG_META_PATH_DEFAULT = Path(__file__).resolve().parent.parent.parent / "config" / "meta.json"
+
+
+def _historias_instagram_habilitadas(path: Optional[Path] = None) -> bool:
+    """Lee `config/meta.json` → "historias_instagram_habilitadas" (default
+    `true` si el archivo falta o es inválido). Se relee en cada llamada,
+    así se puede desactivar sin reiniciar ningún proceso — mismo criterio
+    que `agenda_automatica_habilitada` en ciclo_continuo."""
+    try:
+        with open(path or CONFIG_META_PATH_DEFAULT, encoding="utf-8") as f:
+            config = json.load(f)
+        return bool(config.get("historias_instagram_habilitadas", True))
+    except (OSError, json.JSONDecodeError):
+        return True
+
 
 # Ventana hacia atrás en la que se busca una publicación ya salida que sea
 # la misma nota (mismo gate de deduplicación para franja fija, urgente y
@@ -163,6 +180,66 @@ def _publicar_en_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia, p
     return ResultadoRed("instagram", "publicado", media_id)
 
 
+def _publicar_story_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia):
+    """Publica la Instagram Story de esta noticia: es un `red_social` más de
+    `programacion_meta` (`"instagram_story"`), con exactamente la misma
+    idempotencia/reintentos/verificación por GET que Facebook e Instagram
+    feed — nunca se marca 'publicado' solo por la respuesta del POST, y un
+    media_id ya confirmado en un intento anterior nunca se vuelve a
+    publicar. No depende de que el feed de Facebook/Instagram haya
+    publicado: reutiliza la misma noticia ya seleccionada para la franja,
+    pero no genera ningún post de feed nuevo (la placa 9:16 se aloja en
+    Facebook como foto no publicada, invisible en la Página, solo para
+    obtener la URL de CDN que exige la Graph API de Instagram)."""
+    ahora_iso = datetime.now(timezone.utc).isoformat()
+
+    if fila.get("meta_id"):
+        media_id = fila["meta_id"]
+    else:
+        try:
+            ruta_imagen = preparar_publicacion_story(noticia, db=db)
+        except ErrorPreparacionFacebook as error:
+            logger.error("Story de Instagram bloqueada para noticia %s: %s", noticia["id"], error)
+            db.actualizar_programacion_meta(
+                prog_id, "error", ultimo_error=str(error), intentos=fila["intentos"] + 1, actualizada_en=ahora_iso
+            )
+            return ResultadoRed("instagram_story", "error", detalle=str(error))
+
+        try:
+            photo_id = cliente_fb.alojar_imagen_para_story(Path(ruta_imagen), dry_run=False)
+            imagen_url_publica = cliente_fb.obtener_url_publica_foto(photo_id)
+            media_id = cliente_ig.publicar_instagram_story(imagen_url_publica, dry_run=False)
+        except ErrorClienteMeta as error:
+            logger.error("Error publicando la Story de Instagram (franja %s): %s", prog_id, error)
+            db.actualizar_programacion_meta(
+                prog_id, "error", ultimo_error=str(error), intentos=fila["intentos"] + 1, actualizada_en=ahora_iso
+            )
+            return ResultadoRed("instagram_story", "error", detalle=str(error))
+
+        db.actualizar_programacion_meta(
+            prog_id, "error", meta_id=media_id,
+            ultimo_error="Publicado; pendiente de confirmar con GET.",
+            intentos=fila["intentos"] + 1, actualizada_en=ahora_iso,
+        )
+
+    try:
+        if not cliente_ig.verificar_publicacion(media_id):
+            raise ErrorClienteMeta("Meta no confirmó la publicación de la Story de Instagram al verificarla con GET.")
+    except ErrorClienteMeta as error:
+        logger.error("Story de Instagram publicada pero la verificación por GET falló (franja %s): %s", prog_id, error)
+        db.actualizar_programacion_meta(
+            prog_id, "error", meta_id=media_id, ultimo_error=str(error),
+            intentos=fila["intentos"] + 1, actualizada_en=ahora_iso,
+        )
+        return ResultadoRed("instagram_story", "error", detalle=str(error))
+
+    db.actualizar_programacion_meta(
+        prog_id, "publicado", meta_id=media_id, intentos=fila["intentos"] + 1,
+        actualizada_en=ahora_iso, publicada_en=ahora_iso,
+    )
+    return ResultadoRed("instagram_story", "publicado", media_id)
+
+
 def _programacion_ya_publicada(db: Database, fecha: str, clave: str) -> bool:
     """True si ambas redes de esta franja/urgente ya están 'publicado'."""
     fila_fb = db.obtener_programacion_meta(fecha, clave, "facebook")
@@ -228,15 +305,11 @@ def _publicar_noticia_en_clave(
     fila_fb = db.obtener_programacion_meta(fecha, clave, "facebook")
     fila_ig = db.obtener_programacion_meta(fecha, clave, "instagram")
 
-    if fila_fb["estado"] == "publicado" and fila_ig["estado"] == "publicado":
-        return ResultadoFranja(
-            fecha, clave, noticia["id"], "procesada",
-            (
-                ResultadoRed("facebook", "omitido", fila_fb["meta_id"], "ya publicado (idempotente)"),
-                ResultadoRed("instagram", "omitido", fila_ig["meta_id"], "ya publicado (idempotente)"),
-            ),
-        )
-
+    # Nota: no hay un atajo separado para "facebook e instagram ya
+    # publicados" — cada red (incluida la Story) resuelve su propio estado
+    # "omitido (ya publicado)" más abajo, así ninguna red queda fuera del
+    # reporte cuando se reingresa a una franja ya completa (idempotente en
+    # las tres, no solo en feed).
     if noticia["estado"] != Estado.PUBLICADA.value:
         duplicado = _buscar_duplicado_ya_publicado(db, noticia, ahora_utc)
         if duplicado is not None:
@@ -298,6 +371,25 @@ def _publicar_noticia_en_clave(
 
     if any(r.estado == "publicado" for r in resultados_red):
         db.actualizar_estado_noticia(noticia["id"], Estado.PUBLICADA.value)
+
+    # -- Instagram Story: independiente del feed (no depende de que Facebook
+    # o Instagram feed hayan publicado), pero reutiliza la misma noticia ya
+    # seleccionada para esta franja/urgente/reintento — nunca genera otro
+    # feed. No hay equivalente de Facebook Story: la Graph API pública de
+    # Meta no ofrece ningún endpoint para publicar Stories en una Página de
+    # Facebook desde una app de terceros (bloqueo real de la plataforma, no
+    # de este código).
+    if _historias_instagram_habilitadas():
+        prog_id_story = db.reservar_programacion_meta(fecha, clave, noticia["id"], "instagram_story", creada_en)
+        fila_story = db.obtener_programacion_meta(fecha, clave, "instagram_story")
+        if fila_story["estado"] == "publicado":
+            resultados_red.append(
+                ResultadoRed("instagram_story", "omitido", fila_story["meta_id"], "ya publicado (idempotente)")
+            )
+        else:
+            resultados_red.append(
+                _publicar_story_instagram(db, prog_id_story, fila_story, cliente_fb, cliente_ig, noticia)
+            )
 
     return ResultadoFranja(fecha, clave, noticia["id"], "procesada", tuple(resultados_red))
 

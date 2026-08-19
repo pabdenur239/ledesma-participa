@@ -89,6 +89,21 @@ def agenda_automatica_habilitada(path: Optional[Path] = None) -> bool:
         return True
 
 
+def publicacion_meta_automatica_habilitada(path: Optional[Path] = None) -> bool:
+    """Lee `config/agenda.json` → "publicacion_meta_automatica" (default
+    `true`). Controla si el Motor Continuo, además de recolectar y
+    actualizar la Agenda, también dispara en cada ciclo la publicación de
+    urgentes/reintentos y el despliegue del sitio web (ver
+    `continuo_runner._ejecutar_publicacion_y_sitio`) — mismo criterio que
+    `agenda_automatica_habilitada`, se puede desactivar sin reiniciar nada."""
+    try:
+        with open(path or CONFIG_AGENDA_PATH_DEFAULT, encoding="utf-8") as f:
+            config = json.load(f)
+        return bool(config.get("publicacion_meta_automatica", True))
+    except (OSError, json.JSONDecodeError):
+        return True
+
+
 def _procesar_fuente(db: Database, identificador: str, collector_cls, error_cls, redactor: Redactor) -> ResultadoFuente:
     """Ejecuta el pipeline existente (sin modificarlo) para una fuente. Un
     fallo acá nunca se propaga: se traduce a un resultado "error" para que el

@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 from motor_noticias.db import Database
 from motor_noticias.meta.contenido import ContenidoFacebook
-from motor_noticias.meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
+from motor_noticias.meta.preparacion import (
+    ErrorPreparacionFacebook,
+    preparar_publicacion,
+    preparar_publicacion_story,
+)
 from motor_noticias.models import Estado, Noticia
 
 
@@ -161,6 +165,99 @@ class TestImagenEnPreparacion(TestPrepararPublicacionConDirectorioAislado):
 
                 self.assertEqual(contenido1.imagen_url, contenido2.imagen_url)
                 self.assertEqual(Path(contenido2.imagen_url).stat().st_mtime_ns, mtime_original)
+            finally:
+                db.close()
+
+
+class TestPrepararPublicacionStory(TestPrepararPublicacionConDirectorioAislado):
+    def test_pendiente_no_puede_prepararse(self):
+        noticia = _noticia(revision_estado="pendiente")
+        with self.assertRaises(ErrorPreparacionFacebook):
+            preparar_publicacion_story(noticia)
+
+    def test_rechazada_no_puede_prepararse(self):
+        noticia = _noticia(revision_estado="rechazada")
+        with self.assertRaises(ErrorPreparacionFacebook):
+            preparar_publicacion_story(noticia)
+
+    def test_riesgo_politico_nunca_genera_story_ni_siquiera_de_prueba(self):
+        # A diferencia del feed, la Story no tiene un modo "solo vista
+        # previa": bloquea siempre que requiera revisión especial.
+        noticia = _noticia(requiere_revision_especial=True)
+        with self.assertRaises(ErrorPreparacionFacebook):
+            preparar_publicacion_story(noticia)
+
+    def test_aprobada_genera_una_placa_vertical_png(self):
+        ruta_texto = preparar_publicacion_story(_noticia())
+        ruta = Path(ruta_texto)
+        self.assertTrue(ruta.exists())
+        self.assertEqual(ruta.suffix, ".png")
+        self.assertTrue(ruta.name.startswith("story_"))
+
+    def test_reutiliza_imagen_story_ya_persistida_sin_regenerar(self):
+        noticia = _noticia(imagen_story_ruta="/ruta/ya/persistida/story_x.png")
+        ruta_texto = preparar_publicacion_story(noticia)
+        self.assertEqual(ruta_texto, "/ruta/ya/persistida/story_x.png")
+
+    def test_persiste_la_ruta_generada_en_la_base(self):
+        with tempfile.TemporaryDirectory() as tmp_db:
+            db = Database(Path(tmp_db) / "test.db")
+            try:
+                noticia_modelo = Noticia(
+                    id=None,
+                    titulo_original="Título original",
+                    texto_original="Texto original.",
+                    url_fuente="https://ejemplo.test/1",
+                    url_normalizada="https://ejemplo.test/1",
+                    nombre_fuente="Fuente",
+                    fecha_fuente="2026-08-01",
+                    fecha_recoleccion="2026-08-01T00:00:00",
+                    estado=Estado.PREPARADA.value,
+                    hash_contenido="hash-1",
+                    titulo_preparado="Título preparado",
+                    texto_preparado="Texto preparado con hechos verificados.",
+                    revision_estado="aprobada",
+                )
+                db.guardar(noticia_modelo)
+                noticia_dict = db.obtener(noticia_modelo.id)
+
+                ruta_texto = preparar_publicacion_story(noticia_dict, db=db)
+
+                guardada = db.obtener(noticia_modelo.id)
+                self.assertEqual(guardada["imagen_story_ruta"], ruta_texto)
+                self.assertTrue(Path(ruta_texto).exists())
+            finally:
+                db.close()
+
+    def test_no_toca_la_imagen_de_feed(self):
+        with tempfile.TemporaryDirectory() as tmp_db:
+            db = Database(Path(tmp_db) / "test.db")
+            try:
+                noticia_modelo = Noticia(
+                    id=None,
+                    titulo_original="Título original",
+                    texto_original="Texto original.",
+                    url_fuente="https://ejemplo.test/1",
+                    url_normalizada="https://ejemplo.test/1",
+                    nombre_fuente="Fuente",
+                    fecha_fuente="2026-08-01",
+                    fecha_recoleccion="2026-08-01T00:00:00",
+                    estado=Estado.PREPARADA.value,
+                    hash_contenido="hash-1",
+                    titulo_preparado="Título preparado",
+                    texto_preparado="Texto preparado con hechos verificados.",
+                    revision_estado="aprobada",
+                )
+                db.guardar(noticia_modelo)
+                noticia_dict = db.obtener(noticia_modelo.id)
+
+                preparar_publicacion(noticia_dict, db=db)
+                preparar_publicacion_story(db.obtener(noticia_modelo.id), db=db)
+
+                guardada = db.obtener(noticia_modelo.id)
+                self.assertIsNotNone(guardada["imagen_publicacion_ruta"])
+                self.assertIsNotNone(guardada["imagen_story_ruta"])
+                self.assertNotEqual(guardada["imagen_publicacion_ruta"], guardada["imagen_story_ruta"])
             finally:
                 db.close()
 

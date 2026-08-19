@@ -9,5 +9,6 @@
   },
   "menciones_disponibles": ["@seguidores", "@destacar"],
   "menciones_habilitadas_por_defecto": false,
-  "max_intentos_reintento": 3
+  "max_intentos_reintento": 3,
+  "historias_instagram_habilitadas": true
 }

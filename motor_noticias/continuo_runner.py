@@ -9,9 +9,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from .ciclo_continuo import INTERVALO_SEGUNDOS_DEFAULT, ejecutar_ciclo
+from .ciclo_continuo import (
+    INTERVALO_SEGUNDOS_DEFAULT,
+    ejecutar_ciclo,
+    publicacion_meta_automatica_habilitada,
+)
 from .db import Database
+from .meta.cliente import ClienteMetaGraphAPI
+from .meta.publicador import publicar_urgentes, reintentar_publicaciones
+from .motor_editorial import ZONA_JUJUY
 from .redaccion import crear_redactor
+from .sitio.deploy import desplegar_sitio
+from .sitio.generador import SALIDA_DEFAULT, generar_sitio, deploy_automatico_habilitado
 
 DB_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "ledesma_participa.db"
 LOCK_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "run_continuo.lock"
@@ -183,6 +192,73 @@ def construir_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _publicar_pendientes_meta(db: Database, fecha: str) -> None:
+    """Publica de inmediato las propuestas urgentes del día y reintenta lo
+    que haya quedado en error — mismo `publicar_urgentes`/
+    `reintentar_publicaciones` que usan las tareas Windows
+    MetaUrgentes/MetaReintentos, con el mismo tope conservador
+    (`max_pendientes=1` por corrida, evita vaciar la cola de una sola vez).
+
+    Corre acá, dentro del propio Motor Continuo (proceso persistente que ya
+    demostró resistir suspensión/reanudación del equipo: simplemente
+    retoma su bucle en cuanto el sistema operativo vuelve a darle CPU), como
+    respaldo de esas tareas: si Task Scheduler no llega a disparar sus
+    triggers repetitivos porque la notebook estuvo dormida (la falla real
+    observada en producción), esta corrida igual saca la cola pendiente en
+    el próximo ciclo del Motor — sin esperar a que la notebook esté
+    despierta justo en el minuto exacto de una franja de Windows. Nunca
+    reemplaza esas tareas (siguen activas, dan cobertura más fina cuando el
+    equipo está despierto): es un segundo camino hacia el mismo estado ya
+    protegido por la idempotencia de `programacion_meta`, así que ambos
+    pueden correr sin riesgo de publicar dos veces lo mismo."""
+    cliente_fb = ClienteMetaGraphAPI()
+    cliente_ig = ClienteMetaGraphAPI()
+    try:
+        publicar_urgentes(db, fecha, cliente_fb=cliente_fb, cliente_ig=cliente_ig, max_pendientes=1)
+    except Exception:  # nunca debe interrumpir el ciclo continuo
+        logger.exception("Error publicando urgentes desde el Motor Continuo")
+
+    try:
+        reintentar_publicaciones(db, cliente_fb=cliente_fb, cliente_ig=cliente_ig, max_pendientes=1)
+    except Exception:  # nunca debe interrumpir el ciclo continuo
+        logger.exception("Error reintentando publicaciones desde el Motor Continuo")
+
+
+def _actualizar_sitio_web(db_path) -> None:
+    """Regenera `docs/` a partir de lo ya publicado y lo despliega a GitHub
+    (ver `motor_noticias.sitio.deploy`) — mismo respaldo que
+    `_publicar_pendientes_meta`, por la misma razón: la tarea Windows
+    SitioWeb depende de un trigger repetitivo que no sobrevive una
+    suspensión larga del equipo, y sin el paso de deploy la web tampoco se
+    actualizaba aunque la tarea sí llegara a correr (`docs/` se regeneraba
+    localmente, pero nunca se empujaba a GitHub, que es lo único que
+    GitHub Pages sirve de verdad). `desplegar_sitio` es idempotente (no
+    commitea si no hay cambios reales) y no interrumpe nada si falla."""
+    try:
+        generar_sitio(db_path, SALIDA_DEFAULT)
+    except Exception:  # nunca debe interrumpir el ciclo continuo
+        logger.exception("Error regenerando el sitio web desde el Motor Continuo")
+        return
+
+    if not deploy_automatico_habilitado():
+        return
+    try:
+        resultado = desplegar_sitio()
+        if resultado.resultado == "error":
+            logger.error("Error desplegando el sitio web: %s", resultado.detalle)
+    except Exception:  # nunca debe interrumpir el ciclo continuo
+        logger.exception("Error desplegando el sitio web desde el Motor Continuo")
+
+
+def _ejecutar_publicacion_y_sitio(db: Database) -> None:
+    if not publicacion_meta_automatica_habilitada():
+        logger.info("Publicación automática de urgentes/reintentos/sitio deshabilitada (config).")
+        return
+    fecha = datetime.now(ZONA_JUJUY).strftime("%Y-%m-%d")
+    _publicar_pendientes_meta(db, fecha)
+    _actualizar_sitio_web(db.path)
+
+
 def bucle_continuo(
     db: Database,
     redactor,
@@ -211,6 +287,10 @@ def bucle_continuo(
                     logger.warning(
                         "Fuente %s con error: %s", resultado.identificador, resultado.mensaje_error
                     )
+            try:
+                _ejecutar_publicacion_y_sitio(db)
+            except Exception:  # nunca debe interrumpir el ciclo continuo
+                logger.exception("Error en publicación/sitio dentro del ciclo del Motor Continuo")
             ciclos_ejecutados += 1
             if max_ciclos is not None and ciclos_ejecutados >= max_ciclos:
                 logger.info("Alcanzada la cantidad máxima de ciclos configurada (%d). Deteniendo.", max_ciclos)

@@ -27,6 +27,21 @@ from tests.test_motor_editorial import AHORA, _crear_noticia
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Este módulo llama a `bucle_continuo` directamente (no solo a `ejecutar_ciclo`),
+# y `bucle_continuo` ahora también dispara `_ejecutar_publicacion_y_sitio` en
+# cada ciclo (publicaría de verdad en Meta con el token real de esta
+# notebook, y haría git commit/push contra el repo real). Se mockea para
+# todo el módulo: ningún test de acá prueba esa integración (eso vive en
+# tests/test_continuo_runner.py), así que nunca debe tener ese efecto real.
+def setUpModule():
+    global _parche_publicacion_y_sitio
+    _parche_publicacion_y_sitio = patch("motor_noticias.continuo_runner._ejecutar_publicacion_y_sitio")
+    _parche_publicacion_y_sitio.start()
+
+
+def tearDownModule():
+    _parche_publicacion_y_sitio.stop()
+
 
 class BaseCicloTest(unittest.TestCase):
     def setUp(self):

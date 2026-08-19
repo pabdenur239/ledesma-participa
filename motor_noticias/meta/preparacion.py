@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 from ..db import Database
 from ..models import RevisionEstado
 from .contenido import ContenidoFacebook, _titulo_y_texto_finales, generar_contenido_facebook
-from .imagen import generar_placa
+from .imagen import generar_placa, generar_story
 
 
 class ErrorPreparacionFacebook(RuntimeError):
@@ -84,3 +84,54 @@ def preparar_publicacion(
     contenido.imagen_generada_automaticamente = generada_automaticamente
 
     return contenido
+
+
+def _resolver_imagen_story(noticia: dict, db: Optional[Database]) -> str:
+    """Igual criterio que `_resolver_imagen`, pero para la placa vertical
+    (9:16) de Story: reutiliza `imagen_story_ruta` si ya está persistida: no
+    la regenera en cada reintento. A diferencia del feed, la Story siempre
+    usa una placa generada por el proyecto (nunca la foto original de la
+    fuente): reutilizar una foto ajena en formato vertical recortaría de
+    forma impredecible, y la Story de todos modos necesita el título/fuente
+    imprimido porque no lleva caption aparte."""
+    ruta_actual = noticia.get("imagen_story_ruta")
+    if ruta_actual:
+        return ruta_actual
+
+    titulo, texto = _titulo_y_texto_finales(noticia)
+    ruta_story = generar_story(
+        titulo,
+        texto,
+        fuente=noticia.get("nombre_fuente"),
+        localidad=noticia.get("localidad"),
+    )
+    ruta_texto = str(ruta_story)
+
+    id_noticia = noticia.get("id")
+    if db is not None and id_noticia is not None:
+        db.actualizar_imagen_story(id_noticia, ruta_texto)
+
+    return ruta_texto
+
+
+def preparar_publicacion_story(noticia: dict, db: Optional[Database] = None) -> str:
+    """Punto de entrada único para preparar la placa de una Instagram Story.
+
+    Mismas reglas obligatorias que `preparar_publicacion`: solo una noticia
+    con revision_estado == 'aprobada' puede prepararse, y una que requiera
+    revisión política/institucional nunca genera una Story real (a
+    diferencia del feed, acá no existe un modo "solo vista previa": la Story
+    o se publica de verdad o no se prepara).
+
+    Devuelve la ruta local de la placa vertical lista para publicar."""
+    if noticia.get("revision_estado") != RevisionEstado.APROBADA.value:
+        raise ErrorPreparacionFacebook(
+            "Solo se puede preparar una Story para noticias con revision_estado = 'aprobada'."
+        )
+    if noticia.get("requiere_revision_especial"):
+        raise ErrorPreparacionFacebook(
+            "Esta noticia requiere revisión política/institucional obligatoria: nunca se genera "
+            "una Story automática para ella."
+        )
+
+    return _resolver_imagen_story(noticia, db)

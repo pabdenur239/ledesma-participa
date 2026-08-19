@@ -196,8 +196,16 @@ class TestBucleContinuo(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db = Database(Path(self.tmpdir.name) / "test.db")
         self.redactor = RedactorMock()
+        # `bucle_continuo` ahora también dispara `_ejecutar_publicacion_y_sitio`
+        # en cada ciclo (publica urgentes/reintentos reales en Meta y hace
+        # git commit/push del sitio contra el repo real): se mockea acá para
+        # que ningún test de este bloque tenga jamás ese efecto de lado real,
+        # salvo los que explícitamente lo estén probando más abajo.
+        self.publicacion_y_sitio_patch = patch("motor_noticias.continuo_runner._ejecutar_publicacion_y_sitio")
+        self.publicacion_y_sitio_mock = self.publicacion_y_sitio_patch.start()
 
     def tearDown(self):
+        self.publicacion_y_sitio_patch.stop()
         self.db.close()
         self.tmpdir.cleanup()
 
@@ -228,6 +236,126 @@ class TestBucleContinuo(unittest.TestCase):
             bucle_continuo(self.db, self.redactor, intervalo_segundos=30, dormir=dormir)
         except KeyboardInterrupt:
             self.fail("bucle_continuo debe manejar Ctrl+C internamente, no propagarlo")
+
+    @patch("motor_noticias.continuo_runner.ejecutar_ciclo", return_value=RESUMEN_CICLO_FALSO)
+    def test_cada_ciclo_dispara_tambien_publicacion_y_sitio(self, ejecutar_ciclo_mock):
+        # Bug real corregido: MetaUrgentes/MetaReintentos/SitioWeb dependían
+        # solo de triggers repetitivos de Task Scheduler, que no sobreviven
+        # una suspensión larga de la notebook. El Motor Continuo (proceso
+        # persistente que sí demostró resistirlo) ahora dispara ese mismo
+        # trabajo como respaldo en cada ciclo.
+        dormir = MagicMock(side_effect=KeyboardInterrupt)
+
+        bucle_continuo(self.db, self.redactor, intervalo_segundos=45, dormir=dormir)
+
+        self.publicacion_y_sitio_mock.assert_called_once_with(self.db)
+
+    @patch("motor_noticias.continuo_runner.ejecutar_ciclo", return_value=RESUMEN_CICLO_FALSO)
+    def test_un_fallo_en_publicacion_y_sitio_no_interrumpe_el_bucle(self, ejecutar_ciclo_mock):
+        self.publicacion_y_sitio_mock.side_effect = RuntimeError("boom")
+        dormir = MagicMock(side_effect=KeyboardInterrupt)
+
+        try:
+            bucle_continuo(self.db, self.redactor, intervalo_segundos=45, dormir=dormir)
+        except RuntimeError:
+            self.fail("un fallo en _ejecutar_publicacion_y_sitio no debe tumbar el Motor Continuo")
+
+
+class TestEjecutarPublicacionYSitio(unittest.TestCase):
+    """Cobertura aislada de `_ejecutar_publicacion_y_sitio` y sus dos pasos
+    (`_publicar_pendientes_meta`, `_actualizar_sitio_web`): todo mockeado,
+    nunca toca Meta real ni el repo git real."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.tmpdir.name) / "test.db")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    @patch("motor_noticias.continuo_runner._actualizar_sitio_web")
+    @patch("motor_noticias.continuo_runner._publicar_pendientes_meta")
+    @patch("motor_noticias.continuo_runner.publicacion_meta_automatica_habilitada", return_value=True)
+    def test_habilitada_ejecuta_ambos_pasos(self, _habilitada_mock, publicar_mock, sitio_mock):
+        from motor_noticias.continuo_runner import _ejecutar_publicacion_y_sitio
+
+        _ejecutar_publicacion_y_sitio(self.db)
+
+        publicar_mock.assert_called_once()
+        sitio_mock.assert_called_once_with(self.db.path)
+
+    @patch("motor_noticias.continuo_runner._actualizar_sitio_web")
+    @patch("motor_noticias.continuo_runner._publicar_pendientes_meta")
+    @patch("motor_noticias.continuo_runner.publicacion_meta_automatica_habilitada", return_value=False)
+    def test_deshabilitada_por_configuracion_no_hace_nada(self, _habilitada_mock, publicar_mock, sitio_mock):
+        from motor_noticias.continuo_runner import _ejecutar_publicacion_y_sitio
+
+        _ejecutar_publicacion_y_sitio(self.db)
+
+        publicar_mock.assert_not_called()
+        sitio_mock.assert_not_called()
+
+    @patch("motor_noticias.continuo_runner.reintentar_publicaciones")
+    @patch("motor_noticias.continuo_runner.publicar_urgentes")
+    def test_publicar_pendientes_meta_usa_max_pendientes_uno(self, publicar_urgentes_mock, reintentar_mock):
+        from motor_noticias.continuo_runner import _publicar_pendientes_meta
+
+        _publicar_pendientes_meta(self.db, "2026-08-19")
+
+        self.assertEqual(publicar_urgentes_mock.call_args.kwargs["max_pendientes"], 1)
+        self.assertEqual(reintentar_mock.call_args.kwargs["max_pendientes"], 1)
+
+    @patch("motor_noticias.continuo_runner.reintentar_publicaciones")
+    @patch("motor_noticias.continuo_runner.publicar_urgentes")
+    def test_publicar_pendientes_meta_un_fallo_en_urgentes_no_impide_reintentos(
+        self, publicar_urgentes_mock, reintentar_mock
+    ):
+        from motor_noticias.continuo_runner import _publicar_pendientes_meta
+
+        publicar_urgentes_mock.side_effect = RuntimeError("boom")
+
+        _publicar_pendientes_meta(self.db, "2026-08-19")  # no debe lanzar
+
+        reintentar_mock.assert_called_once()
+
+    @patch("motor_noticias.continuo_runner.desplegar_sitio")
+    @patch("motor_noticias.continuo_runner.generar_sitio")
+    @patch("motor_noticias.continuo_runner.deploy_automatico_habilitado", return_value=True)
+    def test_actualizar_sitio_web_regenera_y_despliega(self, _habilitado_mock, generar_mock, desplegar_mock):
+        from motor_noticias.continuo_runner import _actualizar_sitio_web
+        from motor_noticias.sitio.deploy import ResultadoDeploy
+
+        desplegar_mock.return_value = ResultadoDeploy("desplegado")
+
+        _actualizar_sitio_web(self.db.path)
+
+        generar_mock.assert_called_once()
+        desplegar_mock.assert_called_once()
+
+    @patch("motor_noticias.continuo_runner.desplegar_sitio")
+    @patch("motor_noticias.continuo_runner.generar_sitio")
+    @patch("motor_noticias.continuo_runner.deploy_automatico_habilitado", return_value=False)
+    def test_actualizar_sitio_web_deploy_deshabilitado_no_llama_git(
+        self, _habilitado_mock, generar_mock, desplegar_mock
+    ):
+        from motor_noticias.continuo_runner import _actualizar_sitio_web
+
+        _actualizar_sitio_web(self.db.path)
+
+        generar_mock.assert_called_once()
+        desplegar_mock.assert_not_called()
+
+    @patch("motor_noticias.continuo_runner.desplegar_sitio")
+    @patch("motor_noticias.continuo_runner.generar_sitio")
+    def test_actualizar_sitio_web_fallo_de_generacion_no_intenta_desplegar(self, generar_mock, desplegar_mock):
+        from motor_noticias.continuo_runner import _actualizar_sitio_web
+
+        generar_mock.side_effect = RuntimeError("boom")
+
+        _actualizar_sitio_web(self.db.path)  # no debe lanzar
+
+        desplegar_mock.assert_not_called()
 
 
 if __name__ == "__main__":

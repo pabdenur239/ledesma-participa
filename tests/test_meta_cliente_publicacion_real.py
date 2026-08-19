@@ -1,12 +1,34 @@
 import json
+import os
 import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from motor_noticias.meta.cliente import ClienteMetaGraphAPI, ErrorClienteMeta, ResultadoDryRun
 from motor_noticias.meta.contenido import ContenidoFacebook
+
+# Bug de aislamiento preexistente (no introducido por este cambio): estos
+# tests construyen `ClienteMetaGraphAPI(access_token=None, ...)` para probar
+# el caso "sin token configurado", pero el constructor cae a
+# `os.environ.get("META_PAGE_ACCESS_TOKEN"/"META_IG_USER_ID")` si el
+# argumento es None — en esta misma notebook (servidor provisional) esas
+# variables están seteadas de verdad para producción (ver CLAUDE.md), así
+# que sin limpiar el entorno el test termina usando el token real y
+# reventando contra un urlopen mockeado sin configurar la respuesta JSON.
+# Se limpia el entorno para todo el módulo: ningún otro test de este
+# archivo depende de una variable de entorno real (todos pasan
+# access_token/ig_user_id explícitos cuando sí prueban el camino "con
+# token", que siempre tiene prioridad sobre el entorno).
+def setUpModule():
+    global _parche_entorno_limpio
+    _parche_entorno_limpio = patch.dict(os.environ, {}, clear=True)
+    _parche_entorno_limpio.start()
+
+
+def tearDownModule():
+    _parche_entorno_limpio.stop()
 
 
 def _contenido():
@@ -191,6 +213,81 @@ class TestPublicarInstagram(BaseImagen):
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=urlopen)
         with self.assertRaises(ErrorClienteMeta):
             cliente.publicar_instagram("caption", "https://ejemplo.com/placa.png", dry_run=False)
+        self.assertEqual(urlopen.call_count, 1)
+
+
+class TestAlojarImagenParaStory(BaseImagen):
+    def test_dry_run_no_llama_a_meta(self):
+        urlopen = MagicMock()
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        resultado = cliente.alojar_imagen_para_story(self.imagen, dry_run=True)
+        self.assertIsInstance(resultado, ResultadoDryRun)
+        urlopen.assert_not_called()
+
+    def test_sube_la_foto_sin_publicar_y_nunca_crea_un_post_de_feed(self):
+        urlopen = MagicMock(side_effect=[_make_ctx({"id": "photo-story-1"})])
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+
+        photo_id = cliente.alojar_imagen_para_story(self.imagen, dry_run=False)
+
+        self.assertEqual(photo_id, "photo-story-1")
+        # Un único llamado (solo /photos): a diferencia de publicar_foto_facebook,
+        # nunca hay un segundo llamado a /feed — no queda ningún post de muro.
+        self.assertEqual(urlopen.call_count, 1)
+        peticion_foto = urlopen.call_args_list[0][0][0]
+        self.assertIn("123/photos", peticion_foto.full_url)
+        self.assertIn(b'name="published"\r\n\r\nfalse', peticion_foto.data)
+
+    def test_sin_token_no_intenta_subir(self):
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token=None, urlopen=MagicMock())
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.alojar_imagen_para_story(self.imagen, dry_run=False)
+
+    def test_respuesta_sin_id_de_foto_es_error_controlado(self):
+        urlopen = _urlopen_mock({})
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.alojar_imagen_para_story(self.imagen, dry_run=False)
+
+
+class TestPublicarInstagramStory(unittest.TestCase):
+    def test_dry_run_no_llama_a_meta(self):
+        urlopen = MagicMock()
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=urlopen)
+        resultado = cliente.publicar_instagram_story("https://ejemplo.com/story.png", dry_run=True)
+        self.assertIsInstance(resultado, ResultadoDryRun)
+        urlopen.assert_not_called()
+
+    def test_publicacion_real_manda_media_type_stories_y_nunca_caption(self):
+        urlopen = MagicMock(side_effect=[
+            _make_ctx({"id": "contenedor-story-1"}),
+            _make_ctx({"id": "media-story-789"}),
+        ])
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=urlopen)
+
+        media_id = cliente.publicar_instagram_story("https://ejemplo.com/story.png", dry_run=False)
+
+        self.assertEqual(media_id, "media-story-789")
+        self.assertEqual(urlopen.call_count, 2)
+        peticion_media = urlopen.call_args_list[0][0][0]
+        self.assertIn(b'name="media_type"\r\n\r\nSTORIES', peticion_media.data)
+        self.assertNotIn(b'name="caption"', peticion_media.data)
+
+    def test_sin_ig_user_id_no_intenta_publicar(self):
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id=None, urlopen=MagicMock())
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.publicar_instagram_story("https://ejemplo.com/story.png", dry_run=False)
+
+    def test_sin_url_publica_de_imagen_no_intenta_publicar(self):
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=MagicMock())
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.publicar_instagram_story(None, dry_run=False)
+
+    def test_falla_creacion_de_contenedor_no_intenta_publicar(self):
+        urlopen = MagicMock(return_value=_make_ctx({"error": {"message": "imagen inválida"}}))
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.publicar_instagram_story("https://ejemplo.com/story.png", dry_run=False)
         self.assertEqual(urlopen.call_count, 1)
 
 

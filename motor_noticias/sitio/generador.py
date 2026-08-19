@@ -56,6 +56,18 @@ def cargar_config_sitio(path: Optional[Path] = None) -> dict:
         return json.load(f)
 
 
+def deploy_automatico_habilitado(path: Optional[Path] = None) -> bool:
+    """Lee `config/sitio.json` → "deploy_automatico" (default `true` si el
+    archivo falta o es inválido — a diferencia de `cargar_config_sitio`,
+    que sí debe fallar fuerte si falta la configuración real para generar
+    el sitio). Se relee en cada intento de despliegue, así se puede
+    desactivar el push automático a GitHub sin reiniciar ningún proceso."""
+    try:
+        return bool(cargar_config_sitio(path).get("deploy_automatico", True))
+    except (OSError, json.JSONDecodeError):
+        return True
+
+
 def _sin_acentos(texto: str) -> str:
     normalizado = unicodedata.normalize("NFKD", (texto or "").lower())
     return "".join(c for c in normalizado if not unicodedata.combining(c))

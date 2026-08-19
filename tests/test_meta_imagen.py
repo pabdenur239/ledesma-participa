@@ -8,8 +8,10 @@ from PIL import Image, ImageDraw, ImageFont
 from motor_noticias.meta.imagen import (
     ALTO_PLACA,
     ANCHO_PLACA,
+    _cargar_fuente,
     _envolver_texto,
     _envolver_texto_pixeles,
+    _ruta_fuente_unicode,
     generar_imagen_placa_png,
     generar_placa,
     generar_svg_placa,
@@ -149,6 +151,52 @@ class TestGenerarImagenPlacaPng(unittest.TestCase):
     def test_no_rompe_con_caracteres_especiales_en_el_texto(self):
         datos = generar_imagen_placa_png("<script>alert(1)</script>", "Texto normal.", "Fuente", "Jujuy")
         self.assertTrue(datos.startswith(FIRMA_PNG))
+
+
+class TestFuenteConSoporteDeEspanol(unittest.TestCase):
+    """ImageFont.load_default() (la fuente que trae Pillow embebida) no
+    tiene los glifos de tildes/ñ/¿/¡: los dibuja como un glifo de
+    "faltante" mucho más ancho que una letra real (ver _cargar_fuente en
+    motor_noticias.meta.imagen). Estos tests verifican que se resuelve una
+    fuente real del sistema y que, con ella, los caracteres especiales del
+    español no salen corruptos."""
+
+    @staticmethod
+    def _ratio_ancho_caracter_acentuado(fuente):
+        imagen = Image.new("RGB", (10, 10))
+        dibujo = ImageDraw.Draw(imagen)
+        ancho_i = dibujo.textlength("i", font=fuente)
+        ancho_i_acentuada = dibujo.textlength("í", font=fuente)
+        return ancho_i_acentuada / ancho_i
+
+    def test_se_resuelve_una_fuente_real_del_sistema(self):
+        ruta = _ruta_fuente_unicode()
+        self.assertIsNotNone(
+            ruta, "no se encontró ninguna fuente con soporte de español en este entorno"
+        )
+
+    def test_la_fuente_cargada_no_corrompe_caracteres_acentuados(self):
+        fuente = _cargar_fuente(48)
+        ratio = self._ratio_ancho_caracter_acentuado(fuente)
+        # Con ImageFont.load_default() este ratio da ~2.2 (glifo de
+        # "faltante", mucho más ancho que una "i" real); con una fuente que
+        # sí tiene el glifo de "í" da un ratio cercano a 1.
+        self.assertLess(ratio, 1.5)
+
+    def test_placa_con_palabras_acentuadas_reales_no_usa_la_fuente_rota(self):
+        # Caso reportado: "rítmica", "participación", "autonomía" y
+        # "discapacidad" en la misma placa (noticia real de Libertador).
+        datos = generar_imagen_placa_png(
+            "Jornada recreativa y rítmica para personas con discapacidad en Libertador",
+            "La propuesta generó un espacio de encuentro y participación para "
+            "fortalecer habilidades motrices, perceptivas y expresivas, "
+            "promoviendo autonomía y bienestar.",
+            fuente="Prensa Jujuy (Gobierno de Jujuy)",
+            localidad="Libertador",
+        )
+        self.assertTrue(datos.startswith(FIRMA_PNG))
+        with Image.open(io.BytesIO(datos)) as imagen:
+            self.assertEqual(imagen.size, (ANCHO_PLACA, ALTO_PLACA))
 
 
 class TestGenerarPlaca(unittest.TestCase):

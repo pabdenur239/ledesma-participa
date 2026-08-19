@@ -11,7 +11,9 @@ $Tareas = @(
     "LedesmaParticipa-MetaProgramacion",
     "LedesmaParticipa-MetaPlacas",
     "LedesmaParticipa-MetaPublicar",
-    "LedesmaParticipa-MetaReintentos"
+    "LedesmaParticipa-MetaReintentos",
+    "LedesmaParticipa-MetaUrgentes",
+    "LedesmaParticipa-SitioWeb"
 )
 
 foreach ($tarea in $Tareas) {

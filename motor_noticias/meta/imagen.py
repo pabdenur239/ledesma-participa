@@ -1,11 +1,55 @@
 import hashlib
 import io
+import logging
 import textwrap
 from pathlib import Path
 from typing import List, Optional
 from xml.sax.saxutils import escape as _escapar_xml
 
 from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger("motor_noticias.meta.imagen")
+
+# ImageFont.load_default() (la fuente Aileron que trae Pillow embebida) no
+# tiene los glifos de tildes/ñ/¿/¡ del español: los dibuja como un
+# rectángulo de glifo faltante ("rítmica" sale como "r▯tmica"). Se resuelve
+# una fuente real ya presente en el sistema (no se descarga ninguna): Arial
+# en Windows, DejaVu Sans en la mayoría de las distros Linux, Arial/Helvetica
+# en macOS. Solo si ninguna existe se cae de nuevo a load_default() (con una
+# sola advertencia en el log) en vez de romper la generación de la placa.
+_RUTAS_FUENTE_UNICODE = (
+    r"C:\Windows\Fonts\arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+)
+_ruta_fuente_unicode_resuelta: Optional[str] = None
+_avisado_sin_fuente_unicode = False
+
+
+def _ruta_fuente_unicode() -> Optional[str]:
+    global _ruta_fuente_unicode_resuelta, _avisado_sin_fuente_unicode
+    if _ruta_fuente_unicode_resuelta is not None:
+        return _ruta_fuente_unicode_resuelta
+    for ruta in _RUTAS_FUENTE_UNICODE:
+        if Path(ruta).is_file():
+            _ruta_fuente_unicode_resuelta = ruta
+            return ruta
+    if not _avisado_sin_fuente_unicode:
+        logger.warning(
+            "No se encontró ninguna fuente con soporte de español (tildes/ñ/¿/¡) en el "
+            "sistema; se usa ImageFont.load_default(), que no las dibuja correctamente."
+        )
+        _avisado_sin_fuente_unicode = True
+    return None
+
+
+def _cargar_fuente(size: int) -> ImageFont.ImageFont:
+    ruta = _ruta_fuente_unicode()
+    if ruta:
+        return ImageFont.truetype(ruta, size)
+    return ImageFont.load_default(size=size)
 
 DIRECTORIO_PLACAS_DEFAULT = Path(__file__).resolve().parent.parent.parent / "data" / "placas"
 
@@ -138,10 +182,10 @@ def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", locali
     ancho_maximo_px = ANCHO_PLACA - 2 * MARGEN_X
 
     dibujo.rectangle([(0, 0), (ANCHO_PLACA, ALTO_BANDA_SUPERIOR)], fill=COLOR_MARCA)
-    fuente_marca = ImageFont.load_default(size=44)
+    fuente_marca = _cargar_fuente(44)
     dibujo.text((MARGEN_X, 55), "LEDESMA PARTICIPA", font=fuente_marca, fill=COLOR_MARCA_TEXTO)
 
-    fuente_titulo = ImageFont.load_default(size=52)
+    fuente_titulo = _cargar_fuente(52)
     lineas_titulo = _envolver_texto_pixeles(
         dibujo, titulo, fuente_titulo, ancho_maximo_px, MAXIMO_LINEAS_TITULO
     )
@@ -150,7 +194,7 @@ def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", locali
         dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_TITULO)
         y += 64
 
-    fuente_resumen = ImageFont.load_default(size=32)
+    fuente_resumen = _cargar_fuente(32)
     lineas_resumen = _envolver_texto_pixeles(
         dibujo, resumen, fuente_resumen, ancho_maximo_px, MAXIMO_LINEAS_RESUMEN
     )
@@ -161,7 +205,7 @@ def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", locali
 
     y_footer = ALTO_PLACA - ALTO_BANDA_FOOTER
     dibujo.rectangle([(0, y_footer), (ANCHO_PLACA, ALTO_PLACA)], fill=COLOR_FOOTER_FONDO)
-    fuente_footer = ImageFont.load_default(size=26)
+    fuente_footer = _cargar_fuente(26)
     if fuente:
         dibujo.text(
             (MARGEN_X, y_footer + 35), f"Fuente: {fuente}", font=fuente_footer, fill=COLOR_FOOTER_TEXTO

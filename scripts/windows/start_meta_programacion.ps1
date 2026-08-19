@@ -1,5 +1,5 @@
 ﻿# start_meta_programacion.ps1 - genera la programacion diaria de publicacion
-# en Meta (franjas fijas: 07:30 informe diario + 9 franjas por cascada
+# en Meta (franjas fijas: 07:30 informe diario + 14 franjas por cascada
 # territorial). No depende de Ollama. Corre una vez y termina.
 
 . (Join-Path $PSScriptRoot "common.ps1")

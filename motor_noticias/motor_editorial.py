@@ -23,12 +23,14 @@ ZONA_JUJUY = timezone(timedelta(hours=-3), name="America/Argentina/Jujuy")
 
 # Franjas fijas de la Agenda Editorial / programación de publicación en Meta.
 # 07:30 está reservada exclusivamente al informe diario (clima/dólar, ver
-# `reservar_franja_informe_diario`); las 9 franjas restantes siguen la
-# cascada territorial normal. Entre las 10, cubren el volumen diario de 6-10
-# contenidos pedido para la publicación automática en Meta.
+# `reservar_franja_informe_diario`); las 14 franjas restantes siguen la
+# cascada territorial normal, una por hora entre las 09:00 y las 22:00.
+# Entre las 15, cubren el volumen diario de 12 a 15 contenidos pedido para
+# la publicación automática en Meta.
 HORA_INFORME_DIARIO = "07:30"
 HORARIOS_DEFAULT = (
-    "09:30", "11:30", "13:30", "15:30", "17:30", "19:00", "20:30", "21:30", "22:30",
+    "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00",
+    "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
 )
 ANTIGUEDAD_MAXIMA_HORAS = 48
 # Línea editorial (prioridad acumulativa, no cuota rígida diaria): Libertador

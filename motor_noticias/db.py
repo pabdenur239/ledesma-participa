@@ -178,6 +178,23 @@ class Database:
         )
         return cur.fetchone() is not None
 
+    def noticias_publicadas_recientes(self, fecha_limite: str, excluir_id: Optional[int] = None) -> list:
+        """Noticias ya publicadas (`estado = 'publicada'`) desde
+        `fecha_limite`, para el gate de deduplicación por contenido antes de
+        publicar (ver `motor_noticias.meta.publicador`): compara una
+        candidata nueva contra lo que ya salió, sin importar por qué
+        circuito (franja fija, urgente o reintento) haya salido."""
+        query = (
+            "SELECT id, url_normalizada, titulo_original, texto_original "
+            "FROM noticias WHERE estado = ? AND fecha_recoleccion >= ?"
+        )
+        params: list = [Estado.PUBLICADA.value, fecha_limite]
+        if excluir_id is not None:
+            query += " AND id != ?"
+            params.append(excluir_id)
+        cur = self.conn.execute(query, params)
+        return [dict(fila) for fila in cur.fetchall()]
+
     def guardar(self, noticia: Noticia) -> int:
         cur = self.conn.execute(
             """
@@ -465,6 +482,11 @@ class Database:
             "SELECT * FROM agenda_item WHERE fecha = ? AND hora = ? AND tipo = 'normal'",
             (fecha, hora),
         )
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def obtener_agenda_item_por_id(self, id_item: int) -> Optional[dict]:
+        cur = self.conn.execute("SELECT * FROM agenda_item WHERE id = ?", (id_item,))
         fila = cur.fetchone()
         return dict(fila) if fila else None
 

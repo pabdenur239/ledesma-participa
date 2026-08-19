@@ -1,7 +1,7 @@
 ﻿# start_meta_publicar.ps1 - publica en Facebook e Instagram el contenido
 # programado para la franja horaria actual (publicar_meta.py detecta sola
 # la franja mas cercana a la hora actual). Se dispara una vez por cada una
-# de las 10 franjas fijas del dia (ver install_tasks.ps1). No depende de
+# de las 15 franjas fijas del dia (ver install_tasks.ps1). No depende de
 # Ollama.
 
 . (Join-Path $PSScriptRoot "common.ps1")

@@ -43,26 +43,49 @@ class TestPublicarFotoFacebook(BaseImagen):
         self.assertIsInstance(resultado, ResultadoDryRun)
         urlopen.assert_not_called()
 
-    def test_publicacion_real_devuelve_photo_id_y_post_id_confirmados_por_meta(self):
-        urlopen = _urlopen_mock({"id": "photo-real-999", "post_id": "post-real-123"})
+    def test_publicacion_real_sube_foto_sin_publicar_y_crea_post_de_feed(self):
+        urlopen = MagicMock(side_effect=[
+            _make_ctx({"id": "photo-real-999"}),
+            _make_ctx({"id": "123_post-real-123"}),
+        ])
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
 
         resultado = cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
 
         self.assertEqual(resultado.photo_id, "photo-real-999")
-        self.assertEqual(resultado.post_id, "post-real-123")
-        urlopen.assert_called_once()
+        self.assertEqual(resultado.post_id, "123_post-real-123")
+        self.assertEqual(urlopen.call_count, 2)
+
+        peticion_foto = urlopen.call_args_list[0][0][0]
+        self.assertIn("123/photos", peticion_foto.full_url)
+        self.assertIn(b'name="published"\r\n\r\nfalse', peticion_foto.data)
+        self.assertNotIn(b'name="caption"', peticion_foto.data)
+
+        peticion_post = urlopen.call_args_list[1][0][0]
+        self.assertIn("123/feed", peticion_post.full_url)
+        self.assertIn(b'name="message"', peticion_post.data)
+        self.assertIn(b'"media_fbid": "photo-real-999"', peticion_post.data)
 
     def test_sin_token_no_intenta_publicar(self):
         cliente = ClienteMetaGraphAPI(page_id="123", access_token=None, urlopen=MagicMock())
         with self.assertRaises(ErrorClienteMeta):
             cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
 
-    def test_error_de_meta_se_traduce_a_error_controlado(self):
+    def test_error_de_meta_al_subir_la_foto_se_traduce_a_error_controlado(self):
         urlopen = _urlopen_mock({"error": {"message": "Invalid OAuth access token"}})
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
         with self.assertRaises(ErrorClienteMeta):
             cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
+
+    def test_error_de_meta_al_crear_el_post_se_traduce_a_error_controlado(self):
+        urlopen = MagicMock(side_effect=[
+            _make_ctx({"id": "photo-real-999"}),
+            _make_ctx({"error": {"message": "attached_media inválido"}}),
+        ])
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
+        self.assertEqual(urlopen.call_count, 2)
 
     def test_http_error_se_traduce_a_error_controlado_sin_exponer_token(self):
         def urlopen(*args, **kwargs):
@@ -75,11 +98,46 @@ class TestPublicarFotoFacebook(BaseImagen):
             cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
         self.assertNotIn("token-secreto", str(ctx.exception))
 
-    def test_respuesta_sin_id_es_error_controlado(self):
+    def test_respuesta_sin_id_de_foto_es_error_controlado(self):
         urlopen = _urlopen_mock({})
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
         with self.assertRaises(ErrorClienteMeta):
             cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
+
+    def test_respuesta_sin_id_de_post_es_error_controlado(self):
+        urlopen = MagicMock(side_effect=[
+            _make_ctx({"id": "photo-real-999"}),
+            _make_ctx({}),
+        ])
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+        with self.assertRaises(ErrorClienteMeta):
+            cliente.publicar_foto_facebook(_contenido(), self.imagen, dry_run=False)
+
+
+class TestPublicarFotoFacebookPorUrl(unittest.TestCase):
+    def test_publicacion_real_sube_foto_sin_publicar_por_url_y_crea_post_de_feed(self):
+        urlopen = MagicMock(side_effect=[
+            _make_ctx({"id": "photo-real-999"}),
+            _make_ctx({"id": "123_post-real-123"}),
+        ])
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", urlopen=urlopen)
+
+        resultado = cliente.publicar_foto_facebook_por_url(
+            _contenido(), "https://ejemplo.com/foto-original.jpg", dry_run=False
+        )
+
+        self.assertEqual(resultado.photo_id, "photo-real-999")
+        self.assertEqual(resultado.post_id, "123_post-real-123")
+        self.assertEqual(urlopen.call_count, 2)
+
+        peticion_foto = urlopen.call_args_list[0][0][0]
+        self.assertIn("123/photos", peticion_foto.full_url)
+        self.assertIn(b"https://ejemplo.com/foto-original.jpg", peticion_foto.data)
+        self.assertIn(b'name="published"\r\n\r\nfalse', peticion_foto.data)
+
+        peticion_post = urlopen.call_args_list[1][0][0]
+        self.assertIn("123/feed", peticion_post.full_url)
+        self.assertIn(b'"media_fbid": "photo-real-999"', peticion_post.data)
 
 
 class TestPublicarComentarioFacebook(unittest.TestCase):

@@ -31,7 +31,9 @@ $Tareas = @(
     "LedesmaParticipa-MetaProgramacion",
     "LedesmaParticipa-MetaPlacas",
     "LedesmaParticipa-MetaPublicar",
-    "LedesmaParticipa-MetaReintentos"
+    "LedesmaParticipa-MetaReintentos",
+    "LedesmaParticipa-MetaUrgentes",
+    "LedesmaParticipa-SitioWeb"
 )
 foreach ($tarea in $Tareas) {
     $t = Get-ScheduledTask -TaskName $tarea -ErrorAction SilentlyContinue
@@ -60,6 +62,15 @@ try {
     Write-Host "Responde: HTTP $($resp.StatusCode)"
 } catch {
     Write-Host "No responde."
+}
+
+Write-Host ""
+Write-Host "--- Sitio web (docs/) ---"
+$sitioIndex = Join-Path $root "docs\index.html"
+if (Test-Path $sitioIndex) {
+    Write-Host "Última generación: $((Get-Item $sitioIndex).LastWriteTime)"
+} else {
+    Write-Host "docs\index.html no existe todavía (correr generar_sitio_web.py o la tarea LedesmaParticipa-SitioWeb)."
 }
 
 Write-Host ""

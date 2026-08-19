@@ -6,7 +6,12 @@ from pathlib import Path
 from motor_noticias.db import Database
 from motor_noticias.dedupe import hash_contenido, normalizar_url
 from motor_noticias.meta.cliente import ErrorClienteMeta, ResultadoFotoFacebook
-from motor_noticias.meta.publicador import publicar_franja, reintentar_publicaciones
+from motor_noticias.meta.publicador import (
+    _publicar_noticia_en_clave,
+    publicar_franja,
+    publicar_urgentes,
+    reintentar_publicaciones,
+)
 from motor_noticias.models import Estado, Noticia
 
 AHORA = datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
@@ -286,6 +291,140 @@ class TestReintentarPublicaciones(BaseTest):
         fila_ig = self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram")
         self.assertEqual(fila_ig["estado"], "pendiente")
         self.assertEqual(fila_ig["intentos"], 0)
+
+
+class TestDeduplicacionEntreCircuitos(BaseTest):
+    """El gate de deduplicación de `_publicar_noticia_en_clave` es único y
+    común a los tres circuitos (franja fija, urgente y reintento): estos
+    tests cubren específicamente que la misma noticia (o su equivalente por
+    otra fuente) no salga publicada dos veces cuando entra por circuitos
+    distintos, aunque sea un registro interno (`noticia_id`) distinto."""
+
+    def test_bloquea_la_misma_noticia_publicada_por_normal_y_por_urgente(self):
+        # Mismo caso real detectado en producción: dos fuentes distintas
+        # cubren el mismo partido, con título apenas distinto (sin URL ni
+        # hash_contenido en común) — depende del fingerprint de contenido.
+        a = _noticia(
+            self.db, 1,
+            titulo_original="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+            titulo_preparado="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+        )
+        b = _noticia(
+            self.db, 2,
+            titulo_original="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+            titulo_preparado="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+        )
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", None, "urgente", "local", b.id, AHORA.isoformat())
+
+        fake = FakeClienteMeta()
+        resultado_normal = publicar_franja(
+            self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA
+        )
+        self.assertEqual(resultado_normal.resultado, "procesada")
+        llamadas_antes = len(fake.llamadas)
+
+        resultados_urgentes = publicar_urgentes(
+            self.db, "2026-08-12", cliente_fb=fake, cliente_ig=fake, ahora=AHORA
+        )
+        self.assertEqual(len(resultados_urgentes), 1)
+        self.assertEqual(resultados_urgentes[0].resultado, "duplicado_bloqueado")
+        self.assertEqual(len(fake.llamadas), llamadas_antes)  # ninguna llamada nueva a Meta
+
+    def test_bloquea_al_reintentar_una_urgente_si_otra_urgente_ya_la_publico(self):
+        # B entra primero y falla por un motivo ajeno a duplicados (error de
+        # red simulado). Mientras tanto A -su misma noticia, otro registro-
+        # se publica por el circuito de urgentes. El reintento de B (circuito
+        # de MetaReintentos) debe bloquearla por duplicado, no reintentar
+        # contra Meta de nuevo.
+        b = _noticia(
+            self.db, 1,
+            titulo_original="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+            titulo_preparado="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+        )
+        self.db.guardar_agenda_item("2026-08-12", None, "urgente", "local", b.id, AHORA.isoformat())
+        fake_falla = FakeClienteMeta(fallar_facebook=True)
+        publicar_urgentes(self.db, "2026-08-12", cliente_fb=fake_falla, cliente_ig=fake_falla, ahora=AHORA)
+
+        agenda_b = [item for item in self.db.listar_agenda("2026-08-12") if item["noticia_id"] == b.id][0]
+        clave_b = f"urgente-{agenda_b['id']}"
+        self.assertEqual(self.db.obtener_programacion_meta("2026-08-12", clave_b, "facebook")["estado"], "error")
+
+        a = _noticia(
+            self.db, 2,
+            titulo_original="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+            titulo_preparado="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+        )
+        agenda_a_id = self.db.guardar_agenda_item(
+            "2026-08-12", None, "urgente", "local", a.id, AHORA.isoformat()
+        )
+        # Se publica A de forma aislada (sin volver a barrer la cola de
+        # urgentes, que reintentaría a B primero al ser la más vieja):
+        # mismo helper interno que usan publicar_franja/publicar_urgentes.
+        fake_ok = FakeClienteMeta()
+        resultado_a = _publicar_noticia_en_clave(
+            self.db, "2026-08-12", f"urgente-{agenda_a_id}", a.id, fake_ok, fake_ok, AHORA
+        )
+        self.assertEqual(resultado_a.resultado, "procesada")
+        self.assertEqual(self.db.obtener(a.id)["estado"], Estado.PUBLICADA.value)
+
+        fake_reintentos = FakeClienteMeta()
+        resultados_reintento = reintentar_publicaciones(
+            self.db, cliente_fb=fake_reintentos, cliente_ig=fake_reintentos, ahora=AHORA
+        )
+        resultado_b = [r for r in resultados_reintento if r.noticia_id == b.id][0]
+        self.assertEqual(resultado_b.resultado, "duplicado_bloqueado")
+        self.assertEqual(fake_reintentos.llamadas, [])  # nunca llegó a tocar a Meta
+
+        fila_fb_b = self.db.obtener_programacion_meta("2026-08-12", clave_b, "facebook")
+        self.assertEqual(fila_fb_b["estado"], "duplicado")
+        # Una vez bloqueada por duplicado, no vuelve a aparecer como
+        # pendiente de reintento (no queda en 'error' dando vueltas).
+        pendientes = self.db.listar_programacion_meta_para_reintentar(max_intentos=10)
+        self.assertFalse(any(p["hora"] == clave_b for p in pendientes))
+
+    def test_bloquea_por_misma_url_normalizada_aunque_los_ids_internos_sean_distintos(self):
+        # Señal más fuerte que el fingerprint de contenido: misma URL
+        # normalizada, títulos completamente distintos entre sí.
+        misma_url = "https://ejemplo.test/nota/inundacion-en-libertador"
+        a = _noticia(self.db, 1, url_fuente=misma_url, titulo_original="Título A", titulo_preparado="Título A")
+        b = _noticia(self.db, 2, url_fuente=misma_url, titulo_original="Un título completamente diferente", titulo_preparado="Un título completamente diferente")
+        self.assertEqual(a.url_normalizada, b.url_normalizada)
+
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", "10:00", "normal", "local", b.id, AHORA.isoformat())
+
+        fake = FakeClienteMeta()
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        llamadas_antes = len(fake.llamadas)
+
+        resultado_b = publicar_franja(self.db, "2026-08-12", "10:00", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado_b.resultado, "duplicado_bloqueado")
+        self.assertEqual(len(fake.llamadas), llamadas_antes)
+
+    def test_no_bloquea_noticias_distintas_que_comparten_solo_una_palabra_de_lugar(self):
+        # Control negativo: no cualquier coincidencia dispara el bloqueo.
+        a = _noticia(
+            self.db, 1,
+            titulo_original="La Catedral de Jujuy celebrará el Día del Niño en Plaza Belgrano",
+            titulo_preparado="La Catedral de Jujuy celebrará el Día del Niño en Plaza Belgrano",
+        )
+        b = _noticia(
+            self.db, 2,
+            titulo_original="Recuperaron 39 celulares durante un operativo de seguridad en Jujuy",
+            titulo_preparado="Recuperaron 39 celulares durante un operativo de seguridad en Jujuy",
+        )
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", "10:00", "normal", "local", b.id, AHORA.isoformat())
+
+        fake = FakeClienteMeta()
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        resultado_b = publicar_franja(self.db, "2026-08-12", "10:00", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado_b.resultado, "procesada")
+        estados = {r.red_social: r.estado for r in resultado_b.redes}
+        self.assertEqual(estados, {"facebook": "publicado", "instagram": "publicado"})
 
 
 if __name__ == "__main__":

@@ -51,12 +51,18 @@ class ResultadoFotoFacebook:
     post_id: str
 
 
-def _resultado_foto_desde_respuesta(resultado: dict) -> "ResultadoFotoFacebook":
+def _photo_id_desde_respuesta_no_publicada(resultado: dict) -> str:
     photo_id = resultado.get("id")
-    post_id = resultado.get("post_id") or photo_id
-    if not photo_id or not post_id:
+    if not photo_id:
+        raise ErrorClienteMeta("Meta no devolvió un ID de foto al subirla sin publicar.")
+    return photo_id
+
+
+def _post_id_desde_respuesta_feed(resultado: dict) -> str:
+    post_id = resultado.get("id")
+    if not post_id:
         raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Facebook.")
-    return ResultadoFotoFacebook(photo_id=photo_id, post_id=post_id)
+    return post_id
 
 
 def _multipart(campos: dict, archivo: Optional[Path] = None, nombre_campo_archivo: str = "source"):
@@ -96,7 +102,17 @@ class ClienteMetaGraphAPI:
     publicación real vive en los métodos nuevos `publicar_foto_facebook` /
     `publicar_comentario_facebook` / `publicar_instagram`, explícitos y
     separados para no reabrir ni cambiar el comportamiento ya probado de los
-    métodos existentes."""
+    métodos existentes.
+
+    `publicar_foto_facebook` / `publicar_foto_facebook_por_url` publican en
+    dos pasos: suben la imagen sin publicar (`published=false` a
+    `/{page_id}/photos`, así no queda como post propio) y recién después
+    crean el post real en `/{page_id}/feed` con `message` y esa foto
+    referenciada por `attached_media`. Un post creado directo en
+    `/{page_id}/photos` (con `published=true`) queda como objeto Photo y no
+    como un post de muro genuino: Meta le da una distribución distinta y no
+    se ve igual para visitantes no administradores de la Página, aunque el
+    objeto exista y `is_hidden` sea `false`."""
 
     def __init__(
         self,
@@ -189,19 +205,41 @@ class ClienteMetaGraphAPI:
         peticion = urllib.request.Request(f"{url}?{query}", method="GET")
         return self._ejecutar_peticion(peticion)
 
+    def _crear_post_feed_con_foto(
+        self, endpoint_post: str, mensaje: str, photo_id: str
+    ) -> "ResultadoFotoFacebook":
+        """Segundo paso de la publicación real: crea el post de muro
+        genuino en `/{page_id}/feed`, con el texto completo en `message` y
+        la foto ya subida (sin publicar) referenciada por `attached_media`.
+        Este es el post que Meta distribuye igual que uno cargado a mano
+        desde la interfaz de Facebook."""
+        cuerpo, content_type = _multipart(
+            {
+                "message": mensaje,
+                "attached_media[0]": json.dumps({"media_fbid": photo_id}),
+                "access_token": self._access_token,
+            }
+        )
+        resultado = self._peticion_json(endpoint_post, cuerpo, content_type)
+        post_id = _post_id_desde_respuesta_feed(resultado)
+        return ResultadoFotoFacebook(photo_id=photo_id, post_id=post_id)
+
     def publicar_foto_facebook(
         self, contenido: ContenidoFacebook, ruta_imagen: Path, dry_run: bool = True
     ):
-        """Publica el post principal de Facebook como foto con caption
-        (adjuntando el archivo directamente vía multipart: no necesita una
-        URL pública, a diferencia de Instagram). Devuelve el post_id real
+        """Publica el post principal de Facebook como un post de muro real
+        con foto adjunta: primero sube la imagen sin publicar (adjuntando el
+        archivo directamente vía multipart: no necesita una URL pública, a
+        diferencia de Instagram) y recién después crea el post en
+        `/{page_id}/feed` referenciando esa foto. Devuelve el post_id real
         que Meta confirmó, o un ResultadoDryRun si dry_run=True."""
-        endpoint = f"{GRAPH_API_BASE}/{self.page_id}/photos"
+        endpoint_foto = f"{GRAPH_API_BASE}/{self.page_id}/photos"
+        endpoint_post = f"{GRAPH_API_BASE}/{self.page_id}/feed"
         if dry_run:
             return ResultadoDryRun(
                 dry_run=True,
                 page_id=self.page_id,
-                endpoint_post=endpoint,
+                endpoint_post=endpoint_post,
                 endpoint_comentario="",
                 texto_post_principal=contenido.post_principal,
                 texto_primer_comentario=contenido.primer_comentario,
@@ -209,16 +247,16 @@ class ClienteMetaGraphAPI:
         if not self.tiene_token_configurado():
             raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede publicar en Facebook.")
 
-        cuerpo, content_type = _multipart(
+        cuerpo_foto, content_type_foto = _multipart(
             {
-                "caption": contenido.post_principal,
-                "published": "true",
+                "published": "false",
                 "access_token": self._access_token,
             },
             Path(ruta_imagen),
         )
-        resultado = self._peticion_json(endpoint, cuerpo, content_type)
-        return _resultado_foto_desde_respuesta(resultado)
+        resultado_foto = self._peticion_json(endpoint_foto, cuerpo_foto, content_type_foto)
+        photo_id = _photo_id_desde_respuesta_no_publicada(resultado_foto)
+        return self._crear_post_feed_con_foto(endpoint_post, contenido.post_principal, photo_id)
 
     def publicar_foto_facebook_por_url(
         self, contenido: ContenidoFacebook, imagen_url: str, dry_run: bool = True
@@ -226,13 +264,15 @@ class ClienteMetaGraphAPI:
         """Igual que publicar_foto_facebook, pero para una imagen ya alojada
         en una URL remota (por ejemplo, la foto original de la fuente): se
         le pide a Meta que la busque él mismo (parámetro `url`), sin subir
-        ningún archivo."""
-        endpoint = f"{GRAPH_API_BASE}/{self.page_id}/photos"
+        ningún archivo. Mismo flujo en dos pasos: foto sin publicar y
+        después el post real en `/{page_id}/feed`."""
+        endpoint_foto = f"{GRAPH_API_BASE}/{self.page_id}/photos"
+        endpoint_post = f"{GRAPH_API_BASE}/{self.page_id}/feed"
         if dry_run:
             return ResultadoDryRun(
                 dry_run=True,
                 page_id=self.page_id,
-                endpoint_post=endpoint,
+                endpoint_post=endpoint_post,
                 endpoint_comentario="",
                 texto_post_principal=contenido.post_principal,
                 texto_primer_comentario=contenido.primer_comentario,
@@ -240,16 +280,16 @@ class ClienteMetaGraphAPI:
         if not self.tiene_token_configurado():
             raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede publicar en Facebook.")
 
-        cuerpo, content_type = _multipart(
+        cuerpo_foto, content_type_foto = _multipart(
             {
                 "url": imagen_url,
-                "caption": contenido.post_principal,
-                "published": "true",
+                "published": "false",
                 "access_token": self._access_token,
             }
         )
-        resultado = self._peticion_json(endpoint, cuerpo, content_type)
-        return _resultado_foto_desde_respuesta(resultado)
+        resultado_foto = self._peticion_json(endpoint_foto, cuerpo_foto, content_type_foto)
+        photo_id = _photo_id_desde_respuesta_no_publicada(resultado_foto)
+        return self._crear_post_feed_con_foto(endpoint_post, contenido.post_principal, photo_id)
 
     def obtener_url_publica_foto(self, photo_id: str) -> str:
         """Consulta la Graph API para obtener la URL pública (CDN) de una

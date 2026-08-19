@@ -28,6 +28,14 @@
     "nombre_fuente": "Somos Jujuy",
     "url": "https://www.somosjujuy.com.ar/feed/"
   },
+  "jujuyaldia": {
+    "nombre_fuente": "Jujuy al día",
+    "url": "https://www.jujuyaldia.com.ar/feed/"
+  },
+  "canal6_libertador": {
+    "nombre_fuente": "Canal 6 Libertador",
+    "url": "https://canalseis.com.ar/feed/"
+  },
   "la_nacion": {
     "nombre_fuente": "La Nación",
     "url": "https://www.lanacion.com.ar/arc/outboundfeeds/rss/"

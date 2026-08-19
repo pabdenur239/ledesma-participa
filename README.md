@@ -280,9 +280,10 @@ python3 generar_agenda.py
 python3 generar_agenda.py --fecha 2026-08-15
 ```
 
-Objetivo de 6 propuestas diarias en franjas horarias configurables
-(`08:00, 10:30, 13:00, 16:00, 19:00, 21:30`, huso `America/Argentina/Jujuy`
-fijo en UTC-3, sin depender de la base de datos IANA de zonas horarias).
+Objetivo de 12 a 15 propuestas diarias en franjas horarias configurables
+(informe diario a las 07:30 + una por hora de 09:00 a 22:00, huso
+`America/Argentina/Jujuy` fijo en UTC-3, sin depender de la base de datos
+IANA de zonas horarias).
 Excluye automáticamente noticias con más de 48 horas de antigüedad,
 rechazadas o ya usadas en una agenda anterior. Si no hay candidato
 válido para un espacio, queda registrado como `sin_candidato` — nunca
@@ -294,8 +295,11 @@ reintentan en cada regeneración.
 
 Soporte estructural para marcar una noticia como **urgente**
 (`Database.marcar_urgente`, hoy manual). Una urgente local o
-departamental aparece como propuesta aparte, fuera de las seis franjas
-fijas, y tampoco se publica sola: sigue requiriendo revisión humana.
+departamental aparece como propuesta aparte, fuera de las franjas fijas,
+y se publica sola en cuanto es apta (misma elegibilidad automática que
+cualquier franja fija) sin esperar la siguiente franja ordinaria — ver
+`motor_noticias/meta/publicador.py::publicar_urgentes` y
+`publicar_urgentes_meta.py`.
 
 Desde el panel, la sección **"Agenda Editorial"**
 (`http://127.0.0.1:8000/agenda`, opcionalmente `?fecha=YYYY-MM-DD`)
@@ -420,13 +424,13 @@ antes: preparado y esperando aprobación en el panel.
 
 **Selección y horarios.** Reutiliza la misma Agenda Editorial en
 cascada territorial (local → departamental → provincial → nacional,
-`motor_noticias/motor_editorial.py`) con 10 franjas fijas por día:
+`motor_noticias/motor_editorial.py`) con 15 franjas fijas por día:
 07:30 (reservada al informe diario de clima/dólar,
-`reservar_franja_informe_diario`) y 09:30/11:30/13:30/15:30/17:30/
-19:00/20:30/21:30/22:30 por cascada (`HORARIOS_DEFAULT`). Si no hay
-suficiente contenido apto, se publica solo lo que hay — nunca se rellena
-con contenido vencido, duplicado o de menor prioridad territorial
-existiendo uno mejor.
+`reservar_franja_informe_diario`) y una por hora entre las 09:00 y las
+22:00 por cascada (`HORARIOS_DEFAULT`), para cubrir el objetivo de 12 a
+15 publicaciones diarias. Si no hay suficiente contenido apto, se
+publica solo lo que hay — nunca se rellena con contenido vencido,
+duplicado o de menor prioridad territorial existiendo uno mejor.
 
 **Qué se aprueba solo.** `motor_noticias/meta/elegibilidad_automatica.py`
 exige, para saltarse la revisión humana: `preparada`, no rechazada, sin
@@ -434,9 +438,14 @@ exige, para saltarse la revisión humana: `preparada`, no rechazada, sin
 clasificado y dentro de `ANTIGUEDAD_MAXIMA_HORAS`. La lista taxativa de
 motivos de revisión humana obligatoria vive en
 `config/riesgo_editorial.json`: institucional/municipal, política
-partidaria, figura pública relacionada, **judicial, muertes, menores
-identificables, salud sensible y contenido violento** (categorías
-agregadas en esta fase). Una noticia aprobada así queda marcada
+partidaria, figura pública relacionada, **judicial (proceso penal:
+imputados, detenidos, causas, condenas — no el mero hecho policial),
+muertes, menores identificables, salud sensible y contenido violento**
+(categorías agregadas en esta fase). Un accidente o hecho policial sin
+acusación a una persona identificada ya no cae en la categoría
+`judicial` y puede publicarse solo, siempre que cumpla el resto de los
+requisitos (fuente confiable, sin especulación). Una noticia aprobada
+así queda marcada
 `revision_automatica = 1` en la base, distinguible en cualquier momento
 de una aprobación humana.
 
@@ -493,7 +502,8 @@ una placa manualmente desde el navegador.
 
 **CLIs:** `generar_programacion_meta.py`, `generar_placas_meta.py`,
 `publicar_meta.py` (detecta sola la franja más cercana a la hora
-actual) y `reintentar_publicaciones_meta.py`.
+actual), `publicar_urgentes_meta.py` (publica las propuestas urgentes del
+día sin esperar franja) y `reintentar_publicaciones_meta.py`.
 
 ## Producción local en Windows
 
@@ -508,7 +518,7 @@ registran.
 ```powershell
 .\scripts\windows\install_tasks.ps1
 ```
-Registra siete tareas, todas con reintento automático ante fallo:
+Registra ocho tareas, todas con reintento automático ante fallo:
 `LedesmaParticipa-Motor` y `LedesmaParticipa-Panel` (al iniciar sesión,
 con un pequeño retraso para darle tiempo a Ollama);
 `LedesmaParticipa-InformeDiario` (diaria, 07:30);
@@ -516,10 +526,12 @@ con un pequeño retraso para darle tiempo a Ollama);
 programación del día y reincorpora el informe diario a su franja);
 `LedesmaParticipa-MetaPlacas` (diaria, 07:40 — genera las placas y
 aprueba automáticamente lo que sea apto); `LedesmaParticipa-MetaPublicar`
-(una vez por cada una de las 10 franjas fijas — publica de verdad en
-Facebook/Instagram); y `LedesmaParticipa-MetaReintentos` (cada 30
+(una vez por cada una de las 15 franjas fijas — publica de verdad en
+Facebook/Instagram); `LedesmaParticipa-MetaReintentos` (cada 30
 minutos entre las 08:00 y las 00:00 — reintenta publicaciones en
-error).
+error); y `LedesmaParticipa-MetaUrgentes` (cada 15 minutos entre las
+07:45 y las 22:45 — publica las propuestas urgentes del día sin esperar
+la franja fija).
 
 **Estado:**
 ```powershell
@@ -551,3 +563,42 @@ ni Ollama):
 `ollama_check.log`, `informe_diario.log`, `meta_programacion.log`,
 `meta_placas.log`, `meta_publicar.log`, `meta_reintentos.log`), con
 rotación simple cuando superan ~5 MB.
+
+## Sitio web público
+
+`docs/` contiene el sitio web público de Ledesma Participa: HTML estático
+generado a partir de las noticias ya publicadas en la base (`estado ==
+"publicada"`), preparado para servirse tal cual con GitHub Pages y, más
+adelante, con el dominio `ledesmaparticipa.com.ar`. No requiere ningún
+servidor propio ni dependencias nuevas (reutiliza Pillow, ya instalado,
+solo para el banner OG por defecto).
+
+**No hay carga manual ni un segundo sistema editorial para la web.** Es el
+mismo flujo único del proyecto — Fuentes → Collectors → Filtrado/Selección
+→ Redacción → `estado = "publicada"` — el que ya alimenta Facebook e
+Instagram; el sitio solo lee esa misma base SQLite (`Database.
+listar_publicadas`) y la vuelca a HTML. Automatizado con Tareas
+Programadas de Windows igual que el resto (`scripts\windows\
+start_sitio_web.ps1`, tarea `LedesmaParticipa-SitioWeb`, instalada por
+`install_tasks.ps1`): corre cada 15 minutos y no requiere ejecutar nada a
+mano para que una noticia recién publicada aparezca en la web.
+
+Regenerar el sitio manualmente (proceso de solo lectura sobre la base; no
+toca el motor ni las publicaciones en Meta):
+
+```bash
+python3 generar_sitio_web.py
+```
+
+Probarlo localmente (sirve `docs/` en `http://127.0.0.1:8788`):
+
+```bash
+python3 -m http.server 8788 --directory docs
+```
+
+Identidad, redes sociales y la URL base de producción se configuran en
+`config/sitio.json` (`facebook_url`, `instagram_url` —
+completar con el @ real cuando esté disponible—, `base_url_produccion`).
+Este último paso, y solo este, queda pendiente para conectar el sitio con
+`ledesmaparticipa.com.ar`: no se toca DNS ni se publica el dominio desde
+este repositorio.

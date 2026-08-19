@@ -26,6 +26,10 @@ def main():
     )
     parser.add_argument("--db", default=str(DB_PATH_DEFAULT), help="Ruta a la base de datos SQLite")
     parser.add_argument("--config-meta", default=str(CONFIG_META_PATH_DEFAULT))
+    parser.add_argument(
+        "--max-pendientes", type=int, default=1,
+        help="Máximo de franjas a reintentar en esta corrida (default: 1, evita vaciar toda la cola de una vez)",
+    )
     args = parser.parse_args()
 
     db = Database(args.db)
@@ -33,7 +37,8 @@ def main():
         cliente_fb = ClienteMetaGraphAPI()
         cliente_ig = ClienteMetaGraphAPI()
         resultados = reintentar_publicaciones(
-            db, cliente_fb=cliente_fb, cliente_ig=cliente_ig, max_intentos=_max_intentos(args.config_meta)
+            db, cliente_fb=cliente_fb, cliente_ig=cliente_ig,
+            max_intentos=_max_intentos(args.config_meta), max_pendientes=args.max_pendientes,
         )
     finally:
         db.close()

@@ -107,6 +107,16 @@ def procesar_noticia(
     noticia.texto_preparado = texto_preparado
     noticia.estado = Estado.PREPARADA.value
     noticia.revision_estado = RevisionEstado.PENDIENTE.value
+    if noticia.territorio in TERRITORIOS_SIEMPRE_ELEGIBLES:
+        # Toda noticia local (Libertador) o departamental (Ledesma) que llega
+        # a "preparada" debe poder publicarse de inmediato, sin esperar la
+        # siguiente franja fija: se marca urgente automáticamente (nunca se
+        # desmarca una que ya lo era) y reutiliza el circuito existente de
+        # `candidatos_urgentes` / `publicar_urgentes`, que ya excluye por su
+        # cuenta cualquier noticia con riesgo editorial obligatorio o
+        # rechazada. No aplica a provincial/nacional/entretenimiento: esos
+        # siguen exclusivamente con el esquema de franjas programadas.
+        noticia.urgente = True
     _aplicar_riesgo_editorial(noticia)
     db.guardar(noticia)
     return noticia, "preparada"

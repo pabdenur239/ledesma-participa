@@ -19,7 +19,7 @@ from typing import NamedTuple, Optional
 
 from ..db import Database
 from ..dedupe import es_mismo_contenido, palabras_clave
-from ..models import Estado, RevisionEstado
+from ..models import Estado, OrigenIngreso, RevisionEstado
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
 from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
@@ -299,6 +299,17 @@ def _publicar_noticia_en_clave(
     if noticia["revision_estado"] != RevisionEstado.APROBADA.value:
         return ResultadoFranja(fecha, clave, noticia["id"], "pendiente_revision_humana")
 
+    # La publicación institucional diaria (motor_noticias.institucional) es
+    # intencionalmente idéntica día a día — mismo texto, misma imagen — y
+    # por eso queda marcada aparte (origen_ingreso="institucional"): el
+    # gate de duplicados por fingerprint de contenido, más abajo, existe
+    # justamente para bloquear texto repetido entre noticias reales
+    # distintas, así que aplicado tal cual bloquearía la institucional de
+    # hoy contra la de ayer. No afecta al primer gate (mismo noticia_id
+    # publicado por otra clave): ese sigue protegiendo también a la
+    # institucional, que tiene una fila de noticia nueva y propia cada día.
+    es_institucional = noticia.get("origen_ingreso") == OrigenIngreso.INSTITUCIONAL.value
+
     creada_en = datetime.now(timezone.utc).isoformat()
     prog_id_fb = db.reservar_programacion_meta(fecha, clave, noticia["id"], "facebook", creada_en)
     prog_id_ig = db.reservar_programacion_meta(fecha, clave, noticia["id"], "instagram", creada_en)
@@ -351,7 +362,8 @@ def _publicar_noticia_en_clave(
     # lado: compara por fingerprint de contenido (URL normalizada o
     # palabras clave del título) contra OTRAS noticias (id distinto) que
     # puedan ser la misma nota real bajo un registro interno separado.
-    if noticia["estado"] != Estado.PUBLICADA.value:
+    # Nunca se aplica a la institucional (ver `es_institucional` arriba).
+    if noticia["estado"] != Estado.PUBLICADA.value and not es_institucional:
         duplicado = _buscar_duplicado_ya_publicado(db, noticia, ahora_utc)
         if duplicado is not None:
             detalle = f"misma noticia ya publicada como noticia #{duplicado['id']}"
@@ -419,8 +431,9 @@ def _publicar_noticia_en_clave(
     # feed. No hay equivalente de Facebook Story: la Graph API pública de
     # Meta no ofrece ningún endpoint para publicar Stories en una Página de
     # Facebook desde una app de terceros (bloqueo real de la plataforma, no
-    # de este código).
-    if _historias_instagram_habilitadas():
+    # de este código). La institucional nunca genera Story (regla propia
+    # de esa publicación, no un cambio de comportamiento de Stories).
+    if _historias_instagram_habilitadas() and not es_institucional:
         prog_id_story = db.reservar_programacion_meta(fecha, clave, noticia["id"], "instagram_story", creada_en)
         fila_story = db.obtener_programacion_meta(fecha, clave, "instagram_story")
         if fila_story["estado"] == "publicado":

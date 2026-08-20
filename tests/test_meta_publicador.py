@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from motor_noticias.db import Database
 from motor_noticias.dedupe import hash_contenido, normalizar_url
+from motor_noticias.institucional import HORA_INSTITUCIONAL, reservar_franja_institucional
 from motor_noticias.meta.cliente import ErrorClienteMeta, ResultadoFotoFacebook
 from motor_noticias.meta.publicador import (
     _publicar_noticia_en_clave,
@@ -645,6 +646,123 @@ class TestPublicarStoryInstagram(BaseTest):
         self.assertEqual(resultado.resultado, "pendiente_revision_humana")
         self.assertIsNone(self.db.obtener_programacion_meta("2026-08-12", "09:30", "instagram_story"))
         self.assertEqual(fake.llamadas, [])
+
+
+class TestPublicarInstitucional(BaseTest):
+    """Publicación institucional diaria (motor_noticias.institucional):
+    misma imagen y texto todos los días, en su propia franja fija (19:30),
+    sin Story y sin que la deduplicación general la bloquee día a día."""
+
+    def test_publica_facebook_e_instagram_feed(self):
+        entrada = reservar_franja_institucional(self.db, ahora=AHORA)
+        fake = FakeClienteMeta()
+
+        resultado = publicar_franja(
+            self.db, entrada.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=AHORA
+        )
+
+        self.assertEqual(resultado.resultado, "procesada")
+        estados = {r.red_social: r.estado for r in resultado.redes}
+        self.assertEqual(estados, {"facebook": "publicado", "instagram": "publicado"})
+        self.assertEqual(self.db.obtener(entrada.noticia_id)["estado"], Estado.PUBLICADA.value)
+
+    def test_nunca_genera_instagram_story(self):
+        entrada = reservar_franja_institucional(self.db, ahora=AHORA)
+        fake = FakeClienteMeta()
+
+        resultado = publicar_franja(
+            self.db, entrada.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=AHORA
+        )
+
+        redes = {r.red_social for r in resultado.redes}
+        self.assertNotIn("instagram_story", redes)
+        self.assertIsNone(
+            self.db.obtener_programacion_meta(entrada.fecha, HORA_INSTITUCIONAL, "instagram_story")
+        )
+        self.assertFalse(any(n in ("alojar_imagen_para_story", "publicar_instagram_story") for n, _ in fake.llamadas))
+
+    def test_usa_la_imagen_configurada_no_genera_una_placa_nueva(self):
+        entrada = reservar_franja_institucional(self.db, ahora=AHORA)
+        noticia = self.db.obtener(entrada.noticia_id)
+        ruta_imagen_esperada = noticia["imagen_publicacion_ruta"]
+        fake = FakeClienteMeta()
+
+        publicar_franja(self.db, entrada.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        llamada_fb = next(v for n, v in fake.llamadas if n == "publicar_foto_facebook")
+        self.assertEqual(llamada_fb, ruta_imagen_esperada)
+        # nunca se marca como "generada automáticamente": es la imagen fija configurada.
+        self.assertFalse(self.db.obtener(entrada.noticia_id)["imagen_generada_automaticamente"])
+
+    def test_no_se_publica_dos_veces_el_mismo_dia_ni_con_reintento(self):
+        entrada = reservar_franja_institucional(self.db, ahora=AHORA)
+        fake = FakeClienteMeta()
+
+        publicar_franja(self.db, entrada.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        llamadas_antes = len(fake.llamadas)
+
+        # Reservar de nuevo el mismo día (idempotente) y volver a publicar
+        # (como pasaría en el próximo ciclo del Motor, o un reintento).
+        reservar_franja_institucional(self.db, ahora=AHORA)
+        resultado_2 = publicar_franja(
+            self.db, entrada.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=AHORA
+        )
+
+        estados = {r.red_social: r.estado for r in resultado_2.redes}
+        self.assertEqual(estados, {"facebook": "omitido", "instagram": "omitido"})
+        self.assertEqual(len(fake.llamadas), llamadas_antes)  # ningún POST nuevo
+
+        # Vía reintentar_publicaciones también, por si quedó en error.
+        resultados_reintento = reintentar_publicaciones(self.db, cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        self.assertEqual(resultados_reintento, [])  # nada en estado 'error': no hay nada que reintentar
+        self.assertEqual(len(fake.llamadas), llamadas_antes)
+
+    def test_no_bloqueada_por_deduplicacion_general_al_dia_siguiente(self):
+        # El texto y la imagen son intencionalmente idénticos día a día: la
+        # deduplicación general (por fingerprint de contenido) NO debe
+        # bloquear la institucional de hoy contra la de ayer.
+        ahora_dia_1 = AHORA
+        ahora_dia_2 = AHORA.replace(day=13)
+        fake = FakeClienteMeta()
+
+        entrada_1 = reservar_franja_institucional(self.db, ahora=ahora_dia_1)
+        publicar_franja(
+            self.db, entrada_1.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=ahora_dia_1
+        )
+
+        entrada_2 = reservar_franja_institucional(self.db, ahora=ahora_dia_2)
+        self.assertNotEqual(entrada_1.noticia_id, entrada_2.noticia_id)
+
+        resultado_2 = publicar_franja(
+            self.db, entrada_2.fecha, HORA_INSTITUCIONAL, cliente_fb=fake, cliente_ig=fake, ahora=ahora_dia_2
+        )
+
+        self.assertEqual(resultado_2.resultado, "procesada")
+        estados = {r.red_social: r.estado for r in resultado_2.redes}
+        self.assertEqual(estados, {"facebook": "publicado", "instagram": "publicado"})
+
+    def test_no_interfiere_con_la_deduplicacion_de_noticias_reales(self):
+        # Control: una noticia real que sí comparte contenido con otra
+        # noticia real sigue bloqueándose como siempre (la excepción es
+        # solo para origen_ingreso="institucional", no para todo el sistema).
+        a = _noticia(
+            self.db, 1,
+            titulo_original="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+            titulo_preparado="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+        )
+        b = _noticia(
+            self.db, 2,
+            titulo_original="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+            titulo_preparado="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+        )
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", "10:00", "normal", "local", b.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        resultado_b = publicar_franja(self.db, "2026-08-12", "10:00", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado_b.resultado, "duplicado_bloqueado")
 
 
 if __name__ == "__main__":

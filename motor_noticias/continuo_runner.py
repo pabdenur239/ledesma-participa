@@ -15,8 +15,9 @@ from .ciclo_continuo import (
     publicacion_meta_automatica_habilitada,
 )
 from .db import Database
+from .institucional import HORA_INSTITUCIONAL
 from .meta.cliente import ClienteMetaGraphAPI
-from .meta.publicador import publicar_urgentes, reintentar_publicaciones
+from .meta.publicador import publicar_franja, publicar_urgentes, reintentar_publicaciones
 from .motor_editorial import ZONA_JUJUY
 from .redaccion import crear_redactor
 from .sitio.deploy import desplegar_sitio
@@ -222,6 +223,24 @@ def _publicar_pendientes_meta(db: Database, fecha: str) -> None:
         reintentar_publicaciones(db, cliente_fb=cliente_fb, cliente_ig=cliente_ig, max_pendientes=1)
     except Exception:  # nunca debe interrumpir el ciclo continuo
         logger.exception("Error reintentando publicaciones desde el Motor Continuo")
+
+    try:
+        _publicar_institucional_si_corresponde(db, fecha, cliente_fb, cliente_ig)
+    except Exception:  # nunca debe interrumpir el ciclo continuo
+        logger.exception("Error publicando la institucional desde el Motor Continuo")
+
+
+def _publicar_institucional_si_corresponde(db: Database, fecha: str, cliente_fb, cliente_ig) -> None:
+    """Publica la franja fija institucional (19:30) una vez que esa hora ya
+    llegó — no antes. No depende de ninguna tarea Windows nueva (no se creó
+    ninguna): `publicar_franja` ya es idempotente por sí sola (una franja
+    con ambas redes en 'publicado' se reporta como 'omitido' sin volver a
+    tocar Meta), así que llamarla de nuevo en cada ciclo posterior a las
+    19:30 es seguro — nunca produce una segunda copia el mismo día."""
+    ahora_jujuy = datetime.now(ZONA_JUJUY)
+    if ahora_jujuy.strftime("%H:%M") < HORA_INSTITUCIONAL:
+        return
+    publicar_franja(db, fecha, HORA_INSTITUCIONAL, cliente_fb=cliente_fb, cliente_ig=cliente_ig)
 
 
 def _actualizar_sitio_web(db_path) -> None:

@@ -25,6 +25,7 @@ from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSColl
 from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
 from .db import Database
+from .institucional import reservar_franja_institucional
 from .motor_editorial import generar_agenda, reservar_franja_informe_diario
 from .pipeline import ejecutar_pipeline
 from .redaccion.base import Redactor
@@ -136,7 +137,8 @@ def _actualizar_agenda(db: Database) -> "tuple[bool, Optional[str]]":
     igual."""
     try:
         entrada_informe = reservar_franja_informe_diario(db)
-        entradas = [entrada_informe] + generar_agenda(db)
+        entrada_institucional = reservar_franja_institucional(db)
+        entradas = [entrada_informe, entrada_institucional] + generar_agenda(db)
     except Exception as error:  # nunca debe interrumpir el ciclo continuo
         mensaje = f"Error actualizando agenda: {error}"
         logger.error(mensaje)

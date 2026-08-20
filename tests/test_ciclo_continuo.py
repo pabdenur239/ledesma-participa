@@ -172,7 +172,10 @@ class TestEjecutarCiclo(unittest.TestCase):
         self.assertEqual(segundo_ciclo.total_noticias_nuevas, 0)
         salud = self.db.obtener_salud_fuente("fuente-a")
         self.assertEqual(salud["noticias_nuevas"], 0)
-        self.assertEqual(len(self.db.listar()), 1)
+        # 1 noticia real de la fuente de prueba + 1 institucional del día
+        # (reservada por _actualizar_agenda en cada ciclo, idempotente:
+        # no se duplica entre el primer y el segundo ciclo).
+        self.assertEqual(len(self.db.listar()), 2)
 
     def test_registra_resumen_del_ciclo(self):
         fuentes_prueba = (
@@ -202,7 +205,9 @@ class TestEjecutarCiclo(unittest.TestCase):
             self.assertIsNotNone(salud)
             self.assertEqual(salud["ultimo_resultado"], "ok")
             self.assertIsNotNone(db2.ultimo_ciclo())
-            self.assertEqual(len(db2.listar()), 1)
+            # 1 noticia real + 1 institucional del día (ver comentario en
+            # test_deduplicacion_entre_ciclos).
+            self.assertEqual(len(db2.listar()), 2)
         finally:
             db2.close()
 

@@ -19,6 +19,7 @@ class RevisionEstado(str, Enum):
 class OrigenIngreso(str, Enum):
     AUTOMATICO = "automatico"
     MANUAL = "manual"
+    INSTITUCIONAL = "institucional"
 
 
 @dataclass

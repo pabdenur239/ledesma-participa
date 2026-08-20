@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import List, NamedTuple, Optional
 
 from ..db import Database
+from ..institucional import reservar_franja_institucional
 from ..meta.elegibilidad_automatica import evaluar_elegibilidad_publicacion_automatica
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, RevisionEstado
@@ -20,12 +21,14 @@ logger = logging.getLogger("motor_noticias.meta.programacion")
 def generar_programacion_diaria(
     db: Database, fecha: Optional[str] = None, ahora: Optional[datetime] = None
 ) -> List[EntradaAgenda]:
-    """Reserva la franja fija del informe diario (07:30) y completa las
-    demás franjas por cascada territorial. Idempotente y seguro de llamar
-    repetidas veces (misma garantía que `generar_agenda`)."""
+    """Reserva la franja fija del informe diario (07:30) y de la
+    publicación institucional (19:30), y completa las demás franjas por
+    cascada territorial. Idempotente y seguro de llamar repetidas veces
+    (misma garantía que `generar_agenda`)."""
     entrada_informe = reservar_franja_informe_diario(db, fecha=fecha, ahora=ahora)
+    entrada_institucional = reservar_franja_institucional(db, fecha=fecha, ahora=ahora)
     entradas_cascada = generar_agenda(db, fecha=fecha, ahora=ahora)
-    return [entrada_informe] + entradas_cascada
+    return [entrada_informe, entrada_institucional] + entradas_cascada
 
 
 def aprobar_si_elegible(db: Database, noticia: dict, ahora: Optional[datetime] = None) -> dict:

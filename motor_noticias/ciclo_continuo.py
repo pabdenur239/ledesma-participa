@@ -20,6 +20,7 @@ from .collectors.rss_canal6libertador import (
 )
 from .collectors.rss_infobae import ErrorRecoleccionInfobae, InfobaeRSSCollector
 from .collectors.rss_jujuyaldia import ErrorRecoleccionJujuyAlDia, JujuyAlDiaRSSCollector
+from .collectors.rss_jujuygrafico import ErrorRecoleccionJujuyGrafico, JujuyGraficoRSSCollector
 from .collectors.rss_lanacion import ErrorRecoleccionLaNacion, LaNacionRSSCollector
 from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
 from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
@@ -55,6 +56,7 @@ FUENTES_CONTINUAS = (
     ("somos-jujuy", SomosJujuyRSSCollector, ErrorRecoleccionSomosJujuy),
     ("jujuyaldia", JujuyAlDiaRSSCollector, ErrorRecoleccionJujuyAlDia),
     ("canal6-libertador", Canal6LibertadorRSSCollector, ErrorRecoleccionCanal6Libertador),
+    ("jujuygrafico", JujuyGraficoRSSCollector, ErrorRecoleccionJujuyGrafico),
     ("la-nacion", LaNacionRSSCollector, ErrorRecoleccionLaNacion),
     ("infobae", InfobaeRSSCollector, ErrorRecoleccionInfobae),
 )

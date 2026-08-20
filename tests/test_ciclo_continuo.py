@@ -60,6 +60,7 @@ class TestCicloContinuoEstructura(unittest.TestCase):
                 "somos-jujuy",
                 "jujuyaldia",
                 "canal6-libertador",
+                "jujuygrafico",
                 "la-nacion",
                 "infobae",
             ],

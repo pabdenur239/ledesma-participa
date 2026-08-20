@@ -36,6 +36,10 @@
     "nombre_fuente": "Canal 6 Libertador",
     "url": "https://canalseis.com.ar/feed/"
   },
+  "jujuygrafico": {
+    "nombre_fuente": "Jujuy Gráfico",
+    "url": "https://jujuygrafico.com.ar/feed/"
+  },
   "la_nacion": {
     "nombre_fuente": "La Nación",
     "url": "https://www.lanacion.com.ar/arc/outboundfeeds/rss/"

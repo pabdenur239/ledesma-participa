@@ -1,4 +1,5 @@
 import json
+import re
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -17,8 +18,16 @@ def _sin_acentos(texto: str) -> str:
 
 
 def _contiene_alguna(texto_norm: str, terminos: list) -> Optional[str]:
+    """Busca cada término como palabra completa (límites \\b), no como
+    substring crudo: un término corto como "Libertador" no debe disparar
+    dentro de una palabra más larga que lo contiene, como "Libertadores"
+    (p. ej. "Copa Libertadores", el torneo de fútbol) — bug real detectado
+    en producción: noticias deportivas de Infobae/La Nación sobre la Copa
+    Libertadores se clasificaban como territorio local de Libertador
+    General San Martín y llegaron a publicarse."""
     for termino in terminos:
-        if _sin_acentos(termino) in texto_norm:
+        patron = r"\b" + re.escape(_sin_acentos(termino)) + r"\b"
+        if re.search(patron, texto_norm):
             return termino
     return None
 

@@ -29,6 +29,13 @@ class TestRelevancia(unittest.TestCase):
         self.assertFalse(r["relevante"])
         self.assertIsNotNone(r["motivo"])
 
+    def test_copa_libertadores_no_es_relevante(self):
+        r = clasificar_relevancia(
+            "Flamengo le ganó a Cruzeiro y avanzó en la Copa Libertadores",
+            "El equipo brasileño se clasificó a los cuartos de final del torneo continental.",
+        )
+        self.assertFalse(r["relevante"])
+
     def test_localidad_de_fuente_institucional_es_relevante_sin_mencion_en_el_texto(self):
         r = clasificar_relevancia(
             "Ing. Oscar Jayat nuevo Presidente del BRIPAEM",

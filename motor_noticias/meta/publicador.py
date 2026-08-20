@@ -310,6 +310,47 @@ def _publicar_noticia_en_clave(
     # "omitido (ya publicado)" más abajo, así ninguna red queda fuera del
     # reporte cuando se reingresa a una franja ya completa (idempotente en
     # las tres, no solo en feed).
+    #
+    # Gate de deduplicación en dos capas. Primera capa — identificador más
+    # estable posible: el propio noticia_id. Si esta noticia ya está
+    # `publicada` mientras que ESTA fila (esta clave: esta franja/urgente/
+    # reintento en particular) nunca llegó a publicar nada ella misma, es
+    # que otra franja/circuito distinto ya la publicó primero — sin importar
+    # cómo haya terminado esa misma noticia asignada a dos claves (una
+    # regeneración de agenda concurrente, un selector alternativo, una
+    # carga manual). Bug real corregido: antes esta condición se leía al
+    # revés («si NO está publicada, revisar duplicados») y por eso una
+    # segunda clave sobre la misma noticia ya publicada se colaba derecho
+    # hacia el POST real, sin pasar por ningún chequeo — el propio
+    # `noticia["estado"]` ya alcanzaba para bloquearla y no se usaba.
+    ya_publicada_por_esta_fila = fila_fb["estado"] == "publicado" or fila_ig["estado"] == "publicado"
+    if noticia["estado"] == Estado.PUBLICADA.value and not ya_publicada_por_esta_fila:
+        detalle = f"la noticia #{noticia['id']} ya fue publicada por otra franja/circuito"
+        logger.info(
+            "Franja %s %s bloqueada: noticia #%s ya publicada por otra franja/circuito (mismo noticia_id).",
+            fecha, clave, noticia["id"],
+        )
+        ahora_iso = datetime.now(timezone.utc).isoformat()
+        db.actualizar_programacion_meta(
+            prog_id_fb, "duplicado", ultimo_error=detalle,
+            intentos=fila_fb["intentos"] + 1, actualizada_en=ahora_iso,
+        )
+        db.actualizar_programacion_meta(
+            prog_id_ig, "duplicado", ultimo_error=detalle,
+            intentos=fila_ig["intentos"] + 1, actualizada_en=ahora_iso,
+        )
+        return ResultadoFranja(
+            fecha, clave, noticia["id"], "duplicado_bloqueado",
+            (
+                ResultadoRed("facebook", "omitido", detalle=detalle),
+                ResultadoRed("instagram", "omitido", detalle=detalle),
+            ),
+        )
+
+    # Segunda capa — solo si esta noticia todavía no se publicó por ningún
+    # lado: compara por fingerprint de contenido (URL normalizada o
+    # palabras clave del título) contra OTRAS noticias (id distinto) que
+    # puedan ser la misma nota real bajo un registro interno separado.
     if noticia["estado"] != Estado.PUBLICADA.value:
         duplicado = _buscar_duplicado_ya_publicado(db, noticia, ahora_utc)
         if duplicado is not None:

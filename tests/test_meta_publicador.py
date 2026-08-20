@@ -433,6 +433,63 @@ class TestDeduplicacionEntreCircuitos(BaseTest):
         self.assertEqual(resultado_b.resultado, "duplicado_bloqueado")
         self.assertEqual(len(fake.llamadas), llamadas_antes)
 
+    def test_misma_noticia_id_asignada_a_dos_franjas_no_sale_publicada_dos_veces(self):
+        # Bug real corregido: si la MISMA noticia_id termina asignada a dos
+        # agenda_item distintos (dos franjas normales, o una franja y una
+        # urgente — no importa el mecanismo por el que haya ocurrido: una
+        # regeneración de agenda concurrente, un selector alternativo,
+        # etc.), la segunda franja no debe volver a publicarla de verdad.
+        # Antes, el gate de duplicados solo miraba noticias con OTRO id
+        # (fingerprint de contenido) y se saltaba por completo cuando
+        # noticia["estado"] ya era "publicada" — exactamente la situación
+        # de la segunda franja — así que el segundo POST pasaba derecho.
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", "10:00", "normal", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta()
+
+        resultado_1 = publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        self.assertEqual(resultado_1.resultado, "procesada")
+        estados_1 = {r.red_social: r.estado for r in resultado_1.redes}
+        self.assertEqual(estados_1["facebook"], "publicado")
+        self.assertEqual(estados_1["instagram"], "publicado")
+        llamadas_antes = len(fake.llamadas)
+
+        resultado_2 = publicar_franja(self.db, "2026-08-12", "10:00", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado_2.resultado, "duplicado_bloqueado")
+        self.assertEqual(len(fake.llamadas), llamadas_antes)  # ningún POST nuevo a Meta
+
+        fila_fb_10 = self.db.obtener_programacion_meta("2026-08-12", "10:00", "facebook")
+        self.assertEqual(fila_fb_10["estado"], "duplicado")
+        self.assertIn(f"noticia #{n.id}", fila_fb_10["ultimo_error"])
+        # la fila de las 09:30 (la que sí publicó de verdad) queda intacta
+        fila_fb_9 = self.db.obtener_programacion_meta("2026-08-12", "09:30", "facebook")
+        self.assertEqual(fila_fb_9["estado"], "publicado")
+
+    def test_misma_noticia_id_normal_y_urgente_no_sale_publicada_dos_veces(self):
+        # Misma situación que arriba, pero con las dos claves reales que
+        # usa el sistema para franja fija y urgente ("HH:MM" vs
+        # "urgente-<id>"), no dos franjas fijas.
+        n = _noticia(self.db)
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", n.id, AHORA.isoformat())
+        agenda_urgente_id = self.db.guardar_agenda_item(
+            "2026-08-12", None, "urgente", "local", n.id, AHORA.isoformat()
+        )
+        fake = FakeClienteMeta()
+
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        llamadas_antes = len(fake.llamadas)
+
+        resultados_urgentes = publicar_urgentes(self.db, "2026-08-12", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(len(resultados_urgentes), 1)
+        self.assertEqual(resultados_urgentes[0].resultado, "duplicado_bloqueado")
+        self.assertEqual(len(fake.llamadas), llamadas_antes)
+        clave_urgente = f"urgente-{agenda_urgente_id}"
+        fila_urgente = self.db.obtener_programacion_meta("2026-08-12", clave_urgente, "facebook")
+        self.assertEqual(fila_urgente["estado"], "duplicado")
+
     def test_no_bloquea_noticias_distintas_que_comparten_solo_una_palabra_de_lugar(self):
         # Control negativo: no cualquier coincidencia dispara el bloqueo.
         a = _noticia(

@@ -370,6 +370,21 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
         self.assertEqual(entradas[0].noticia_id, publicada.id)
         self.assertEqual(entradas[0].estado, "existente")
 
+    def test_noticia_ya_publicada_nunca_se_selecciona_para_una_franja_nueva(self):
+        # Caso real reportado: la cascada normal de franjas ("Oportunidades")
+        # reutilizando una noticia ya publicada. Acá la noticia no tiene
+        # ningún agenda_item propio todavía (se publicó por otra vía —
+        # p.ej. el circuito urgente — sin haber ocupado nunca esta franja):
+        # igual debe quedar excluida, porque el propio estado='publicada'
+        # ya la saca de la cascada, no la presencia en `usados`.
+        publicada = _crear_noticia(self.db, "local", fecha_recoleccion=_iso(), estado=Estado.PUBLICADA.value)
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].estado, "sin_candidato")
+        self.assertIsNone(entradas[0].noticia_id)
+        self.assertNotEqual(entradas[0].noticia_id, publicada.id)
+
     def test_sin_candidato_pasa_a_propuesta_cuando_aparece_noticia_valida(self):
         entradas_antes = generar_agenda(self.db, fecha="2026-08-12", horarios=("10:30",), ahora=AHORA)
         self.assertEqual(entradas_antes[0].estado, "sin_candidato")

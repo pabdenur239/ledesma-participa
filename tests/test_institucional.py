@@ -12,8 +12,8 @@ from motor_noticias.institucional import (
 from motor_noticias.models import OrigenIngreso, RevisionEstado
 from motor_noticias.motor_editorial import ORDEN_CASCADA, ZONA_JUJUY, generar_agenda
 
-AHORA = datetime(2026, 8, 21, 19, 30, tzinfo=ZONA_JUJUY)
-AHORA_SIGUIENTE_DIA = datetime(2026, 8, 22, 19, 30, tzinfo=ZONA_JUJUY)
+AHORA = datetime(2026, 8, 21, 20, 30, tzinfo=ZONA_JUJUY)
+AHORA_SIGUIENTE_DIA = datetime(2026, 8, 22, 20, 30, tzinfo=ZONA_JUJUY)
 
 
 class BaseInstitucionalTest(unittest.TestCase):
@@ -67,7 +67,7 @@ class TestReservarFranjaInstitucional(BaseInstitucionalTest):
         self.assertEqual(len(institucionales), 1)
         self.assertEqual(len(self.db.listar_agenda("2026-08-21")), 1)
 
-    def test_dias_distintos_generan_registros_distintos_pero_misma_imagen_y_texto(self):
+    def test_dias_distintos_generan_registros_distintos_y_pueden_variar_texto_e_imagen(self):
         entrada_1 = reservar_franja_institucional(self.db, ahora=AHORA)
         entrada_2 = reservar_franja_institucional(self.db, ahora=AHORA_SIGUIENTE_DIA)
 
@@ -75,20 +75,40 @@ class TestReservarFranjaInstitucional(BaseInstitucionalTest):
         self.assertEqual(entrada_2.fecha, "2026-08-22")
         self.assertEqual(entrada_2.estado, "creado")
 
-        n1 = self.db.obtener(entrada_1.noticia_id)
-        n2 = self.db.obtener(entrada_2.noticia_id)
-        self.assertEqual(n1["titulo_preparado"], n2["titulo_preparado"])
-        self.assertEqual(n1["texto_preparado"], n2["texto_preparado"])
-        self.assertEqual(n1["imagen_publicacion_ruta"], n2["imagen_publicacion_ruta"])  # misma imagen siempre
-
         institucionales = [n for n in self.db.listar() if n["origen_ingreso"] == OrigenIngreso.INSTITUCIONAL.value]
         self.assertEqual(len(institucionales), 2)
 
-    def test_franja_reservada_exactamente_a_las_19_30(self):
+    def test_misma_fecha_siempre_elige_la_misma_variante(self):
+        # Estabilidad dentro del mismo día (varias corridas del ciclo no
+        # deben generar textos distintos para el mismo día): la variante se
+        # elige de forma determinística por fecha, no al azar.
+        entrada_1 = reservar_franja_institucional(self.db, ahora=AHORA)
+        n1 = self.db.obtener(entrada_1.noticia_id)
+
+        db2 = Database(Path(self.tmpdir.name) / "test2.db")
+        entrada_2 = reservar_franja_institucional(db2, ahora=AHORA)
+        n2 = db2.obtener(entrada_2.noticia_id)
+        db2.close()
+
+        self.assertEqual(n1["titulo_preparado"], n2["titulo_preparado"])
+        self.assertEqual(n1["texto_preparado"], n2["texto_preparado"])
+
+    def test_rota_entre_variantes_configuradas_segun_el_dia(self):
+        from motor_noticias.institucional import _elegir_variante, _cargar_config
+
+        config = _cargar_config()
+        variantes_config = config["variantes"]
+        self.assertGreaterEqual(len(variantes_config), 2, "debe haber más de una variante para poder rotar")
+
+        elegidas = {_elegir_variante(f"2026-08-{dia:02d}", config)["titulo"] for dia in range(1, 20)}
+        self.assertGreater(len(elegidas), 1, "distintos días deben poder elegir distintas variantes")
+
+    def test_franja_reservada_exactamente_a_las_20_30(self):
         entrada = reservar_franja_institucional(self.db, ahora=AHORA)
-        item = self.db.obtener_agenda_item("2026-08-21", "19:30")
+        item = self.db.obtener_agenda_item("2026-08-21", "20:30")
         self.assertIsNotNone(item)
         self.assertEqual(item["noticia_id"], entrada.noticia_id)
+        self.assertEqual(HORA_INSTITUCIONAL, "20:30")
 
 
 class TestInstitucionalNoInterfiereConLaCascadaNormal(BaseInstitucionalTest):

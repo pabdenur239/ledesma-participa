@@ -20,6 +20,7 @@ from typing import NamedTuple, Optional
 from ..db import Database
 from ..dedupe import es_mismo_contenido, palabras_clave
 from ..models import Estado, OrigenIngreso, RevisionEstado
+from ..motor_editorial import HORA_NOTICIA_DEL_DIA
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
 from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
@@ -308,7 +309,17 @@ def _publicar_noticia_en_clave(
     # hoy contra la de ayer. No afecta al primer gate (mismo noticia_id
     # publicado por otra clave): ese sigue protegiendo también a la
     # institucional, que tiene una fila de noticia nueva y propia cada día.
-    es_institucional = noticia.get("origen_ingreso") == OrigenIngreso.INSTITUCIONAL.value
+    #
+    # El Resumen del Día (motor_noticias.resumen_dia, agregado 20/8/2026)
+    # tiene el mismo problema por una razón distinta: su texto necesariamente
+    # menciona títulos de noticias reales ya publicadas hoy, así que
+    # comparado por fingerprint contra esas mismas noticias quedaría
+    # bloqueado como "duplicado" de algo que en realidad solo está
+    # resumiendo, no republicando.
+    es_institucional = noticia.get("origen_ingreso") in (
+        OrigenIngreso.INSTITUCIONAL.value,
+        OrigenIngreso.RESUMEN_DIARIO.value,
+    )
 
     creada_en = datetime.now(timezone.utc).isoformat()
     prog_id_fb = db.reservar_programacion_meta(fecha, clave, noticia["id"], "facebook", creada_en)
@@ -393,6 +404,15 @@ def _publicar_noticia_en_clave(
     except ErrorPreparacionFacebook as error:
         logger.error("Franja %s %s bloqueada: %s", fecha, clave, error)
         return ResultadoFranja(fecha, clave, noticia["id"], "bloqueada_sin_imagen")
+
+    # Noticia del Día: misma noticia real, mismo pipeline de preparación
+    # (no se regenera nada, "mejor selección de imagen" = la que ya eligió
+    # `preparar_publicacion` para esa noticia), solo se le agrega un
+    # encabezado distintivo al texto de esta publicación puntual — nunca se
+    # modifica el registro guardado de la noticia (titulo_preparado/
+    # texto_preparado quedan intactos para cualquier otro uso).
+    if clave == HORA_NOTICIA_DEL_DIA:
+        contenido.post_principal = f"🌟 NOTICIA DEL DÍA\n\n{contenido.post_principal}"
 
     if not contenido.imagen_url:
         logger.error("Franja %s %s bloqueada: sin imagen segura para publicar.", fecha, clave)

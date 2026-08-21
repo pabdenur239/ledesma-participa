@@ -47,6 +47,7 @@ def normalizar_noticia(cruda: dict) -> Noticia:
         localidad=cruda.get("localidad") or None,
         tiene_imagen_original=bool(imagen_url),
         imagen_publicacion_ruta=imagen_url,
+        categoria_tematica=cruda.get("categoria_tematica") or None,
     )
 
 

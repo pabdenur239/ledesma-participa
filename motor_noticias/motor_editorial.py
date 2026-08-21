@@ -21,16 +21,61 @@ REVISIONES_PROTEGIDAS = (RevisionEstado.APROBADA.value, RevisionEstado.RECHAZADA
 # proyecto es exclusivamente stdlib + Pillow).
 ZONA_JUJUY = timezone(timedelta(hours=-3), name="America/Argentina/Jujuy")
 
-# Franjas fijas de la Agenda Editorial / programación de publicación en Meta.
-# 07:30 está reservada exclusivamente al informe diario (clima/dólar, ver
-# `reservar_franja_informe_diario`); las 14 franjas restantes siguen la
-# cascada territorial normal, una por hora entre las 09:00 y las 22:00.
-# Entre las 15, cubren el volumen diario de 12 a 15 contenidos pedido para
-# la publicación automática en Meta.
+# Franjas fijas de la Agenda Editorial / programación de publicación en Meta
+# (actualizado 20/8/2026, ver informe de cambio de frecuencia/mezcla).
+# Franjas de mayor visibilidad a intervalos de 15 minutos: 07:00-09:00,
+# 12:00-14:00 y 18:00-23:00 (fin de ventana exclusivo, ej. "18:00-23:00"
+# genera hasta 22:45). Resto del día a intervalos de 30 minutos. Cuatro
+# horas quedan reservadas fuera de la cascada (informe diario, Noticia del
+# Día, institucional, Resumen del Día) — nunca compiten por espacio con la
+# cascada territorial normal ni entre sí.
 HORA_INFORME_DIARIO = "07:30"
-HORARIOS_DEFAULT = (
-    "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00",
-    "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
+HORA_NOTICIA_DEL_DIA = "13:00"
+HORA_RESUMEN_DEL_DIA = "22:30"
+# La institucional vive en motor_noticias.institucional (institucional.py
+# importa este módulo, así que la hora no se importa acá para no crear un
+# ciclo): debe coincidir exactamente con `institucional.HORA_INSTITUCIONAL`.
+HORA_INSTITUCIONAL_RESERVADA = "20:30"
+
+VENTANAS_ALTA_VISIBILIDAD = (("07:00", "09:00"), ("12:00", "14:00"), ("18:00", "23:00"))
+INTERVALO_ALTA_VISIBILIDAD_MIN = 15
+INTERVALO_NORMAL_MIN = 30
+
+
+def _en_alguna_ventana(minutos_del_dia: int, ventanas_min: tuple) -> bool:
+    return any(inicio <= minutos_del_dia < fin for inicio, fin in ventanas_min)
+
+
+def _generar_horarios_dia(
+    ventanas_alta_visibilidad=VENTANAS_ALTA_VISIBILIDAD,
+    intervalo_alta_min: int = INTERVALO_ALTA_VISIBILIDAD_MIN,
+    intervalo_normal_min: int = INTERVALO_NORMAL_MIN,
+    horas_reservadas: tuple = (),
+) -> tuple:
+    """Genera la lista completa de franjas "HH:MM" de un día calendario
+    (00:00 a 23:30), en orden cronológico, a 15 minutos dentro de las
+    ventanas de alta visibilidad y a 30 minutos en el resto, excluyendo las
+    horas reservadas (informe diario, Noticia del Día, institucional,
+    Resumen del Día). Se recalcula una sola vez al importar el módulo — no
+    depende de nada externo, es determinística."""
+    ventanas_min = [
+        (int(i.split(":")[0]) * 60 + int(i.split(":")[1]), int(f.split(":")[0]) * 60 + int(f.split(":")[1]))
+        for i, f in ventanas_alta_visibilidad
+    ]
+    reservadas = set(horas_reservadas)
+    horarios = []
+    minutos = 0
+    while minutos < 24 * 60:
+        intervalo = intervalo_alta_min if _en_alguna_ventana(minutos, ventanas_min) else intervalo_normal_min
+        hora = f"{minutos // 60:02d}:{minutos % 60:02d}"
+        if hora not in reservadas:
+            horarios.append(hora)
+        minutos += intervalo
+    return tuple(horarios)
+
+
+HORARIOS_DEFAULT = _generar_horarios_dia(
+    horas_reservadas=(HORA_INFORME_DIARIO, HORA_NOTICIA_DEL_DIA, HORA_INSTITUCIONAL_RESERVADA, HORA_RESUMEN_DEL_DIA)
 )
 ANTIGUEDAD_MAXIMA_HORAS = 48
 # Línea editorial (prioridad acumulativa, no cuota rígida diaria): Libertador
@@ -62,19 +107,59 @@ def _es_franja_pasada(fecha: str, hora: str, ahora: datetime) -> bool:
     return momento <= ahora
 
 
-def _buscar_candidato_cascada(db: Database, usados: set, fecha_limite: str) -> Optional[dict]:
+# Categorías temáticas (no geográficas) que diversifican la cascada por
+# debajo de nacional, agregadas el 20/8/2026 junto con sus fuentes propias
+# (espectáculos, internacional, gastronomía, salud). Prioridad editorial
+# vigente: LOCAL > DEPARTAMENTAL > PROVINCIAL > NACIONAL > INTERNACIONAL —
+# esta lista es exactamente el nivel "internacional y variedad temática" de
+# esa prioridad, nunca compite con local/departamental/provincial/nacional
+# (solo se intenta después de agotar los cuatro).
+CATEGORIAS_TEMATICAS_DIVERSIFICACION = ("internacional", "salud", "gastronomia", "espectaculos")
+
+
+def _buscar_candidato_tematico(
+    db: Database, usados: set, fecha_limite: str, conteo_categorias: dict
+) -> Optional[dict]:
+    """Entre las categorías temáticas disponibles, prueba primero la que
+    menos se usó en lo que va de esta corrida (evita monotonía sin imponer
+    una cuota rígida por franja: "no forzar porcentajes rígidos"). Devuelve
+    el candidato encontrado y dejar que el llamador registre en
+    `conteo_categorias` cuál categoría ganó."""
+    orden = sorted(CATEGORIAS_TEMATICAS_DIVERSIFICACION, key=lambda c: conteo_categorias.get(c, 0))
+    for categoria in orden:
+        candidato = db.candidato_tematico(categoria, usados, fecha_limite)
+        if candidato:
+            return candidato
+    return None
+
+
+def _buscar_candidato_cascada(
+    db: Database, usados: set, fecha_limite: str, conteo_categorias: Optional[dict] = None
+) -> Optional[dict]:
     """Recorre la cascada territorial obligatoria (local → departamental →
     provincial → nacional) y devuelve el primer candidato apto que
     encuentre. Nunca elige un nivel inferior si existe uno superior apto.
-    Como último recurso, si ningún nivel territorial tiene candidato, prueba
-    con la mejor noticia `sin_clasificar` disponible, pero solo si es
-    contenido de entretenimiento/espectáculos/curiosidades/tendencia viral
-    (nunca una noticia sin_clasificar cualquiera, para no publicar algo sin
-    criterio editorial)."""
+
+    Si ningún nivel territorial tiene candidato, antes de recurrir al
+    fallback genérico se prueba con las categorías temáticas dedicadas
+    (internacional/salud/gastronomía/espectáculos: fuentes propias, no
+    substrings de "sin_clasificar" cualquiera) para diversificar sin bajar
+    el criterio editorial. Recién si tampoco hay nada ahí, se prueba con la
+    mejor noticia `sin_clasificar` genérica, pero solo si es contenido de
+    entretenimiento/curiosidades/tendencia viral verificable (nunca una
+    noticia sin_clasificar cualquiera)."""
     for territorio in ORDEN_CASCADA:
         candidato = db.candidato_editorial(territorio, usados, fecha_limite)
         if candidato:
             return candidato
+
+    conteo_categorias = conteo_categorias if conteo_categorias is not None else {}
+    candidato_tematico = _buscar_candidato_tematico(db, usados, fecha_limite, conteo_categorias)
+    if candidato_tematico:
+        categoria = candidato_tematico.get("categoria_tematica")
+        if categoria:
+            conteo_categorias[categoria] = conteo_categorias.get(categoria, 0) + 1
+        return candidato_tematico
 
     candidato_sin_clasificar = db.candidato_editorial("sin_clasificar", usados, fecha_limite)
     if candidato_sin_clasificar and es_entretenimiento_o_curiosidad(
@@ -139,6 +224,30 @@ def reservar_franja_informe_diario(
     return EntradaAgenda(fecha, hora, "normal", None, None, "sin_candidato")
 
 
+def resolver_urgentes(db: Database, fecha: str, usados: set, fecha_limite: str) -> List[EntradaAgenda]:
+    """Resuelve las propuestas urgentes (local/departamental) y las reserva
+    de inmediato — modifica `usados` en el lugar (agrega los ids recién
+    reservados) para que cualquier selección posterior en el mismo ciclo
+    (cascada normal, Noticia del Día, Resumen del Día) ya las vea como
+    ocupadas y nunca las vuelva a tomar para otra cosa. Extraído de
+    `generar_agenda` (que la sigue llamando primero, igual que siempre) para
+    poder llamarla también desde `noticia_del_dia`/`resumen_dia` ANTES de su
+    propia selección — evitan así "robarle" a una urgente recién detectada
+    la noticia que le corresponde salir de inmediato, sin esperar franja
+    (bug real corregido 20/8/2026: Noticia del Día podía tomar una noticia
+    local recién marcada urgente antes de que `generar_agenda` llegara a
+    proponerla, dejándola sin su propuesta urgente aparte). Idempotente:
+    una urgente ya reservada en una llamada anterior queda en `usados` y
+    `candidatos_urgentes` no la vuelve a proponer."""
+    entradas = []
+    for urgente in db.candidatos_urgentes(usados, fecha_limite):
+        creada_en = datetime.now(timezone.utc).isoformat()
+        db.guardar_agenda_item(fecha, None, "urgente", urgente["territorio"], urgente["id"], creada_en)
+        usados.add(urgente["id"])
+        entradas.append(EntradaAgenda(fecha, None, "urgente", urgente["territorio"], urgente["id"], "creado"))
+    return entradas
+
+
 def generar_agenda(
     db: Database,
     fecha: Optional[str] = None,
@@ -171,16 +280,11 @@ def generar_agenda(
     fecha_limite = _fecha_limite_antiguedad(ahora_utc)
 
     usados = db.noticias_ids_usadas_en_agenda()
-    entradas: List[EntradaAgenda] = []
-
-    # Las urgentes se resuelven primero: si una noticia local/departamental
-    # urgente fuera además el mejor candidato "normal" disponible, tiene que
-    # salir como propuesta urgente aparte, no consumirse en una franja fija.
-    for urgente in db.candidatos_urgentes(usados, fecha_limite):
-        creada_en = datetime.now(timezone.utc).isoformat()
-        db.guardar_agenda_item(fecha, None, "urgente", urgente["territorio"], urgente["id"], creada_en)
-        usados.add(urgente["id"])
-        entradas.append(EntradaAgenda(fecha, None, "urgente", urgente["territorio"], urgente["id"], "creado"))
+    entradas: List[EntradaAgenda] = list(resolver_urgentes(db, fecha, usados, fecha_limite))
+    # Cuenta, dentro de esta corrida, cuántas veces se usó cada categoría
+    # temática de diversificación: alimenta `_buscar_candidato_tematico`
+    # para preferir la menos usada (evitar monotonía sin cuota rígida).
+    conteo_categorias_tematicas: dict = {}
 
     for hora in horarios:
         existente = db.obtener_agenda_item(fecha, hora)
@@ -222,7 +326,9 @@ def generar_agenda(
         # siendo el mejor, la búsqueda lo vuelve a encontrar y no cambia nada.
         id_existente_noticia = noticia_existente["id"] if noticia_existente else None
         usados_para_busqueda = usados - {id_existente_noticia} if id_existente_noticia else usados
-        candidato = _buscar_candidato_cascada(db, usados_para_busqueda, fecha_limite)
+        candidato = _buscar_candidato_cascada(
+            db, usados_para_busqueda, fecha_limite, conteo_categorias_tematicas
+        )
         id_existente_item = existente["id"] if existente else None
 
         if candidato:

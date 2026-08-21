@@ -3,17 +3,18 @@ mismo texto todos los días, para dar a conocer la página, explicar de qué
 se trata y promocionar el sitio web — no es una noticia real.
 
 No pasa por clasificación territorial, elegibilidad automática ni riesgo
-editorial: el contenido es fijo, siempre el mismo, ya vetado por diseño
-(no depende de ninguna fuente externa ni de redacción). Reutiliza el
-mismo mecanismo de identidad por URL que ya usa el informe diario
+editorial: el contenido es fijo (elegido entre unas pocas variantes
+rotativas, ver `_elegir_variante`), ya vetado por diseño (no depende de
+ninguna fuente externa ni de redacción). Reutiliza el mismo mecanismo de
+identidad por URL que ya usa el informe diario
 (`motor_noticias.informe_diario`) para garantizar como máximo una
-publicación institucional por día, en su propia franja fija (19:30, fuera
-de `HORARIOS_DEFAULT`): nunca compite por espacio con la cascada
-territorial normal ni con las urgentes, y `origen_ingreso = "institucional"`
-la excluye explícitamente del gate de deduplicación por contenido (ver
-`motor_noticias.meta.publicador`) y de la Story — sin esa marca, el propio
-texto repetido día a día quedaría bloqueado como "duplicado" del día
-anterior."""
+publicación institucional por día, en su propia franja fija (20:30, fuera
+de `HORARIOS_DEFAULT`, actualizada 20/8/2026 — antes 19:30): nunca compite
+por espacio con la cascada territorial normal ni con las urgentes, y
+`origen_ingreso = "institucional"` la excluye explícitamente del gate de
+deduplicación por contenido (ver `motor_noticias.meta.publicador`) y de la
+Story — sin esa marca, el propio texto repetido día a día quedaría
+bloqueado como "duplicado" del día anterior."""
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -24,13 +25,15 @@ from .db import Database
 from .dedupe import normalizar_url
 from .meta.imagen import generar_placa
 from .models import Estado, Noticia, OrigenIngreso, RevisionEstado
-from .motor_editorial import EntradaAgenda, ZONA_JUJUY
+from .motor_editorial import EntradaAgenda, HORA_INSTITUCIONAL_RESERVADA, ZONA_JUJUY
 
 CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "config" / "institucional.json"
 
-# Fuera de HORARIOS_DEFAULT (horas en punto) e distinta de
-# HORA_INFORME_DIARIO: nunca colisiona con ninguna franja existente.
-HORA_INSTITUCIONAL = "19:30"
+# Debe coincidir exactamente con `motor_editorial.HORA_INSTITUCIONAL_RESERVADA`
+# (motor_editorial no puede importar esta constante porque este módulo ya
+# importa motor_editorial: se referencia acá para que el resto del código
+# de este archivo no tenga que repetir el literal "20:30").
+HORA_INSTITUCIONAL = HORA_INSTITUCIONAL_RESERVADA
 NOMBRE_FUENTE = "Ledesma Participa"
 TERRITORIO_INSTITUCIONAL = "institucional"
 
@@ -38,6 +41,18 @@ TERRITORIO_INSTITUCIONAL = "institucional"
 def _cargar_config(path: Optional[Path] = None) -> dict:
     with open(path or CONFIG_PATH_DEFAULT, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _elegir_variante(fecha_iso: str, config: dict) -> dict:
+    """Rota entre las variantes configuradas según el día del año: mismo
+    texto para todo un día (para no publicar dos piezas distintas el mismo
+    día si el ciclo corre varias veces), pero distinto de un día a otro —
+    "variar texto e imagen para no repetir exactamente la misma pieza todos
+    los días". La placa se genera siempre a partir del texto elegido, así
+    que la imagen varía junto con el texto sin necesitar assets aparte."""
+    variantes = config.get("variantes") or [config]  # compat: config vieja de una sola pieza
+    dia_del_anio = datetime.strptime(fecha_iso, "%Y-%m-%d").timetuple().tm_yday
+    return variantes[dia_del_anio % len(variantes)]
 
 
 def _hash_institucional(fecha_iso: str) -> str:
@@ -55,13 +70,14 @@ def _url_institucional(fecha_iso: str) -> str:
 
 
 def _crear_noticia_institucional(db: Database, fecha_iso: str, ahora_local: datetime, config: dict) -> int:
+    variante = _elegir_variante(fecha_iso, config)
     imagen_ruta = str(
-        generar_placa(config["titulo"], config["texto"], fuente="", localidad="")
+        generar_placa(variante["titulo"], variante["texto"], fuente="", localidad="")
     )
     noticia = Noticia(
         id=None,
-        titulo_original=config["titulo"],
-        texto_original=config["texto"],
+        titulo_original=variante["titulo"],
+        texto_original=variante["texto"],
         # Vacío a propósito: `generar_contenido_facebook` agrega "Fuente y
         # nota completa: {url_fuente}" solo si no está vacío. Esta
         # publicación no tiene una nota fuente externa que citar (el sitio
@@ -77,8 +93,8 @@ def _crear_noticia_institucional(db: Database, fecha_iso: str, ahora_local: date
         fecha_recoleccion=ahora_local.astimezone(timezone.utc).isoformat(),
         estado=Estado.PREPARADA.value,
         hash_contenido=_hash_institucional(fecha_iso),
-        titulo_preparado=config["titulo"],
-        texto_preparado=config["texto"],
+        titulo_preparado=variante["titulo"],
+        texto_preparado=variante["texto"],
         # Aprobada de entrada (revision_automatica=True para que quede
         # auditable el origen): contenido fijo, sin nada que un humano deba
         # revisar caso por caso. territorio="institucional" (fuera de

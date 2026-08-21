@@ -153,6 +153,16 @@ COLUMNAS_STORY = {
     "imagen_story_ruta": "TEXT",
 }
 
+# Categoría temática (espectaculos/internacional/gastronomia/salud/...) de
+# fuentes no geográficas agregadas al padrón: aditiva, no reemplaza ni
+# interfiere con `territorio` (que sigue siendo la única clasificación que
+# usa la cascada editorial para seleccionar qué se publica). Se completa
+# directamente desde el collector (fuente temáticamente dedicada a un solo
+# tema, igual criterio que `localidad` para fuentes geográficas).
+COLUMNAS_CATEGORIA_TEMATICA = {
+    "categoria_tematica": "TEXT",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -170,6 +180,7 @@ class Database:
         self._migrar_columnas(COLUMNAS_REVISION_AUTOMATICA)
         self._migrar_columnas(COLUMNAS_PROGRAMACION_META_EXTRA, tabla="programacion_meta")
         self._migrar_columnas(COLUMNAS_STORY)
+        self._migrar_columnas(COLUMNAS_CATEGORIA_TEMATICA)
 
     def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
         """Migración no destructiva, aditiva y segura entre procesos: varios
@@ -230,8 +241,9 @@ class Database:
                 requiere_revision_especial, motivo_revision_especial, categoria_riesgo,
                 tiene_imagen_original, imagen_publicacion_ruta, imagen_generada_automaticamente,
                 territorio, motivo_territorio, urgente,
-                origen_ingreso, localidad_informada, observacion_interna, revision_automatica
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                origen_ingreso, localidad_informada, observacion_interna, revision_automatica,
+                categoria_tematica
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 noticia.titulo_original,
@@ -265,6 +277,7 @@ class Database:
                 noticia.localidad_informada,
                 noticia.observacion_interna,
                 int(noticia.revision_automatica),
+                noticia.categoria_tematica,
             ),
         )
         self.conn.commit()
@@ -475,6 +488,51 @@ class Database:
             "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
         )
         params: list = [Estado.PREPARADA.value, territorio, RevisionEstado.RECHAZADA.value, fecha_limite]
+        if excluidos_ids:
+            placeholders = ",".join("?" * len(excluidos_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(sorted(excluidos_ids))
+        query += " ORDER BY fecha_recoleccion DESC LIMIT 1"
+        cur = self.conn.execute(query, params)
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def publicadas_para_resumen(self, fecha_limite: str) -> list:
+        """Noticias reales publicadas (`estado = 'publicada'`) desde
+        `fecha_limite`, para armar el Resumen del Día: excluye las
+        publicaciones sintéticas propias (institucional/resumen_diario/
+        informe diario — este último queda afuera por su propio
+        `nombre_fuente`, no tiene un origen_ingreso especial) para no
+        resumir una publicación sobre la página como si fuera una noticia
+        real del día."""
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE estado = ? AND fecha_recoleccion >= ? "
+            "AND origen_ingreso NOT IN (?, ?) "
+            "ORDER BY fecha_recoleccion DESC",
+            (
+                Estado.PUBLICADA.value,
+                fecha_limite,
+                "institucional",
+                "resumen_diario",
+            ),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def candidato_tematico(self, categoria_tematica: str, excluidos_ids: set, fecha_limite: str) -> Optional[dict]:
+        """Mejor candidato `preparada` de una categoría temática dada
+        (espectaculos/internacional/gastronomia/salud) para el nivel de
+        diversificación de la cascada editorial: mismas protecciones que
+        `candidato_editorial` (no rechazado, no usado, sin riesgo editorial
+        obligatorio, dentro de la antigüedad máxima), filtrando por
+        `categoria_tematica` en vez de `territorio` — se usa como último
+        nivel antes del fallback genérico de entretenimiento/curiosidades,
+        nunca reemplaza a local/departamental/provincial/nacional."""
+        query = (
+            "SELECT * FROM noticias WHERE estado = ? AND categoria_tematica = ? "
+            "AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
+        )
+        params: list = [Estado.PREPARADA.value, categoria_tematica, RevisionEstado.RECHAZADA.value, fecha_limite]
         if excluidos_ids:
             placeholders = ",".join("?" * len(excluidos_ids))
             query += f" AND id NOT IN ({placeholders})"

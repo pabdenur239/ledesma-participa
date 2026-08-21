@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, NamedTuple, Optional
 
+from .collectors._rss_generico import ErrorRecoleccionRSSGenerico
 from .collectors.html_infoyungas import ErrorRecoleccionInfoYungas, InfoYungasHTMLCollector
 from .collectors.html_jujuyalmomento import (
     ErrorRecoleccionJujuyAlMomento,
@@ -14,21 +15,42 @@ from .collectors.html_municipio_libertador import (
     MunicipioLibertadorHTMLCollector,
 )
 from .collectors.html_tribuno_jujuy import ErrorRecoleccionTribunoJujuy, TribunoJujuyHTMLCollector
+from .collectors.rss_bbc_mundo import BBCMundoRSSCollector
 from .collectors.rss_canal6libertador import (
     Canal6LibertadorRSSCollector,
     ErrorRecoleccionCanal6Libertador,
 )
+from .collectors.rss_caras import CarasRSSCollector
+from .collectors.rss_directo_al_paladar import DirectoAlPaladarRSSCollector
+from .collectors.rss_el_gourmet import ElGourmetRSSCollector
+from .collectors.rss_france24_espanol import France24EspanolRSSCollector
+from .collectors.rss_fundacion_favaloro import FundacionFavaloroRSSCollector
 from .collectors.rss_infobae import ErrorRecoleccionInfobae, InfobaeRSSCollector
 from .collectors.rss_jujuyaldia import ErrorRecoleccionJujuyAlDia, JujuyAlDiaRSSCollector
 from .collectors.rss_jujuygrafico import ErrorRecoleccionJujuyGrafico, JujuyGraficoRSSCollector
 from .collectors.rss_lanacion import ErrorRecoleccionLaNacion, LaNacionRSSCollector
+from .collectors.rss_medlineplus_es import MedlinePlusEsRSSCollector
+from .collectors.rss_ministerio_salud_argentina import MinisterioSaludArgentinaRSSCollector
+from .collectors.rss_oms_who import OMSWHORSSCollector
+from .collectors.rss_ops_paho import OPSPAHORSSCollector
+from .collectors.rss_paparazzi import PaparazziRSSCollector
+from .collectors.rss_paulina_cocina import PaulinaCocinaRSSCollector
 from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
 from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
+from .collectors.rss_tmz import TMZRSSCollector
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
 from .db import Database
 from .institucional import reservar_franja_institucional
-from .motor_editorial import generar_agenda, reservar_franja_informe_diario
+from .motor_editorial import (
+    ZONA_JUJUY,
+    _fecha_limite_antiguedad,
+    generar_agenda,
+    reservar_franja_informe_diario,
+    resolver_urgentes,
+)
+from .noticia_del_dia import reservar_franja_noticia_del_dia
 from .pipeline import ejecutar_pipeline
+from .resumen_dia import reservar_franja_resumen_del_dia
 from .redaccion.base import Redactor
 from .redaccion.mock import RedactorMock
 
@@ -59,6 +81,22 @@ FUENTES_CONTINUAS = (
     ("jujuygrafico", JujuyGraficoRSSCollector, ErrorRecoleccionJujuyGrafico),
     ("la-nacion", LaNacionRSSCollector, ErrorRecoleccionLaNacion),
     ("infobae", InfobaeRSSCollector, ErrorRecoleccionInfobae),
+    # Fuentes temáticas (no geográficas) agregadas el 20/8/2026: espectáculos,
+    # internacional, gastronomía, salud. Ver informe de incorporación de
+    # fuentes para el detalle de qué se descartó y por qué.
+    ("paparazzi", PaparazziRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("caras", CarasRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("tmz", TMZRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("bbc-mundo", BBCMundoRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("france24-espanol", France24EspanolRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("paulina-cocina", PaulinaCocinaRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("el-gourmet", ElGourmetRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("directo-al-paladar", DirectoAlPaladarRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("ministerio-salud-argentina", MinisterioSaludArgentinaRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("ops-paho", OPSPAHORSSCollector, ErrorRecoleccionRSSGenerico),
+    ("oms-who", OMSWHORSSCollector, ErrorRecoleccionRSSGenerico),
+    ("medlineplus-es", MedlinePlusEsRSSCollector, ErrorRecoleccionRSSGenerico),
+    ("fundacion-favaloro", FundacionFavaloroRSSCollector, ErrorRecoleccionRSSGenerico),
 )
 
 
@@ -140,7 +178,26 @@ def _actualizar_agenda(db: Database) -> "tuple[bool, Optional[str]]":
     try:
         entrada_informe = reservar_franja_informe_diario(db)
         entrada_institucional = reservar_franja_institucional(db)
-        entradas = [entrada_informe, entrada_institucional] + generar_agenda(db)
+
+        # Las urgentes se resuelven ANTES de Noticia del Día/Resumen del
+        # Día: una noticia local/departamental recién marcada urgente debe
+        # reservarse para su propia propuesta urgente antes de que cualquier
+        # otra selección (incluida Noticia del Día) pueda tomarla para otra
+        # cosa (bug real corregido 20/8/2026, ver `resolver_urgentes`).
+        ahora = datetime.now(ZONA_JUJUY)
+        fecha = ahora.strftime("%Y-%m-%d")
+        fecha_limite = _fecha_limite_antiguedad(ahora.astimezone(timezone.utc))
+        usados = db.noticias_ids_usadas_en_agenda()
+        entradas_urgentes = resolver_urgentes(db, fecha, usados, fecha_limite)
+
+        entrada_noticia_del_dia = reservar_franja_noticia_del_dia(db)
+        entrada_resumen_del_dia = reservar_franja_resumen_del_dia(db)
+        entradas = (
+            [entrada_informe, entrada_institucional]
+            + list(entradas_urgentes)
+            + [entrada_noticia_del_dia, entrada_resumen_del_dia]
+            + generar_agenda(db)
+        )
     except Exception as error:  # nunca debe interrumpir el ciclo continuo
         mensaje = f"Error actualizando agenda: {error}"
         logger.error(mensaje)

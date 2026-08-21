@@ -20,6 +20,7 @@ class OrigenIngreso(str, Enum):
     AUTOMATICO = "automatico"
     MANUAL = "manual"
     INSTITUCIONAL = "institucional"
+    RESUMEN_DIARIO = "resumen_diario"
 
 
 @dataclass
@@ -56,3 +57,4 @@ class Noticia:
     localidad_informada: Optional[str] = None
     observacion_interna: Optional[str] = None
     revision_automatica: bool = False
+    categoria_tematica: Optional[str] = None

@@ -29,6 +29,7 @@ def _crear_noticia(
     urgente: bool = False,
     estado: str = Estado.PREPARADA.value,
     titulo: str = None,
+    categoria_tematica: str = None,
 ) -> Noticia:
     n = next(_CONTADOR)
     titulo = titulo or f"Noticia de prueba {territorio} #{n}"
@@ -50,6 +51,7 @@ def _crear_noticia(
         titulo_preparado=titulo,
         texto_preparado="Texto preparado de prueba.",
         urgente=urgente,
+        categoria_tematica=categoria_tematica,
     )
     db.guardar(noticia)
     return noticia
@@ -146,6 +148,49 @@ class TestCascadaTerritorial(BaseAgendaTest):
         for entrada in entradas:
             self.assertIn(entrada.noticia_id, ids_locales)
             self.assertEqual(entrada.territorio, "local")
+
+
+class TestDiversificacionTematica(BaseAgendaTest):
+    """Categorías temáticas (espectaculos/internacional/gastronomia/salud,
+    fuentes agregadas el 20/8/2026) como nivel de diversificación por debajo
+    de nacional, agregado el 20/8/2026 junto con el cambio de frecuencia."""
+
+    def test_tematica_se_usa_cuando_no_hay_candidato_territorial(self):
+        _crear_noticia(self.db, "sin_clasificar", categoria_tematica="salud", titulo="Nota de salud")
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("09:00",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].estado, "creado")
+        noticia = self.db.obtener(entradas[0].noticia_id)
+        self.assertEqual(noticia["categoria_tematica"], "salud")
+
+    def test_local_sigue_ganando_sobre_tematica(self):
+        local = _crear_noticia(self.db, "local")
+        _crear_noticia(self.db, "sin_clasificar", categoria_tematica="gastronomia")
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("09:00",), ahora=AHORA)
+
+        self.assertEqual(entradas[0].noticia_id, local.id)
+        self.assertEqual(entradas[0].territorio, "local")
+
+    def test_diversifica_entre_categorias_en_franjas_sucesivas(self):
+        _crear_noticia(self.db, "sin_clasificar", categoria_tematica="salud", titulo="Salud A")
+        _crear_noticia(self.db, "sin_clasificar", categoria_tematica="gastronomia", titulo="Gastronomia A")
+
+        entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("09:00", "09:30"), ahora=AHORA)
+
+        categorias_elegidas = {
+            self.db.obtener(e.noticia_id)["categoria_tematica"] for e in entradas if e.noticia_id
+        }
+        self.assertEqual(categorias_elegidas, {"salud", "gastronomia"})
+
+    def test_tematica_nunca_reemplaza_a_una_ya_usada(self):
+        n1 = _crear_noticia(self.db, "sin_clasificar", categoria_tematica="salud", titulo="Unica salud")
+        entradas_1 = generar_agenda(self.db, fecha="2026-08-12", horarios=("09:00",), ahora=AHORA)
+        self.assertEqual(entradas_1[0].noticia_id, n1.id)
+
+        entradas_2 = generar_agenda(self.db, fecha="2026-08-12", horarios=("09:00", "09:30"), ahora=AHORA)
+        self.assertEqual(entradas_2[1].estado, "sin_candidato")
 
 
 class TestExclusiones(BaseAgendaTest):

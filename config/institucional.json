@@ -1,4 +1,20 @@
 {
-  "titulo": "Conocé Ledesma Participa",
-  "texto": "Ledesma Participa es la página que te informa sobre Libertador General San Martín y el Departamento Ledesma: noticias locales, servicios, comunidad e información útil. Sitio web: https://ledesmaparticipa.com.ar ¡Seguinos y compartí esta página!"
+  "variantes": [
+    {
+      "titulo": "Conocé Ledesma Participa",
+      "texto": "Ledesma Participa es la página que te informa sobre Libertador General San Martín y el Departamento Ledesma: noticias locales, servicios, comunidad e información útil. Sitio web: https://ledesmaparticipa.com.ar ¡Seguinos y compartí esta página!"
+    },
+    {
+      "titulo": "¿Ya conocés Ledesma Participa?",
+      "texto": "Todos los días te acercamos lo que pasa en Libertador General San Martín y el Departamento Ledesma: noticias, servicios y novedades de la comunidad. Visitá https://ledesmaparticipa.com.ar y sumate a la página que informa a toda hora. ¡Seguinos y compartí!"
+    },
+    {
+      "titulo": "Ledesma Participa te informa todo el día",
+      "texto": "Noticias locales, servicios y comunidad de Libertador General San Martín y el Departamento Ledesma, actualizados durante todo el día. Encontralo en https://ledesmaparticipa.com.ar ¡Invitá a tus contactos a seguir la página!"
+    },
+    {
+      "titulo": "La página de Libertador y el Departamento Ledesma",
+      "texto": "Ledesma Participa reúne noticias, servicios e información útil de Libertador General San Martín y el Departamento Ledesma en un solo lugar: https://ledesmaparticipa.com.ar Seguinos para no perderte nada y compartí con quien quieras estar informado."
+    }
+  ]
 }

@@ -9,6 +9,7 @@ from motor_noticias.dedupe import hash_contenido, normalizar_url
 from motor_noticias.institucional import HORA_INSTITUCIONAL, reservar_franja_institucional
 from motor_noticias.meta.cliente import ErrorClienteMeta, ResultadoFotoFacebook
 from motor_noticias.meta.publicador import (
+    MAX_INTENTOS_DEFAULT,
     _publicar_noticia_en_clave,
     publicar_franja,
     publicar_urgentes,
@@ -323,6 +324,27 @@ class TestReintentarPublicaciones(BaseTest):
         self.assertEqual(fila_ig["estado"], "pendiente")
         self.assertEqual(fila_ig["intentos"], 0)
 
+    def test_publicar_urgentes_deja_de_reintentar_una_red_tras_el_tope(self):
+        # Bug real corregido 21/8: a diferencia de reintentar_publicaciones
+        # (capado por listar_programacion_meta_para_reintentar), publicar_
+        # urgentes llamaba a _publicar_noticia_en_clave en cada corrida de
+        # MetaUrgentes (cada 15 min, sin límite) mientras la urgente no
+        # tuviera Facebook+Instagram publicados — una fila real llegó a 68
+        # intentos en producción, machacando la Graph API sin freno.
+        n = _noticia(self.db)
+        agenda_id = self.db.guardar_agenda_item("2026-08-12", None, "urgente", "local", n.id, AHORA.isoformat())
+        fake = FakeClienteMeta(fallar_instagram=True)
+
+        # Simula MAX_INTENTOS_DEFAULT + varias corridas más de MetaUrgentes.
+        for _ in range(MAX_INTENTOS_DEFAULT + 5):
+            publicar_urgentes(self.db, "2026-08-12", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        fila_ig = self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id}", "instagram")
+        self.assertEqual(fila_ig["estado"], "error")
+        self.assertEqual(fila_ig["intentos"], MAX_INTENTOS_DEFAULT)  # nunca supera el tope
+        llamadas_instagram = [l for l in fake.llamadas if l[0] == "publicar_instagram"]
+        self.assertEqual(len(llamadas_instagram), MAX_INTENTOS_DEFAULT)  # ninguna llamada de más a Meta
+
 
 class TestDeduplicacionEntreCircuitos(BaseTest):
     """El gate de deduplicación de `_publicar_noticia_en_clave` es único y
@@ -515,6 +537,91 @@ class TestDeduplicacionEntreCircuitos(BaseTest):
         self.assertEqual(
             estados, {"facebook": "publicado", "instagram": "publicado", "instagram_story": "publicado"}
         )
+
+    def test_bloquea_por_cuerpo_cuando_titulos_de_fuentes_distintas_no_comparten_palabras(self):
+        # Caso real detectado en producción 20/8: Infobae y La Nación sobre
+        # el mismo partido Flamengo-Cruzeiro, titulados desde ángulos tan
+        # distintos (jugadores vs. equipos) que los títulos no comparten
+        # ninguna palabra relevante — el fingerprint de solo-título no
+        # alcanzaba y las dos salieron publicadas. Ahora, entre fuentes
+        # distintas, el gate también compara título+cuerpo.
+        a = _noticia(
+            self.db, 1,
+            nombre_fuente="Infobae",
+            titulo_original="2-1. Dos maravillas de Arrascaeta y Lino llevan a Flamengo a cuartos de final",
+            titulo_preparado="2-1. Dos maravillas de Arrascaeta y Lino llevan a Flamengo a cuartos de final",
+            texto_original=(
+                "El campeón Flamengo se impuso por 2-1 a Cruzeiro este miércoles en el "
+                "Maracaná de Río de Janeiro y avanzó a los cuartos de final de la Copa "
+                "Libertadores con dos golazos de Giorgian de Arrascaeta y Samuel Lino."
+            ),
+        )
+        b = _noticia(
+            self.db, 2,
+            nombre_fuente="La Nación",
+            titulo_original="Flamengo le ganó a Cruzeiro 2-1 y lo eliminó de la Copa Libertadores con un show de golazos en el Maracaná",
+            titulo_preparado="Flamengo le ganó a Cruzeiro 2-1 y lo eliminó de la Copa Libertadores con un show de golazos en el Maracaná",
+            texto_original=(
+                "El conjunto de Rio de Janeiro se aseguró el pase a cuartos de la mano "
+                "de De Arrascaeta y Samuel Lino, mientras que el argentino Lucas Romero "
+                "anotó para los visitantes."
+            ),
+        )
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", "10:00", "normal", "local", b.id, AHORA.isoformat())
+
+        fake = FakeClienteMeta()
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        llamadas_antes = len(fake.llamadas)
+
+        resultado_b = publicar_franja(self.db, "2026-08-12", "10:00", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado_b.resultado, "duplicado_bloqueado")
+        self.assertEqual(len(fake.llamadas), llamadas_antes)  # ningún POST nuevo a Meta
+
+    def test_no_bloquea_anuncios_distintos_de_la_misma_fuente_con_lenguaje_de_tramite_parecido(self):
+        # Control negativo del caso anterior: dos anuncios oficiales reales
+        # y distintos de la MISMA fuente comparten tanto lenguaje de trámite
+        # ("Ministerio de Desarrollo Humano... a través de la
+        # Secretaría... jueves 20 de agosto") que comparar por cuerpo
+        # completo los marcaría como duplicado si se aplicara entre
+        # cualquier par de noticias — por eso la comparación por cuerpo solo
+        # se activa entre fuentes distintas (ver test anterior), nunca
+        # dentro de la misma fuente.
+        a = _noticia(
+            self.db, 1,
+            nombre_fuente="Jujuy al día",
+            titulo_original="Hoy en Lozano la Oficina Móvil para Personas con Discapacidad",
+            titulo_preparado="Hoy en Lozano la Oficina Móvil para Personas con Discapacidad",
+            texto_original=(
+                "El dispositivo estará el jueves 20 de agosto. El Ministerio de "
+                "Desarrollo Humano de Jujuy, a través de la Dirección Provincial de "
+                "Inclusión de Personas con Discapacidad, que depende de la Secretaría "
+                "de Desarrollo Integral."
+            ),
+        )
+        b = _noticia(
+            self.db, 2,
+            nombre_fuente="Jujuy al día",
+            titulo_original="Familias de localidades puneñas recibirán unidades alimentarias",
+            titulo_preparado="Familias de localidades puneñas recibirán unidades alimentarias",
+            texto_original=(
+                "El operativo de entrega de unidades alimentarias iniciará este jueves "
+                "20 de agosto para familias de Abra Pampa, Tres Cruces y Cusi Cusi. El "
+                "Ministerio de Desarrollo Humano, a través de la Secretaría de "
+                "Asistencia Directa, comunica que desde el jueves 20."
+            ),
+        )
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", "10:00", "normal", "local", b.id, AHORA.isoformat())
+
+        fake = FakeClienteMeta()
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+        resultado_b = publicar_franja(self.db, "2026-08-12", "10:00", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        self.assertEqual(resultado_b.resultado, "procesada")
+        estados = {r.red_social: r.estado for r in resultado_b.redes}
+        self.assertEqual(estados["facebook"], "publicado")
 
 
 class TestPublicarStoryInstagram(BaseTest):

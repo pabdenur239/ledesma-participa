@@ -241,6 +241,26 @@ def _publicar_story_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia
     return ResultadoRed("instagram_story", "publicado", media_id)
 
 
+def _tope_reintentos_alcanzado(fila: dict, max_intentos: int = MAX_INTENTOS_DEFAULT) -> bool:
+    """True si esta fila ya agotó el tope de reintentos y sigue en 'error'.
+    Bug real corregido 21/8: `publicar_urgentes` llama a
+    `_publicar_noticia_en_clave` en cada corrida de MetaUrgentes (cada 15
+    minutos, indefinidamente mientras la urgente exista en la agenda), sin
+    ningún tope — a diferencia de `reintentar_publicaciones`, que sí lo
+    respeta vía `listar_programacion_meta_para_reintentar`. Una fila que
+    nunca llegó a confirmar `meta_id` (falla antes de que Meta responda,
+    ej. rate limit) se reintentaba sin límite: se detectó una fila real con
+    68 intentos en 15 horas. Cada reintento repite el POST completo a la
+    Graph API desde cero (no hay nada que deduplicar todavía si el intento
+    anterior nunca devolvió un id), así que cada uno es indistinguible de
+    una publicación nueva para Meta — machacar sin límite además agrava el
+    rate-limit que causa la propia falla. Puesto acá, en el único punto que
+    comparten las tres vías (franja fija, urgente, reintento), protege a
+    las tres por igual: pasado el tope la fila queda en 'error' tal cual
+    (no se toca ni se borra), disponible para revisión manual."""
+    return fila["estado"] == "error" and fila["intentos"] >= max_intentos
+
+
 def _programacion_ya_publicada(db: Database, fecha: str, clave: str) -> bool:
     """True si ambas redes de esta franja/urgente ya están 'publicado'."""
     fila_fb = db.obtener_programacion_meta(fecha, clave, "facebook")
@@ -268,12 +288,37 @@ def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datet
         if url_propia and candidata.get("url_normalizada") == url_propia:
             return candidata
 
-    palabras_propias = palabras_clave(noticia.get("titulo_original") or "")
-    if not palabras_propias:
+    palabras_propias_titulo = palabras_clave(noticia.get("titulo_original") or "")
+    palabras_propias_completas = palabras_clave(
+        f"{noticia.get('titulo_original') or ''} {noticia.get('texto_original') or ''}"
+    )
+    if not palabras_propias_titulo:
         return None
     for candidata in candidatas:
-        if es_mismo_contenido(palabras_propias, palabras_clave(candidata.get("titulo_original") or "")):
+        if es_mismo_contenido(palabras_propias_titulo, palabras_clave(candidata.get("titulo_original") or "")):
             return candidata
+        # Corroboración cruzada entre fuentes distintas: dos medios que cubren
+        # el mismo hecho real suelen titularlo con palabras muy distintas
+        # (nombres de jugadores vs. equipos, ángulo distinto de la misma
+        # nota) que el fingerprint de título por sí solo no alcanza a
+        # emparejar (caso real detectado 20/8: Infobae y La Nación sobre el
+        # mismo partido Flamengo-Cruzeiro, títulos sin ninguna palabra en
+        # común salvo "Flamengo"). Ampliar la comparación al cuerpo de la
+        # nota solo cuando la fuente es distinta: dentro de la misma fuente
+        # (ej. dos anuncios oficiales consecutivos del mismo organismo) el
+        # texto comparte tanto lenguaje de trámite que compararlo completo
+        # genera falsos positivos entre noticias reales y distintas
+        # (verificado con datos de producción: dos anuncios de Jujuy al día
+        # sobre programas sociales distintos comparten "Ministerio de
+        # Desarrollo Humano... a través de la Secretaría... jueves 20 de
+        # agosto" casi palabra por palabra).
+        fuente_candidata = candidata.get("nombre_fuente")
+        if fuente_candidata and fuente_candidata != noticia.get("nombre_fuente"):
+            palabras_candidata_completas = palabras_clave(
+                f"{candidata.get('titulo_original') or ''} {candidata.get('texto_original') or ''}"
+            )
+            if es_mismo_contenido(palabras_propias_completas, palabras_candidata_completas):
+                return candidata
     return None
 
 
@@ -425,6 +470,12 @@ def _publicar_noticia_en_clave(
         resultados_red.append(ResultadoRed("facebook", "omitido", fila_fb["meta_id"], "ya publicado (idempotente)"))
         photo_id = fila_fb["referencia_extra"]
         facebook_ok = bool(photo_id)
+    elif _tope_reintentos_alcanzado(fila_fb):
+        resultados_red.append(
+            ResultadoRed("facebook", "omitido", detalle=f"tope de {MAX_INTENTOS_DEFAULT} reintentos alcanzado")
+        )
+        photo_id = fila_fb["referencia_extra"]
+        facebook_ok = bool(photo_id)
     else:
         resultado_fb, photo_id = _publicar_en_facebook(db, prog_id_fb, fila_fb, cliente_fb, contenido)
         resultados_red.append(resultado_fb)
@@ -433,6 +484,10 @@ def _publicar_noticia_en_clave(
     # -- Instagram: nunca se intenta si Facebook no publicó (ahora o antes) -
     if fila_ig["estado"] == "publicado":
         resultados_red.append(ResultadoRed("instagram", "omitido", fila_ig["meta_id"], "ya publicado (idempotente)"))
+    elif _tope_reintentos_alcanzado(fila_ig):
+        resultados_red.append(
+            ResultadoRed("instagram", "omitido", detalle=f"tope de {MAX_INTENTOS_DEFAULT} reintentos alcanzado")
+        )
     elif not facebook_ok:
         resultados_red.append(
             ResultadoRed("instagram", "omitido", detalle="no intentado: depende de que Facebook publique primero")
@@ -459,6 +514,12 @@ def _publicar_noticia_en_clave(
         if fila_story["estado"] == "publicado":
             resultados_red.append(
                 ResultadoRed("instagram_story", "omitido", fila_story["meta_id"], "ya publicado (idempotente)")
+            )
+        elif _tope_reintentos_alcanzado(fila_story):
+            resultados_red.append(
+                ResultadoRed(
+                    "instagram_story", "omitido", detalle=f"tope de {MAX_INTENTOS_DEFAULT} reintentos alcanzado"
+                )
             )
         else:
             resultados_red.append(

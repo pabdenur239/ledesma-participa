@@ -219,7 +219,7 @@ class Database:
         candidata nueva contra lo que ya salió, sin importar por qué
         circuito (franja fija, urgente o reintento) haya salido."""
         query = (
-            "SELECT id, url_normalizada, titulo_original, texto_original "
+            "SELECT id, url_normalizada, titulo_original, texto_original, nombre_fuente "
             "FROM noticias WHERE estado = ? AND fecha_recoleccion >= ?"
         )
         params: list = [Estado.PUBLICADA.value, fecha_limite]

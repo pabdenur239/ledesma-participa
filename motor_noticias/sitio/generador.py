@@ -321,12 +321,27 @@ MAXIMO_URGENTES_API = 20
 MAXIMO_POR_CATEGORIA_API = 100
 
 
+def _url_absoluta(ruta: Optional[str], base_url: str) -> Optional[str]:
+    """`imagen_web` ya viene absoluta cuando es una URL externa (ver
+    `_resolver_imagen`: una imagen de un collector se referencia tal cual,
+    sin descargarla) y relativa a la raíz del sitio cuando es un archivo
+    local (placa u original ya copiado a assets/img/) — bug real detectado
+    probando la API contra datos reales: anteponer `base_url` siempre
+    producía una URL rota tipo "https://ledesmaparticipa.com.ar/https://…"
+    para cualquier imagen externa."""
+    if not ruta:
+        return None
+    if ruta.startswith("http://") or ruta.startswith("https://"):
+        return ruta
+    return base_url + ruta
+
+
 def _datos_api_resumen(n: dict, base_url: str) -> dict:
     return {
         "id": n["id"],
         "titulo": n["titulo"],
         "bajada": n["resumen"],
-        "imagen": n["imagen_web"] and (base_url + n["imagen_web"]),
+        "imagen": _url_absoluta(n["imagen_web"], base_url),
         "fecha_iso": n["fecha_orden"].isoformat(),
         "fecha_legible": n["fecha_legible"],
         "categoria_slug": n["seccion_slug"],

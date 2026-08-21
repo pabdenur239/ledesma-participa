@@ -321,6 +321,20 @@ class TestApiJson(unittest.TestCase):
              "espectaculos", "salud", "gastronomia", "deportes"},
         )
 
+    def test_imagen_externa_no_queda_rota_con_el_base_url_antepuesto(self):
+        # Bug real detectado probando la API contra datos reales: una
+        # imagen externa (imagen_web ya absoluta) quedaba con base_url
+        # antepuesto igual, produciendo una URL rota tipo
+        # "https://ledesmaparticipa.com.ar/https://otro-dominio/foto.jpg".
+        self.db.guardar(_noticia(
+            hash_contenido="ext1", imagen_publicacion_ruta="https://cdn.ejemplo.test/foto.jpg",
+            tiene_imagen_original=True,
+        ))
+        self._generar()
+
+        item = self._leer_json("feed.json")[0]
+        self.assertEqual(item["imagen"], "https://cdn.ejemplo.test/foto.jpg")
+
     def test_detalle_de_noticia_incluye_texto_completo_y_fuente(self):
         noticia_id = self.db.guardar(_noticia(
             hash_contenido="d1", nombre_fuente="Fuente Real",

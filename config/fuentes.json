@@ -47,5 +47,57 @@
   "infobae": {
     "nombre_fuente": "Infobae",
     "url": "https://www.infobae.com/arc/outboundfeeds/rss/"
+  },
+  "paparazzi": {
+    "nombre_fuente": "Paparazzi",
+    "url": "https://www.paparazzi.com.ar/feed/"
+  },
+  "caras": {
+    "nombre_fuente": "Caras",
+    "url": "https://caras.perfil.com/feed/"
+  },
+  "tmz": {
+    "nombre_fuente": "TMZ",
+    "url": "https://www.tmz.com/rss.xml"
+  },
+  "bbc_mundo": {
+    "nombre_fuente": "BBC Mundo",
+    "url": "https://feeds.bbci.co.uk/mundo/rss.xml"
+  },
+  "france24_espanol": {
+    "nombre_fuente": "France 24 Español",
+    "url": "https://www.france24.com/es/rss"
+  },
+  "paulina_cocina": {
+    "nombre_fuente": "Paulina Cocina",
+    "url": "https://www.paulinacocina.net/feed/"
+  },
+  "el_gourmet": {
+    "nombre_fuente": "El Gourmet",
+    "url": "https://elgourmet.com/rss"
+  },
+  "directo_al_paladar": {
+    "nombre_fuente": "Directo al Paladar",
+    "url": "https://www.directoalpaladar.com/feedburner.xml"
+  },
+  "ministerio_salud_argentina": {
+    "nombre_fuente": "Ministerio de Salud de la Nación",
+    "url": "https://www.argentina.gob.ar/salud/noticias/rss"
+  },
+  "ops_paho": {
+    "nombre_fuente": "OPS/PAHO",
+    "url": "https://www.paho.org/es/rss.xml"
+  },
+  "oms_who": {
+    "nombre_fuente": "OMS/WHO",
+    "url": "https://www.who.int/rss-feeds/news-spanish.xml"
+  },
+  "medlineplus_es": {
+    "nombre_fuente": "MedlinePlus en español",
+    "url": "https://medlineplus.gov/spanish/feeds/whatsnew.xml"
+  },
+  "fundacion_favaloro": {
+    "nombre_fuente": "Fundación Favaloro",
+    "url": "https://www.fundacionfavaloro.org/feed/"
   }
 }

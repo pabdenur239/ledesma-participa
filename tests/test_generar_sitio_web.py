@@ -239,5 +239,113 @@ class TestCliDespliegaDespuesDeGenerar(unittest.TestCase):
         desplegar_mock.assert_not_called()
 
 
+class TestApiJson(unittest.TestCase):
+    """API JSON de solo lectura bajo docs/api/ — pensada para la app móvil,
+    sin servidor nuevo: mismos datos ya públicos en el sitio HTML,
+    desplegados por el mismo mecanismo (GitHub Pages)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        self.salida_dir = Path(self.tmpdir.name) / "salida"
+        self.db = Database(self.db_path)
+
+    def tearDown(self):
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def _generar(self):
+        return generar_sitio(self.db_path, self.salida_dir, base_url="https://ledesmaparticipa.com.ar")
+
+    def _leer_json(self, *partes):
+        return json.loads((self.salida_dir / "api" / Path(*partes)).read_text(encoding="utf-8"))
+
+    def test_feed_incluye_solo_publicadas_con_esquema_esperado(self):
+        self.db.guardar(_noticia(hash_contenido="h1", territorio="local"))
+        self.db.guardar(_noticia(hash_contenido="h2", estado=Estado.PREPARADA.value))
+        self._generar()
+
+        feed = self._leer_json("feed.json")
+        self.assertEqual(len(feed), 1)
+        item = feed[0]
+        for campo in ("id", "titulo", "bajada", "imagen", "fecha_iso", "categoria_slug", "urgente", "url"):
+            self.assertIn(campo, item)
+        self.assertTrue(item["url"].startswith("https://ledesmaparticipa.com.ar/"))
+
+    def test_feed_respeta_prioridad_local_antes_que_nacional_aunque_sea_mas_viejo(self):
+        self.db.guardar(_noticia(
+            hash_contenido="nacional", territorio="nacional",
+            titulo_original="Nota nacional más nueva", fecha_recoleccion="2026-08-18T13:00:00+00:00",
+        ))
+        self.db.guardar(_noticia(
+            hash_contenido="local", territorio="local",
+            titulo_original="Nota local más vieja", fecha_recoleccion="2026-08-17T13:00:00+00:00",
+        ))
+        self._generar()
+
+        feed = self._leer_json("feed.json")
+        self.assertEqual(feed[0]["titulo"], "Título preparado")  # ambas comparten titulo_preparado
+        self.assertEqual(feed[0]["categoria_slug"], "libertador")  # la local va primero
+
+    def test_urgentes_solo_incluye_marcadas_urgentes(self):
+        self.db.guardar(_noticia(hash_contenido="u1", urgente=True))
+        self.db.guardar(_noticia(hash_contenido="u2", urgente=False))
+        self._generar()
+
+        urgentes = self._leer_json("urgentes.json")
+        self.assertEqual(len(urgentes), 1)
+        self.assertTrue(urgentes[0]["urgente"])
+
+    def test_categorias_reales_incluyen_tematica_y_las_vacias_quedan_vacias(self):
+        self.db.guardar(_noticia(hash_contenido="c1", territorio="local"))
+        self.db.guardar(_noticia(hash_contenido="c2", territorio="provincial"))
+        self.db.guardar(_noticia(
+            hash_contenido="c3", territorio="sin_clasificar", categoria_tematica="salud",
+            titulo_original="Nota de salud", texto_original="Contenido sobre salud pública.",
+        ))
+        self._generar()
+
+        self.assertEqual(len(self._leer_json("categoria", "locales.json")), 1)
+        self.assertEqual(len(self._leer_json("categoria", "provinciales.json")), 1)
+        self.assertEqual(len(self._leer_json("categoria", "salud.json")), 1)
+        # Policiales/Deportes: sin clasificación real hoy — vacías a
+        # propósito, nunca inventadas.
+        self.assertEqual(self._leer_json("categoria", "policiales.json"), [])
+        self.assertEqual(self._leer_json("categoria", "deportes.json"), [])
+
+        categorias = self._leer_json("categorias.json")
+        slugs = {c["slug"] for c in categorias}
+        self.assertEqual(
+            slugs,
+            {"locales", "provinciales", "nacionales", "internacionales", "policiales",
+             "espectaculos", "salud", "gastronomia", "deportes"},
+        )
+
+    def test_detalle_de_noticia_incluye_texto_completo_y_fuente(self):
+        noticia_id = self.db.guardar(_noticia(
+            hash_contenido="d1", nombre_fuente="Fuente Real",
+            url_fuente="https://fuente-real.test/nota-original",
+        ))
+        self._generar()
+
+        detalle = self._leer_json("noticia", f"{noticia_id}.json")
+        self.assertEqual(detalle["fuente_nombre"], "Fuente Real")
+        self.assertEqual(detalle["fuente_url"], "https://fuente-real.test/nota-original")
+        self.assertIsInstance(detalle["texto_parrafos"], list)
+        self.assertTrue(len(detalle["texto_parrafos"]) > 0)
+
+    def test_nunca_expone_campos_de_trabajo_interno(self):
+        self.db.guardar(_noticia(
+            hash_contenido="i1", observacion_interna="nota interna sensible",
+            revision_estado=RevisionEstado.APROBADA.value,
+        ))
+        self._generar()
+
+        feed_crudo = (self.salida_dir / "api" / "feed.json").read_text(encoding="utf-8")
+        self.assertNotIn("observacion_interna", feed_crudo)
+        self.assertNotIn("nota interna sensible", feed_crudo)
+        self.assertNotIn("revision_estado", feed_crudo)
+
+
 if __name__ == "__main__":
     unittest.main()

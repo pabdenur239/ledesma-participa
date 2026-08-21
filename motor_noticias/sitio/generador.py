@@ -198,6 +198,17 @@ def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
         "url_fuente": (noticia.get("url_fuente") or "").strip(),
         "imagen_web": imagen_web,
         "imagen_og": imagen_og,
+        # Campos adicionales, sin uso en el HTML (que sigue leyendo solo las
+        # claves de arriba, sin desempaquetado estricto): pensados para la
+        # API JSON de solo lectura (ver `_escribir_api_json`) — feed/app
+        # necesitan territorio/urgente/categoria_tematica/localidad para
+        # ordenar por prioridad editorial y armar categorías, cosa que el
+        # sitio HTML no necesita exponer aparte porque ya vienen resueltos
+        # en seccion_slug/seccion_etiqueta.
+        "territorio": noticia.get("territorio"),
+        "urgente": bool(noticia.get("urgente")),
+        "categoria_tematica": noticia.get("categoria_tematica"),
+        "localidad": noticia.get("localidad"),
     }
 
 
@@ -276,6 +287,98 @@ def _construir_indice_busqueda(noticias: List[dict]) -> list:
             "buscable": buscable,
         })
     return indice
+
+
+# ---------------------------------------------------------------------------
+# API JSON de solo lectura (app móvil / cualquier otro cliente propio):
+# mismos datos que ya lee/publica el sitio HTML, servidos como JSON estático
+# bajo docs/api/ — desplegado por el mismo mecanismo (GitHub Pages) que el
+# resto del sitio, sin ningún servidor ni endpoint nuevo en el VPS. Nunca
+# incluye campos de trabajo interno (revision_estado, observacion_interna,
+# credenciales, etc.): solo lo que ya es público en el sitio o en Meta.
+#
+# Categorías de la API: territorio (local+departamental => "locales",
+# provincial, nacional) más categoria_tematica real (espectaculos, salud,
+# gastronomia, internacional) — nunca una clasificación nueva inventada acá
+# (ver PALABRAS_CLAVE / riesgo editorial, que son la única fuente de verdad
+# de clasificación). "Policiales" y "Deportes" no tienen hoy ninguna
+# clasificación real en la base: quedan como categorías vacías a propósito
+# (mejor una lista vacía que inventar un clasificador paralelo fuera del
+# Motor Editorial).
+CATEGORIAS_API = (
+    ("locales", "Locales", lambda n: n["territorio"] in ("local", "departamental")),
+    ("provinciales", "Provinciales", lambda n: n["territorio"] == "provincial"),
+    ("nacionales", "Nacionales", lambda n: n["territorio"] == "nacional"),
+    ("internacionales", "Internacionales", lambda n: n["categoria_tematica"] == "internacional"),
+    ("policiales", "Policiales", lambda n: False),
+    ("espectaculos", "Espectáculos", lambda n: n["categoria_tematica"] == "espectaculos"),
+    ("salud", "Salud", lambda n: n["categoria_tematica"] == "salud"),
+    ("gastronomia", "Gastronomía", lambda n: n["categoria_tematica"] == "gastronomia"),
+    ("deportes", "Deportes", lambda n: False),
+)
+MAXIMO_FEED_API = 100
+MAXIMO_URGENTES_API = 20
+MAXIMO_POR_CATEGORIA_API = 100
+
+
+def _datos_api_resumen(n: dict, base_url: str) -> dict:
+    return {
+        "id": n["id"],
+        "titulo": n["titulo"],
+        "bajada": n["resumen"],
+        "imagen": n["imagen_web"] and (base_url + n["imagen_web"]),
+        "fecha_iso": n["fecha_orden"].isoformat(),
+        "fecha_legible": n["fecha_legible"],
+        "categoria_slug": n["seccion_slug"],
+        "categoria_etiqueta": n["seccion_etiqueta"],
+        "localidad": n["localidad"],
+        "urgente": n["urgente"],
+        "url": base_url + n["url_relativa"],
+    }
+
+
+def _datos_api_detalle(n: dict, base_url: str) -> dict:
+    datos = _datos_api_resumen(n, base_url)
+    datos.update({
+        "texto_parrafos": n["texto_parrafos"],
+        "fuente_nombre": n["nombre_fuente"],
+        "fuente_url": n["url_fuente"] or None,
+    })
+    return datos
+
+
+def _escribir_api_json(salida_dir: Path, noticias: List[dict], base_url: str) -> None:
+    _escribir(
+        salida_dir / "api" / "version.json",
+        json.dumps({"generado_en": datetime.now(timezone.utc).isoformat()}),
+    )
+
+    # Feed: mismo criterio de prioridad editorial que la portada del sitio
+    # (`_elegir_destacadas`/`PRIORIDAD_SECCION`) — cronológico dentro de
+    # cada nivel territorial, LOCAL > DEPARTAMENTAL > PROVINCIAL > NACIONAL
+    # > el resto — aplicado a TODA la lista, no solo a las 3 destacadas.
+    feed_ordenado = sorted(
+        enumerate(noticias),
+        key=lambda par: (PRIORIDAD_SECCION.get(par[1]["seccion_slug"], 9), par[0]),
+    )
+    feed = [_datos_api_resumen(n, base_url) for _, n in feed_ordenado[:MAXIMO_FEED_API]]
+    _escribir(salida_dir / "api" / "feed.json", json.dumps(feed, ensure_ascii=False))
+
+    urgentes = [_datos_api_resumen(n, base_url) for n in noticias if n["urgente"]][:MAXIMO_URGENTES_API]
+    _escribir(salida_dir / "api" / "urgentes.json", json.dumps(urgentes, ensure_ascii=False))
+
+    categorias_meta = []
+    for slug, etiqueta, filtro in CATEGORIAS_API:
+        items = [_datos_api_resumen(n, base_url) for n in noticias if filtro(n)][:MAXIMO_POR_CATEGORIA_API]
+        _escribir(salida_dir / "api" / "categoria" / f"{slug}.json", json.dumps(items, ensure_ascii=False))
+        categorias_meta.append({"slug": slug, "etiqueta": etiqueta, "cantidad": len(items)})
+    _escribir(salida_dir / "api" / "categorias.json", json.dumps(categorias_meta, ensure_ascii=False))
+
+    for n in noticias:
+        _escribir(
+            salida_dir / "api" / "noticia" / f"{n['id']}.json",
+            json.dumps(_datos_api_detalle(n, base_url), ensure_ascii=False),
+        )
 
 
 def _sitemap_xml(urls: List[str]) -> str:
@@ -373,6 +476,9 @@ def generar_sitio(
         salida_dir / "assets" / "search-index.json",
         json.dumps(_construir_indice_busqueda(noticias), ensure_ascii=False),
     )
+
+    # API JSON de solo lectura (app móvil).
+    _escribir_api_json(salida_dir, noticias, base_url)
 
     # SEO técnico.
     _escribir(salida_dir / "sitemap.xml", _sitemap_xml(urls_sitemap))

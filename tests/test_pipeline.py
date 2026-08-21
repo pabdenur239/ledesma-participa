@@ -4,7 +4,7 @@ from pathlib import Path
 
 from motor_noticias.db import Database
 from motor_noticias.models import Estado
-from motor_noticias.pipeline import ejecutar_pipeline
+from motor_noticias.pipeline import ejecutar_pipeline, normalizar_noticia
 from motor_noticias.redaccion.mock import RedactorMock
 
 
@@ -172,6 +172,84 @@ class TestPipeline(unittest.TestCase):
         )
         self.assertEqual(resultados[1][1], "duplicado")
         self.assertEqual(len(self.db.listar()), 1)
+
+
+class TestNormalizarNoticiaDecodificaEntidadesHTML(unittest.TestCase):
+    """Bug real detectado en producción: el collector de Jujuy al día no
+    decodificaba entidades HTML, así que `&#8211;`/`&#8217;`/etc. salían tal
+    cual en Facebook, Instagram y la web (los tres leen de titulo_preparado/
+    texto_preparado, derivados de titulo_original/texto_original vía
+    `normalizar_noticia` — ver pipeline.py y sitio/generador.py). La
+    decodificación se aplica en ese único punto, común a cualquier
+    collector."""
+
+    def test_caso_real_jujuy_al_dia(self):
+        cruda = {
+            "titulo": "Chat Jujuy al día ® &#8211; ‘Desaparecer’...",
+            "texto": "texto de prueba",
+            "url": "https://ejemplo.test/nota-1",
+        }
+        noticia = normalizar_noticia(cruda)
+        self.assertEqual(noticia.titulo_original, "Chat Jujuy al día ® – ‘Desaparecer’...")
+
+    def test_decodifica_entidades_estandar_en_titulo_y_texto(self):
+        cruda = {
+            "titulo": "Riesgo &amp; seguridad: la &quot;alerta&quot; en Libertador",
+            "texto": "El intendente dijo: &laquo;vamos a actuar&raquo; &#8211; anunci&oacute; medidas.",
+            "url": "https://ejemplo.test/nota-2",
+        }
+        noticia = normalizar_noticia(cruda)
+        self.assertEqual(noticia.titulo_original, 'Riesgo & seguridad: la "alerta" en Libertador')
+        self.assertEqual(noticia.texto_original, "El intendente dijo: «vamos a actuar» – anunció medidas.")
+
+    def test_no_altera_contenido_sin_entidades(self):
+        cruda = {
+            "titulo": "Obras en Libertador General San Martín",
+            "texto": "El municipio anunció obras viales para el barrio.",
+            "url": "https://ejemplo.test/nota-3",
+        }
+        noticia = normalizar_noticia(cruda)
+        self.assertEqual(noticia.titulo_original, cruda["titulo"])
+        self.assertEqual(noticia.texto_original, cruda["texto"])
+
+    def test_nunca_decodifica_la_url(self):
+        # Una URL con una entidad de tracking real (poco común, pero
+        # válida) no debe alterarse: solo título y texto pasan por
+        # html.unescape.
+        cruda = {
+            "titulo": "Título de prueba",
+            "texto": "Texto de prueba",
+            "url": "https://ejemplo.test/nota?ref=a&amp;b=1",
+        }
+        noticia = normalizar_noticia(cruda)
+        self.assertEqual(noticia.url_fuente, "https://ejemplo.test/nota?ref=a&amp;b=1")
+
+    def test_llega_decodificado_hasta_titulo_preparado_via_el_pipeline_completo(self):
+        # Confirma que la decodificación no queda aislada en
+        # normalizar_noticia: se propaga a titulo_preparado/texto_preparado
+        # (de ahí en más, el mismo campo que usan Facebook, Instagram y la
+        # web — ver meta/contenido.py y sitio/generador.py).
+        tmpdir = tempfile.TemporaryDirectory()
+        try:
+            db = Database(Path(tmpdir.name) / "test.db")
+            items = [
+                {
+                    "titulo": "Chat Jujuy al día ® &#8211; ‘Desaparecer’...",
+                    "texto": "El caso &#8211; contin&uacute;a en Libertador General San Mart&iacute;n.",
+                    "url": "https://ejemplo.test/nota-4",
+                    "fuente": "Jujuy al día",
+                    "fecha": "2026-08-01",
+                }
+            ]
+            resultados = ejecutar_pipeline(db, ColectorDePrueba(items), RedactorMock())
+            noticia, _ = resultados[0]
+            self.assertNotIn("&#8211;", noticia.titulo_preparado)
+            self.assertIn("–", noticia.titulo_preparado)
+            self.assertNotIn("&#8211;", noticia.texto_preparado)
+            self.assertNotIn("&uacute;", noticia.texto_preparado)
+            db.close()
+        finally:
+            tmpdir.cleanup()
 
 
 if __name__ == "__main__":

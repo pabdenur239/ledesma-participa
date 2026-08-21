@@ -1,3 +1,4 @@
+import html
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
@@ -33,11 +34,22 @@ def _aplicar_riesgo_editorial(noticia: Noticia) -> None:
 
 
 def normalizar_noticia(cruda: dict) -> Noticia:
+    """`titulo`/`texto` pasan por `html.unescape` acá, en el único punto por
+    el que pasa la salida de cualquier collector (RSS, scraper HTML o carga
+    manual) antes de guardarse como `titulo_original`/`texto_original`: de
+    ahí se derivan titulo_preparado/texto_preparado (`redactor.redactar`,
+    ver pipeline) y, con eso, tanto el post de Facebook/Instagram
+    (`meta/contenido.py`) como el sitio web (`sitio/generador.py`) — un
+    único lugar decodifica para los tres. No todos los collectors decodían
+    entidades HTML ellos mismos (bug real detectado: el feed de Jujuy al
+    día dejaba pasar `&#8211;`/`&#8217;` tal cual, sin decodificar). `url`
+    nunca se toca acá: una entidad real en un query string (poco común,
+    pero válida) no debe alterarse."""
     imagen_url = cruda.get("imagen_url") or None
     return Noticia(
         id=None,
-        titulo_original=cruda["titulo"].strip(),
-        texto_original=cruda["texto"].strip(),
+        titulo_original=html.unescape(cruda["titulo"]).strip(),
+        texto_original=html.unescape(cruda["texto"]).strip(),
         url_fuente=cruda["url"].strip(),
         nombre_fuente=cruda.get("fuente", "").strip(),
         fecha_fuente=cruda.get("fecha", ""),

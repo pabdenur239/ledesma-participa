@@ -21,6 +21,7 @@ class OrigenIngreso(str, Enum):
     MANUAL = "manual"
     INSTITUCIONAL = "institucional"
     RESUMEN_DIARIO = "resumen_diario"
+    CONTENIDO_PROPIO = "contenido_propio"
 
 
 @dataclass

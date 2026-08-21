@@ -1,0 +1,13 @@
+{
+  "fuentes_primarias": [
+    "Municipalidad de Libertador General San Martín",
+    "Prensa Jujuy (Gobierno de Jujuy)"
+  ],
+  "max_notas_por_dia": 3,
+  "ventana_horas": 48,
+  "palabras_clave_servicio": [
+    "corte de", "corte programado", "cronograma", "vencimiento", "vence el",
+    "alerta", "tránsito", "transito", "trámite", "tramite", "turnos",
+    "inscripción", "inscripcion", "operativo"
+  ]
+}

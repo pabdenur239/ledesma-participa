@@ -229,6 +229,34 @@ class Database:
         cur = self.conn.execute(query, params)
         return [dict(fila) for fila in cur.fetchall()]
 
+    def noticias_de_fuentes_recientes(self, nombres_fuente: list, fecha_limite: str) -> list:
+        """Noticias no descartadas de un conjunto de fuentes dado (pensado
+        para las fuentes primarias oficiales de `contenido_propio`, ver
+        `motor_noticias.contenido_propio`), recolectadas desde
+        `fecha_limite`, más reciente primero. Incluye cualquier estado
+        salvo 'descartada': una noticia todavía 'encontrada' (pipeline no
+        corrido) o ya 'preparada'/'publicada' por su cuenta igual puede
+        ser la base de una nota propia distinta."""
+        if not nombres_fuente:
+            return []
+        placeholders = ",".join("?" * len(nombres_fuente))
+        cur = self.conn.execute(
+            f"SELECT * FROM noticias WHERE nombre_fuente IN ({placeholders}) "
+            "AND estado != ? AND fecha_recoleccion >= ? ORDER BY fecha_recoleccion DESC",
+            (*nombres_fuente, Estado.DESCARTADA.value, fecha_limite),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def contar_por_origen_desde(self, origen_ingreso: str, fecha_limite: str) -> int:
+        """Cuántas noticias con este `origen_ingreso` se recolectaron desde
+        `fecha_limite` — usado por `contenido_propio` para respetar el tope
+        diario acumulado (no por corrida)."""
+        cur = self.conn.execute(
+            "SELECT COUNT(*) FROM noticias WHERE origen_ingreso = ? AND fecha_recoleccion >= ?",
+            (origen_ingreso, fecha_limite),
+        )
+        return cur.fetchone()[0]
+
     def guardar(self, noticia: Noticia) -> int:
         cur = self.conn.execute(
             """

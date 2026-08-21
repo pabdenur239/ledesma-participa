@@ -14,14 +14,33 @@ from typing import Optional
 from motor_noticias.db import Database
 from motor_noticias.meta.cliente import ClienteMetaGraphAPI
 from motor_noticias.meta.publicador import publicar_franja
-from motor_noticias.motor_editorial import HORA_INFORME_DIARIO, HORARIOS_DEFAULT, ZONA_JUJUY
+from motor_noticias.motor_editorial import (
+    HORA_INFORME_DIARIO,
+    HORA_INSTITUCIONAL_RESERVADA,
+    HORA_NOTICIA_DEL_DIA,
+    HORA_RESUMEN_DEL_DIA,
+    HORARIOS_DEFAULT,
+    ZONA_JUJUY,
+)
 
 DB_PATH_DEFAULT = Path(__file__).resolve().parent / "data" / "ledesma_participa.db"
 TOLERANCIA_MINUTOS_DEFAULT = 15
 
+# Las cuatro franjas fijas reservadas (excluidas de HORARIOS_DEFAULT porque
+# no compiten con la cascada territorial) también se publican por este
+# mismo mecanismo genérico de franja-más-cercana: sin agregarlas acá,
+# Noticia del Día/Institucional/Resumen del Día nunca encontrarían
+# coincidencia y no se publicarían nunca.
+HORAS_FIJAS_RESERVADAS = (
+    HORA_INFORME_DIARIO,
+    HORA_NOTICIA_DEL_DIA,
+    HORA_INSTITUCIONAL_RESERVADA,
+    HORA_RESUMEN_DEL_DIA,
+)
+
 
 def _franja_actual(ahora_jujuy: datetime, tolerancia_minutos: int) -> Optional[str]:
-    horas = [HORA_INFORME_DIARIO] + list(HORARIOS_DEFAULT)
+    horas = list(HORAS_FIJAS_RESERVADAS) + list(HORARIOS_DEFAULT)
     candidatas = []
     for hora in horas:
         hh, mm = (int(x) for x in hora.split(":"))

@@ -75,36 +75,56 @@ flutter build apk --debug     # o --release
 flutter build ios
 ```
 
-## Notificaciones push (preparado, no activo)
+## Notificaciones push (Android preparado por completo, solo falta el proyecto de Firebase)
 
-El paquete (`firebase_core` + `firebase_messaging`) y el código
-(`lib/services/notification_service.dart`) ya están en el proyecto. **No
-están activos** porque falta un proyecto real de Firebase — eso requiere
-acceso a una cuenta/consola de Firebase que no es algo que se pueda crear
-sin intervención humana. Pasos manuales pendientes (bloqueo a resolver
-por el dueño del proyecto):
+El paquete (`firebase_core` + `firebase_messaging` + `flutter_local_notifications`)
+y el código (`lib/services/notification_service.dart`) ya están completos:
+inicialización, canal de notificación, primer plano, segundo plano, app
+cerrada, y abrir la noticia correcta al tocar la notificación (usa
+`data: {"noticia_id": "<id>"}` del mensaje). **No está activo** porque
+falta un proyecto real de Firebase — eso requiere acceso a una cuenta/
+consola de Firebase que no es algo que se pueda crear sin intervención
+humana.
+
+Diseño: la app se suscribe a un solo tópico de FCM
+(`ledesma_participa_importantes`) en vez de que el VPS tenga que guardar
+tokens por dispositivo — sin backend nuevo de registro. El servidor solo
+necesita publicar al tópico cuando corresponda.
+
+**Bloqueo — pasos manuales exactos (dueño del proyecto):**
 
 1. Crear un proyecto en https://console.firebase.google.com
-2. Agregar una app Android con el `applicationId` real del build (ver
-   `android/app/build.gradle`) y descargar `google-services.json` →
+2. Agregar una app Android con el `applicationId` exacto
+   `com.ledesmaparticipa.ledesma_participa_app` (ver
+   `android/app/build.gradle.kts`) y descargar `google-services.json` →
    colocarlo en `app/android/app/google-services.json`.
-3. Agregar una app iOS con el Bundle ID real y descargar
-   `GoogleService-Info.plist` → colocarlo en `app/ios/Runner/`.
-4. Para iOS además: generar una **APNs Authentication Key** en
-   https://developer.apple.com/account (Certificates, Identifiers & Profiles
-   → Keys) y subirla en la consola de Firebase (Configuración del
-   proyecto → Cloud Messaging).
-5. Correr `flutterfire configure` (o crear `lib/firebase_options.dart` a
-   mano) para generar la configuración de Dart.
-6. En `android/app/build.gradle` y `android/build.gradle`, descomentar el
-   plugin de Google Services (buscar el comentario `// Firebase:` — se
-   deja indicado dónde).
+3. En `app/android/settings.gradle.kts` y `app/android/app/build.gradle.kts`,
+   descomentar el plugin de Google Services (buscar el comentario
+   `// Firebase:` — ya está indicado dónde, es una sola línea en cada
+   archivo).
+4. (Para más adelante, cuando se implemente el envío desde el VPS) generar
+   una credencial de servidor: Firebase Console → Configuración del
+   proyecto → Cuentas de servicio → Generar nueva clave privada. Es un
+   archivo JSON **distinto** de `google-services.json` — nunca debe
+   quedar en el repo (ver `.gitignore`).
 
-Una vez hecho eso, la infraestructura ya registra el token del
-dispositivo (ver `NotificationService`). El **envío real** de
-notificaciones (disparado desde el VPS solo para urgentes/locales
-importantes, nunca por cada publicación) es un paso posterior, fuera de
-este MVP — no está implementado todavía del lado del servidor.
+Con eso (pasos 1-3) alcanza para Android: `Firebase.initializeApp()` deja
+de fallar, se pide el permiso de notificaciones, se suscribe al tópico y
+se genera el token real en el dispositivo — verificable con
+`adb logcat | grep "FCM token"`.
+
+**iOS** (fuera de esta ejecución, dejado preparado): además de los pasos
+de Firebase para iOS (Bundle ID, `GoogleService-Info.plist` en
+`app/ios/Runner/`), requiere una APNs Authentication Key desde
+https://developer.apple.com/account (Certificates, Identifiers & Profiles
+→ Keys), subida en la consola de Firebase. No se puede compilar ni
+probar sin una Mac con Xcode.
+
+**Envío real desde el VPS:** no implementado todavía — depende del paso 4
+de arriba (credencial de servidor). Cuando exista, es un script mínimo
+nuevo (Firebase Admin SDK) que publica al tópico `ledesma_participa_importantes`
+solo para urgentes reales o locales/departamentales de alta importancia,
+nunca por cada publicación — sin tocar el pipeline editorial existente.
 
 ## Identidad visual
 

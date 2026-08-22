@@ -2,6 +2,10 @@
     <!-- Necesario en release (no solo debug): la app consume la API
          pública de solo lectura de ledesmaparticipa.com.ar. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Requerido desde Android 13 (API 33) para poder mostrar
+         notificaciones — sin esto, FirebaseMessaging.requestPermission()
+         no tiene nada que pedir. Notificaciones push: ver README.md. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Ledesma Participa"
         android:name="${applicationName}"
@@ -33,6 +37,19 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- FCM: canal/ícono por defecto para las notificaciones que llegan
+             con la app en segundo plano o cerrada (Android las muestra él
+             solo en ese caso, sin código Dart — con la app en primer plano
+             se muestran a mano, ver notification_service.dart). Sin esto,
+             Firebase no sabe qué canal/ícono usar y la notificación no
+             aparece. El id del canal debe coincidir exactamente con
+             CANAL_NOTIFICACIONES_ID en notification_service.dart. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="ledesma_participa_importantes" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

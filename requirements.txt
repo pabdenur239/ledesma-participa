@@ -1,4 +1,10 @@
-# Única dependencia externa del proyecto: generación local de placas PNG
-# cuando una noticia no tiene imagen (motor_noticias/meta/imagen.py).
-# No requiere librerías del sistema; se instala igual en Windows/Mac/Linux.
+# Generación local de placas PNG cuando una noticia no tiene imagen
+# (motor_noticias/meta/imagen.py). No requiere librerías del sistema; se
+# instala igual en Windows/Mac/Linux.
 Pillow>=10.1.0
+
+# Envío de notificaciones push reales (motor_noticias/push_notificaciones.py)
+# vía Firebase Cloud Messaging — solo urgentes/locales importantes, nunca
+# por cada publicación. Requiere la credencial de servicio en
+# /etc/ledesma-participa/firebase-adminsdk.json (fuera del repo, no en Git).
+firebase-admin>=7.0.0

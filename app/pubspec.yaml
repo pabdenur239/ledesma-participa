@@ -1,0 +1,40 @@
+name: ledesma_participa_app
+description: "App móvil oficial de Ledesma Participa — consume la API de solo lectura del sistema existente, sin backend nuevo."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  cached_network_image: ^3.4.1
+  share_plus: ^10.1.2
+  url_launcher: ^6.3.1
+  shared_preferences: ^2.3.3
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+  flutter_local_notifications: ^18.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icono_app.png
+
+# Ícono de la app: mismo diseño que docs/assets/favicon.svg (marca "LP",
+# oro sobre fondo marca) — no es un rediseño, es el mismo isotipo ya usado
+# en el sitio, renderizado como PNG. Genera automáticamente todos los
+# tamaños de Android/iOS: `dart run flutter_launcher_icons`.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icono_app.png"

@@ -163,6 +163,14 @@ COLUMNAS_CATEGORIA_TEMATICA = {
     "categoria_tematica": "TEXT",
 }
 
+# Notificaciones push (motor_noticias/push_notificaciones.py): NULL hasta
+# que se envía, timestamp UTC ISO una vez enviada — evita mandar más de un
+# push por la misma noticia (dedup) y sirve de marca de "ya evaluada" para
+# no volver a escanearla en cada corrida.
+COLUMNAS_PUSH = {
+    "push_enviado_en": "TEXT",
+}
+
 
 class Database:
     def __init__(self, path: Union[str, Path]):
@@ -181,6 +189,7 @@ class Database:
         self._migrar_columnas(COLUMNAS_PROGRAMACION_META_EXTRA, tabla="programacion_meta")
         self._migrar_columnas(COLUMNAS_STORY)
         self._migrar_columnas(COLUMNAS_CATEGORIA_TEMATICA)
+        self._migrar_columnas(COLUMNAS_PUSH)
 
     def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
         """Migración no destructiva, aditiva y segura entre procesos: varios
@@ -340,6 +349,28 @@ class Database:
             (Estado.PUBLICADA.value,),
         )
         return [dict(fila) for fila in cur.fetchall()]
+
+    def noticias_candidatas_a_push(self, fecha_limite: str) -> list:
+        """Noticias ya publicadas, locales o departamentales, recolectadas
+        desde `fecha_limite`, que todavía no generaron ningún push
+        (`push_enviado_en IS NULL`) — pool de entrada para
+        `push_notificaciones.evaluar_push`, que aplica el resto del
+        filtro (palabras clave, categoría/origen excluidos). El filtro por
+        fecha evita reescanear para siempre noticias viejas que nunca
+        calificaron."""
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE estado = ? AND territorio IN ('local', 'departamental') "
+            "AND push_enviado_en IS NULL AND fecha_recoleccion >= ? "
+            "ORDER BY fecha_recoleccion DESC",
+            (Estado.PUBLICADA.value, fecha_limite),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def marcar_push_enviado(self, id_noticia: int, enviado_en: str) -> None:
+        self.conn.execute(
+            "UPDATE noticias SET push_enviado_en = ? WHERE id = ?", (enviado_en, id_noticia)
+        )
+        self.conn.commit()
 
     def obtener(self, id_noticia: int) -> Optional[dict]:
         cur = self.conn.execute("SELECT * FROM noticias WHERE id = ?", (id_noticia,))

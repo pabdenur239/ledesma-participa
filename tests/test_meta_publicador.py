@@ -430,6 +430,57 @@ class TestDeduplicacionEntreCircuitos(BaseTest):
         self.assertEqual(resultados_urgentes[0].resultado, "duplicado_bloqueado")
         self.assertEqual(len(fake.llamadas), llamadas_antes)  # ninguna llamada nueva a Meta
 
+    def test_urgente_bloqueada_por_duplicado_no_bloquea_a_las_siguientes(self):
+        # Bug real corregido 22/8, mismo patrón que el tope de reintentos
+        # agotado (ver test_urgente_agotada_por_tope_no_bloquea_a_las_
+        # siguientes): una urgente que el gate de deduplicación bloquea de
+        # forma permanente (queda 'duplicado', nunca se reintenta) tampoco
+        # debe seguir ocupando el único cupo de max_pendientes=1 para
+        # siempre (caso real: urgente-352, publicada antes por franja
+        # normal, bloqueó a las urgentes posteriores en la cola).
+        a = _noticia(
+            self.db, 1,
+            titulo_original="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+            titulo_preparado="Independiente Rivadavia apuesta por sorprender como local a un Fluminense sin entrenador",
+        )
+        b = _noticia(
+            self.db, 2,
+            titulo_original="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+            titulo_preparado="Independiente Rivadavia busca hacer historia ante Fluminense en la Copa Libertadores",
+        )
+        c = _noticia(self.db, 3, url_fuente="http://a.com/3")
+        self.db.guardar_agenda_item("2026-08-12", "09:30", "normal", "local", a.id, AHORA.isoformat())
+        self.db.guardar_agenda_item("2026-08-12", None, "urgente", "local", b.id, AHORA.isoformat())
+        agenda_id_c = self.db.guardar_agenda_item("2026-08-12", None, "urgente", "local", c.id, AHORA.isoformat())
+
+        fake = FakeClienteMeta()
+        publicar_franja(self.db, "2026-08-12", "09:30", cliente_fb=fake, cliente_ig=fake, ahora=AHORA)
+
+        # Primera corrida (max_pendientes=1, igual que el default real de
+        # publicar_urgentes_meta.py en producción, cada 15 minutos): b
+        # consume el único cupo de esta corrida y queda bloqueada por
+        # duplicado -- terminal, nunca se reintenta.
+        resultados_1 = publicar_urgentes(
+            self.db, "2026-08-12", cliente_fb=fake, cliente_ig=fake, ahora=AHORA, max_pendientes=1
+        )
+        resultado_b = [r for r in resultados_1 if r.noticia_id == b.id][0]
+        self.assertEqual(resultado_b.resultado, "duplicado_bloqueado")
+        self.assertIsNone(self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id_c}", "facebook"))
+
+        # Segunda corrida (siguiente ciclo del scheduler): b ya quedó
+        # resuelta (terminal), así que debe liberar el cupo y dejar avanzar
+        # a c -- no quedarse esperando a b para siempre.
+        resultados_2 = publicar_urgentes(
+            self.db, "2026-08-12", cliente_fb=fake, cliente_ig=fake, ahora=AHORA, max_pendientes=1
+        )
+        resultado_c = [r for r in resultados_2 if r.noticia_id == c.id][0]
+        self.assertEqual(resultado_c.resultado, "procesada")
+
+        fila_fb_c = self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id_c}", "facebook")
+        fila_ig_c = self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id_c}", "instagram")
+        self.assertEqual(fila_fb_c["estado"], "publicado")
+        self.assertEqual(fila_ig_c["estado"], "publicado")
+
     def test_bloquea_al_reintentar_una_urgente_si_otra_urgente_ya_la_publico(self):
         # B entra primero y falla por un motivo ajeno a duplicados (error de
         # red simulado). Mientras tanto A -su misma noticia, otro registro-

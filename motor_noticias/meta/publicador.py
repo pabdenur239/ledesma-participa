@@ -261,13 +261,20 @@ def _tope_reintentos_alcanzado(fila: dict, max_intentos: int = MAX_INTENTOS_DEFA
     return fila["estado"] == "error" and fila["intentos"] >= max_intentos
 
 
+ESTADOS_TERMINALES_SIN_MAS_ACCION = ("publicado", "duplicado")
+
+
 def _urgente_sin_trabajo_pendiente(db: Database, fecha: str, clave: str) -> bool:
     """True si esta franja urgente ya no necesita (ni puede) ninguna acción
-    automática más: cada red que se llegó a intentar terminó en 'publicado'
-    o agotó el tope de reintentos (`_tope_reintentos_alcanzado`) — no queda
-    ningún POST pendiente por hacer. Si todavía no se intentó ninguna red
-    (sin filas en `programacion_meta` para esta clave), sigue necesitando su
-    cupo: solo se libera algo que YA quedó resuelto, para bien o para mal.
+    automática más: cada red que se llegó a intentar terminó en un estado
+    definitivo — 'publicado', 'duplicado' (bloqueada a propósito por el gate
+    de deduplicación, nunca se reintenta) o agotó el tope de reintentos
+    (`_tope_reintentos_alcanzado`) — no queda ningún POST pendiente por
+    hacer. Si todavía no se intentó ninguna red (sin filas en
+    `programacion_meta` para esta clave, o bloqueada antes de reservarlas
+    — "pendiente_revision_humana"/"bloqueada_sin_imagen" en
+    `_publicar_noticia_en_clave` —), sigue necesitando su cupo: solo se
+    libera algo que YA quedó resuelto, para bien o para mal.
 
     Bug real corregido 22/8/2026: `publicar_urgentes` usaba
     `_programacion_ya_publicada` (exige éxito en las dos redes) para decidir
@@ -277,11 +284,16 @@ def _urgente_sin_trabajo_pendiente(db: Database, fecha: str, clave: str) -> bool
     respetado) nunca llegaba a 'publicado' en las dos redes, así que
     ocupaba el único cupo (`max_pendientes=1`) para siempre — bloqueando
     cualquier urgente posterior en la cola, sin importar cuántas corridas
-    pasaran (caso real: urgente-351)."""
+    pasaran (caso real: urgente-351). Verificado en producción que
+    'duplicado' tiene exactamente el mismo problema (caso real:
+    urgente-352, bloqueada porque la misma noticia ya había salido por otro
+    circuito) — también es un estado definitivo, nunca se reintenta."""
     filas = [fila for fila in db.listar_programacion_meta(fecha) if fila["hora"] == clave]
     if not filas:
         return False
-    return all(fila["estado"] == "publicado" or _tope_reintentos_alcanzado(fila) for fila in filas)
+    return all(
+        fila["estado"] in ESTADOS_TERMINALES_SIN_MAS_ACCION or _tope_reintentos_alcanzado(fila) for fila in filas
+    )
 
 
 def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datetime) -> Optional[dict]:

@@ -1,0 +1,14 @@
+{
+  "ventana_horas": 48,
+  "palabras_clave": [
+    "accidente", "choque", "colisión", "colision", "vuelco", "atropell",
+    "incendio", "explosión", "explosion", "derrumbe", "inundación", "inundacion",
+    "evacua",
+    "corte de luz", "corte de agua", "corte programado", "sin luz", "sin agua",
+    "emergencia", "alerta meteorológica", "alerta meteorologica", "alerta sanitaria",
+    "desaparici", "desaparecid", "busca a", "encontrar a",
+    "operativo policial", "tiroteo", "balacera", "asalto", "robo a mano armada",
+    "persona herida", "personas heridas", "hallaron el cuerpo",
+    "corte de tránsito", "corte de transito", "corte total de"
+  ]
+}

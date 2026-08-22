@@ -21,9 +21,8 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "9.1.0" apply false
     id("org.jetbrains.kotlin.android") version "2.4.0" apply false
-    // Firebase: descomentar una vez que exista google-services.json real
-    // (ver app/README.md, sección "Notificaciones push").
-    // id("com.google.gms.google-services") version "4.4.2" apply false
+    // Firebase: activado — google-services.json real ya en android/app/.
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 include(":app")

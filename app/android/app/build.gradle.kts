@@ -2,9 +2,8 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    // Firebase: descomentar junto con el plugin en settings.gradle.kts una
-    // vez que exista google-services.json real (ver app/README.md).
-    // id("com.google.gms.google-services")
+    // Firebase: activado — google-services.json real ya en android/app/.
+    id("com.google.gms.google-services")
 }
 
 android {

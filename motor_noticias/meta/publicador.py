@@ -261,11 +261,27 @@ def _tope_reintentos_alcanzado(fila: dict, max_intentos: int = MAX_INTENTOS_DEFA
     return fila["estado"] == "error" and fila["intentos"] >= max_intentos
 
 
-def _programacion_ya_publicada(db: Database, fecha: str, clave: str) -> bool:
-    """True si ambas redes de esta franja/urgente ya están 'publicado'."""
-    fila_fb = db.obtener_programacion_meta(fecha, clave, "facebook")
-    fila_ig = db.obtener_programacion_meta(fecha, clave, "instagram")
-    return bool(fila_fb) and bool(fila_ig) and fila_fb["estado"] == "publicado" and fila_ig["estado"] == "publicado"
+def _urgente_sin_trabajo_pendiente(db: Database, fecha: str, clave: str) -> bool:
+    """True si esta franja urgente ya no necesita (ni puede) ninguna acción
+    automática más: cada red que se llegó a intentar terminó en 'publicado'
+    o agotó el tope de reintentos (`_tope_reintentos_alcanzado`) — no queda
+    ningún POST pendiente por hacer. Si todavía no se intentó ninguna red
+    (sin filas en `programacion_meta` para esta clave), sigue necesitando su
+    cupo: solo se libera algo que YA quedó resuelto, para bien o para mal.
+
+    Bug real corregido 22/8/2026: `publicar_urgentes` usaba
+    `_programacion_ya_publicada` (exige éxito en las dos redes) para decidir
+    si una franja seguía ocupando el cupo de `max_pendientes` en cada
+    corrida. Una urgente cuyo Instagram quedó agotado por un error externo
+    persistente (rate-limit real de Meta, tope de reintentos ya alcanzado y
+    respetado) nunca llegaba a 'publicado' en las dos redes, así que
+    ocupaba el único cupo (`max_pendientes=1`) para siempre — bloqueando
+    cualquier urgente posterior en la cola, sin importar cuántas corridas
+    pasaran (caso real: urgente-351)."""
+    filas = [fila for fila in db.listar_programacion_meta(fecha) if fila["hora"] == clave]
+    if not filas:
+        return False
+    return all(fila["estado"] == "publicado" or _tope_reintentos_alcanzado(fila) for fila in filas)
 
 
 def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datetime) -> Optional[dict]:
@@ -570,9 +586,10 @@ def publicar_urgentes(
     (la más vieja primero): evita que una cola acumulada (por ejemplo, tras
     un corte de la tarea programada) se vacíe entera de una sola vez — el
     resto queda igual de pendiente para la próxima corrida, no se pierde.
-    Una urgente que ya estaba publicada por completo (ambas redes) no
-    consume cupo: solo se limita el trabajo nuevo, nunca el reporte
-    idempotente de lo ya hecho."""
+    Una urgente que ya quedó resuelta (publicada por completo, o con todas
+    sus redes agotadas por el tope de reintentos, sin ninguna acción
+    automática posible) no consume cupo: solo se limita el trabajo nuevo,
+    nunca el reporte idempotente de lo ya hecho o lo ya agotado."""
     ahora_utc = (ahora or datetime.now(timezone.utc)).astimezone(timezone.utc)
     cliente_fb = cliente_fb or ClienteMetaGraphAPI()
     cliente_ig = cliente_ig or ClienteMetaGraphAPI()
@@ -583,13 +600,13 @@ def publicar_urgentes(
         if item["tipo"] != "urgente" or not item.get("noticia_id"):
             continue
         clave = f"urgente-{item['id']}"
-        ya_completa = _programacion_ya_publicada(db, fecha, clave)
-        if not ya_completa and max_pendientes is not None and publicadas_nuevas >= max_pendientes:
+        ya_resuelta = _urgente_sin_trabajo_pendiente(db, fecha, clave)
+        if not ya_resuelta and max_pendientes is not None and publicadas_nuevas >= max_pendientes:
             continue  # deja esta pendiente para la próxima corrida
         resultados.append(
             _publicar_noticia_en_clave(db, fecha, clave, item["noticia_id"], cliente_fb, cliente_ig, ahora_utc)
         )
-        if not ya_completa:
+        if not ya_resuelta:
             publicadas_nuevas += 1
     return resultados
 

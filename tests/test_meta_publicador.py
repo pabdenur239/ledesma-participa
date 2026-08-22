@@ -345,6 +345,52 @@ class TestReintentarPublicaciones(BaseTest):
         llamadas_instagram = [l for l in fake.llamadas if l[0] == "publicar_instagram"]
         self.assertEqual(len(llamadas_instagram), MAX_INTENTOS_DEFAULT)  # ninguna llamada de más a Meta
 
+    def test_urgente_agotada_por_tope_no_bloquea_a_las_siguientes(self):
+        # Bug real corregido 22/8: publicar_urgentes decidía si una urgente
+        # seguía ocupando el único cupo (max_pendientes=1) exigiendo éxito
+        # en las dos redes. Una urgente cuyo Instagram agotó el tope de
+        # reintentos por un error externo persistente (rate-limit real de
+        # Meta) nunca llegaba a "publicado" en las dos redes, así que
+        # ocupaba ese cupo para siempre — bloqueando cualquier urgente
+        # posterior en la cola sin importar cuántas corridas pasaran (caso
+        # real: urgente-351, que dejó sin publicar el contenido propio
+        # generado después).
+        n1 = _noticia(self.db, 1)
+        n2 = _noticia(self.db, 2, url_fuente="http://a.com/2")
+        agenda_id_1 = self.db.guardar_agenda_item(
+            "2026-08-12", None, "urgente", "local", n1.id, AHORA.isoformat()
+        )
+        fake_falla = FakeClienteMeta(fallar_instagram=True)
+
+        for _ in range(MAX_INTENTOS_DEFAULT):
+            publicar_urgentes(
+                self.db, "2026-08-12", cliente_fb=fake_falla, cliente_ig=fake_falla, ahora=AHORA, max_pendientes=1
+            )
+
+        fila_ig_1 = self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id_1}", "instagram")
+        self.assertEqual(fila_ig_1["estado"], "error")
+        self.assertEqual(fila_ig_1["intentos"], MAX_INTENTOS_DEFAULT)  # tope agotado, ya no bloquea a las siguientes
+
+        # Aparece una segunda urgente en la cola (p.ej. contenido propio
+        # generado después): con Meta funcionando normal, debe poder
+        # avanzar de inmediato, sin esperar a que la primera "se resuelva"
+        # -- ya no tiene ninguna acción automática pendiente.
+        agenda_id_2 = self.db.guardar_agenda_item(
+            "2026-08-12", None, "urgente", "departamental", n2.id, AHORA.isoformat()
+        )
+        fake_ok = FakeClienteMeta()
+        publicar_urgentes(self.db, "2026-08-12", cliente_fb=fake_ok, cliente_ig=fake_ok, ahora=AHORA, max_pendientes=1)
+
+        fila_fb_2 = self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id_2}", "facebook")
+        fila_ig_2 = self.db.obtener_programacion_meta("2026-08-12", f"urgente-{agenda_id_2}", "instagram")
+        self.assertEqual(fila_fb_2["estado"], "publicado")
+        self.assertEqual(fila_ig_2["estado"], "publicado")
+
+        # La primera urgente agotada no se vuelve a tocar: sigue en su
+        # estado terminal tal cual, sin ninguna llamada extra a Meta.
+        llamadas_instagram_agotada = [l for l in fake_falla.llamadas if l[0] == "publicar_instagram"]
+        self.assertEqual(len(llamadas_instagram_agotada), MAX_INTENTOS_DEFAULT)
+
 
 class TestDeduplicacionEntreCircuitos(BaseTest):
     """El gate de deduplicación de `_publicar_noticia_en_clave` es único y

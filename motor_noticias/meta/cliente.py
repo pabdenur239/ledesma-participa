@@ -540,7 +540,12 @@ class ClienteMetaGraphAPI:
                 "Content-Type": "application/octet-stream",
             },
         )
-        if int(transferencia.get("end_offset", -1)) != tamano:
+        # Verificado contra la API real: para un archivo chico (subido en
+        # una sola parte, sin trozos) Meta responde {"success": true,
+        # "message": "..."} — el par start_offset/end_offset solo aparece
+        # en la respuesta cuando la subida quedó partida en varios trozos.
+        subida_confirmada = transferencia.get("success") or int(transferencia.get("end_offset", -1)) == tamano
+        if not subida_confirmada:
             raise ErrorClienteMeta(f"Meta no confirmó la subida completa del Reel de Facebook: {transferencia}")
 
         cuerpo_fin, tipo_fin = _multipart(

@@ -20,7 +20,6 @@ from typing import NamedTuple, Optional
 from ..db import Database
 from ..dedupe import es_mismo_contenido, palabras_clave
 from ..models import Estado, OrigenIngreso, RevisionEstado
-from ..motor_editorial import HORA_NOTICIA_DEL_DIA
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
 from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
@@ -477,15 +476,6 @@ def _publicar_noticia_en_clave(
     except ErrorPreparacionFacebook as error:
         logger.error("Franja %s %s bloqueada: %s", fecha, clave, error)
         return ResultadoFranja(fecha, clave, noticia["id"], "bloqueada_sin_imagen")
-
-    # Noticia del Día: misma noticia real, mismo pipeline de preparación
-    # (no se regenera nada, "mejor selección de imagen" = la que ya eligió
-    # `preparar_publicacion` para esa noticia), solo se le agrega un
-    # encabezado distintivo al texto de esta publicación puntual — nunca se
-    # modifica el registro guardado de la noticia (titulo_preparado/
-    # texto_preparado quedan intactos para cualquier otro uso).
-    if clave == HORA_NOTICIA_DEL_DIA:
-        contenido.post_principal = f"🌟 NOTICIA DEL DÍA\n\n{contenido.post_principal}"
 
     if not contenido.imagen_url:
         logger.error("Franja %s %s bloqueada: sin imagen segura para publicar.", fecha, clave)

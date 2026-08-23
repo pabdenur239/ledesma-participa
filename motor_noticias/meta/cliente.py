@@ -518,11 +518,17 @@ class ClienteMetaGraphAPI:
         ruta_video = Path(ruta_video)
         tamano = ruta_video.stat().st_size
 
-        inicio = self._peticion_get_json(endpoint, {"upload_phase": "start", "access_token": self._access_token})
+        # Nota: la fase "start" es un POST (no un GET) — un GET a este mismo
+        # endpoint responde 200 con `{"data": []}` (lista los Reels
+        # existentes de la página) en vez de abrir la sesión de subida.
+        cuerpo_inicio, tipo_inicio = _multipart(
+            {"upload_phase": "start", "access_token": self._access_token}
+        )
+        inicio = self._peticion_json(endpoint, cuerpo_inicio, tipo_inicio)
         video_id = inicio.get("video_id")
         upload_url = inicio.get("upload_url")
         if not video_id or not upload_url:
-            raise ErrorClienteMeta("Meta no devolvió video_id/upload_url al iniciar la subida del Reel.")
+            raise ErrorClienteMeta(f"Meta no devolvió video_id/upload_url al iniciar la subida del Reel: {inicio}")
 
         transferencia = self._peticion_binaria_json(
             upload_url,

@@ -41,16 +41,8 @@ from .collectors.rss_tmz import TMZRSSCollector
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
 from .db import Database
 from .institucional import reservar_franja_institucional
-from .motor_editorial import (
-    ZONA_JUJUY,
-    _fecha_limite_antiguedad,
-    generar_agenda,
-    reservar_franja_informe_diario,
-    resolver_urgentes,
-)
-from .noticia_del_dia import reservar_franja_noticia_del_dia
+from .motor_editorial import generar_agenda, reservar_franja_informe_diario
 from .pipeline import ejecutar_pipeline
-from .resumen_dia import reservar_franja_resumen_del_dia
 from .redaccion.base import Redactor
 from .redaccion.mock import RedactorMock
 
@@ -178,26 +170,7 @@ def _actualizar_agenda(db: Database) -> "tuple[bool, Optional[str]]":
     try:
         entrada_informe = reservar_franja_informe_diario(db)
         entrada_institucional = reservar_franja_institucional(db)
-
-        # Las urgentes se resuelven ANTES de Noticia del Día/Resumen del
-        # Día: una noticia local/departamental recién marcada urgente debe
-        # reservarse para su propia propuesta urgente antes de que cualquier
-        # otra selección (incluida Noticia del Día) pueda tomarla para otra
-        # cosa (bug real corregido 20/8/2026, ver `resolver_urgentes`).
-        ahora = datetime.now(ZONA_JUJUY)
-        fecha = ahora.strftime("%Y-%m-%d")
-        fecha_limite = _fecha_limite_antiguedad(ahora.astimezone(timezone.utc))
-        usados = db.noticias_ids_usadas_en_agenda()
-        entradas_urgentes = resolver_urgentes(db, fecha, usados, fecha_limite)
-
-        entrada_noticia_del_dia = reservar_franja_noticia_del_dia(db)
-        entrada_resumen_del_dia = reservar_franja_resumen_del_dia(db)
-        entradas = (
-            [entrada_informe, entrada_institucional]
-            + list(entradas_urgentes)
-            + [entrada_noticia_del_dia, entrada_resumen_del_dia]
-            + generar_agenda(db)
-        )
+        entradas = [entrada_informe, entrada_institucional] + generar_agenda(db)
     except Exception as error:  # nunca debe interrumpir el ciclo continuo
         mensaje = f"Error actualizando agenda: {error}"
         logger.error(mensaje)

@@ -21,61 +21,28 @@ REVISIONES_PROTEGIDAS = (RevisionEstado.APROBADA.value, RevisionEstado.RECHAZADA
 # proyecto es exclusivamente stdlib + Pillow).
 ZONA_JUJUY = timezone(timedelta(hours=-3), name="America/Argentina/Jujuy")
 
-# Franjas fijas de la Agenda Editorial / programación de publicación en Meta
-# (actualizado 20/8/2026, ver informe de cambio de frecuencia/mezcla).
-# Franjas de mayor visibilidad a intervalos de 15 minutos: 07:00-09:00,
-# 12:00-14:00 y 18:00-23:00 (fin de ventana exclusivo, ej. "18:00-23:00"
-# genera hasta 22:45). Resto del día a intervalos de 30 minutos. Cuatro
-# horas quedan reservadas fuera de la cascada (informe diario, Noticia del
-# Día, institucional, Resumen del Día) — nunca compiten por espacio con la
-# cascada territorial normal ni entre sí.
+# Franjas fijas de la Agenda Editorial / programación de publicación en Meta.
+# 07:30 está reservada exclusivamente al informe diario (clima/dólar, ver
+# `reservar_franja_informe_diario`); las 14 franjas restantes siguen la
+# cascada territorial normal, una por hora entre las 09:00 y las 22:00.
+# Entre las 15, cubren el volumen diario de 12 a 15 contenidos pedido para
+# la publicación automática en Meta.
 HORA_INFORME_DIARIO = "07:30"
+# HORA_NOTICIA_DEL_DIA y HORA_RESUMEN_DEL_DIA quedan definidas porque
+# `noticia_del_dia.py`, `resumen_dia.py` y `meta/publicador.py` todavía las
+# importan, pero ninguna franja fija las reserva: esas dos publicaciones
+# extra (agregadas 20/8/2026 junto con la grilla de 66/día) están
+# deshabilitadas — revertidas el 23/8/2026 por exceder la grilla de 12 a 15
+# publicaciones diarias acordada.
 HORA_NOTICIA_DEL_DIA = "13:00"
 HORA_RESUMEN_DEL_DIA = "22:30"
 # La institucional vive en motor_noticias.institucional (institucional.py
 # importa este módulo, así que la hora no se importa acá para no crear un
 # ciclo): debe coincidir exactamente con `institucional.HORA_INSTITUCIONAL`.
 HORA_INSTITUCIONAL_RESERVADA = "20:30"
-
-VENTANAS_ALTA_VISIBILIDAD = (("07:00", "09:00"), ("12:00", "14:00"), ("18:00", "23:00"))
-INTERVALO_ALTA_VISIBILIDAD_MIN = 15
-INTERVALO_NORMAL_MIN = 30
-
-
-def _en_alguna_ventana(minutos_del_dia: int, ventanas_min: tuple) -> bool:
-    return any(inicio <= minutos_del_dia < fin for inicio, fin in ventanas_min)
-
-
-def _generar_horarios_dia(
-    ventanas_alta_visibilidad=VENTANAS_ALTA_VISIBILIDAD,
-    intervalo_alta_min: int = INTERVALO_ALTA_VISIBILIDAD_MIN,
-    intervalo_normal_min: int = INTERVALO_NORMAL_MIN,
-    horas_reservadas: tuple = (),
-) -> tuple:
-    """Genera la lista completa de franjas "HH:MM" de un día calendario
-    (00:00 a 23:30), en orden cronológico, a 15 minutos dentro de las
-    ventanas de alta visibilidad y a 30 minutos en el resto, excluyendo las
-    horas reservadas (informe diario, Noticia del Día, institucional,
-    Resumen del Día). Se recalcula una sola vez al importar el módulo — no
-    depende de nada externo, es determinística."""
-    ventanas_min = [
-        (int(i.split(":")[0]) * 60 + int(i.split(":")[1]), int(f.split(":")[0]) * 60 + int(f.split(":")[1]))
-        for i, f in ventanas_alta_visibilidad
-    ]
-    reservadas = set(horas_reservadas)
-    horarios = []
-    minutos = 0
-    while minutos < 24 * 60:
-        intervalo = intervalo_alta_min if _en_alguna_ventana(minutos, ventanas_min) else intervalo_normal_min
-        hora = f"{minutos // 60:02d}:{minutos % 60:02d}"
-        if hora not in reservadas:
-            horarios.append(hora)
-        minutos += intervalo
-    return tuple(horarios)
-
-
-HORARIOS_DEFAULT = _generar_horarios_dia(
-    horas_reservadas=(HORA_INFORME_DIARIO, HORA_NOTICIA_DEL_DIA, HORA_INSTITUCIONAL_RESERVADA, HORA_RESUMEN_DEL_DIA)
+HORARIOS_DEFAULT = (
+    "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00",
+    "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
 )
 ANTIGUEDAD_MAXIMA_HORAS = 48
 # Línea editorial (prioridad acumulativa, no cuota rígida diaria): Libertador

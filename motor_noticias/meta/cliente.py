@@ -491,3 +491,125 @@ class ClienteMetaGraphAPI:
         if not media_id:
             raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Instagram Story.")
         return media_id
+
+    # -- Reels (piloto) -------------------------------------------------
+
+    def _peticion_binaria_json(self, url: str, cuerpo: bytes, cabeceras: dict) -> dict:
+        """Igual que `_peticion_json`, pero para el protocolo de subida
+        resumable de Facebook (`rupload.facebook.com`): cabeceras propias
+        (`Authorization`, `offset`, `file_size`) en vez de multipart/
+        form-data, cuerpo = bytes crudos del video."""
+        peticion = urllib.request.Request(url, data=cuerpo, headers=cabeceras, method="POST")
+        return self._ejecutar_peticion(peticion)
+
+    def publicar_reel_facebook(self, ruta_video: Path, descripcion: str, dry_run: bool = True) -> str:
+        """Publica un Reel real en la Página de Facebook vía subida
+        resumable (`/{page_id}/video_reels`, tres fases: start, transfer,
+        finish) — a diferencia de Instagram, no necesita ninguna URL
+        pública: el archivo se transfiere directo a los servidores de Meta,
+        igual principio que `publicar_foto_facebook` (adjunta el archivo,
+        nunca depende de hosting propio). Devuelve el video_id real."""
+        endpoint = f"{GRAPH_API_BASE}/{self.page_id}/video_reels"
+        if dry_run:
+            return ""
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede publicar el Reel de Facebook.")
+
+        ruta_video = Path(ruta_video)
+        tamano = ruta_video.stat().st_size
+
+        inicio = self._peticion_get_json(endpoint, {"upload_phase": "start", "access_token": self._access_token})
+        video_id = inicio.get("video_id")
+        upload_url = inicio.get("upload_url")
+        if not video_id or not upload_url:
+            raise ErrorClienteMeta("Meta no devolvió video_id/upload_url al iniciar la subida del Reel.")
+
+        transferencia = self._peticion_binaria_json(
+            upload_url,
+            ruta_video.read_bytes(),
+            {
+                "Authorization": f"OAuth {self._access_token}",
+                "offset": "0",
+                "file_size": str(tamano),
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        if int(transferencia.get("end_offset", -1)) != tamano:
+            raise ErrorClienteMeta(f"Meta no confirmó la subida completa del Reel de Facebook: {transferencia}")
+
+        cuerpo_fin, tipo_fin = _multipart(
+            {
+                "upload_phase": "finish",
+                "video_id": video_id,
+                "video_state": "PUBLISHED",
+                "description": descripcion,
+                "access_token": self._access_token,
+            }
+        )
+        fin = self._peticion_json(endpoint, cuerpo_fin, tipo_fin)
+        if not fin.get("success"):
+            raise ErrorClienteMeta(f"Meta no confirmó la publicación del Reel de Facebook: {fin}")
+        return video_id
+
+    def publicar_reel_instagram(
+        self, video_url: str, caption: str, dry_run: bool = True,
+        espera_maxima_segundos: int = 180, intervalo_segundos: int = 5,
+    ) -> str:
+        """Publica un Reel real en Instagram: mismo flujo oficial de dos
+        pasos que `publicar_instagram` (contenedor de media + publish), con
+        `media_type=REELS`, pero un video tarda en procesarse del lado de
+        Meta antes de poder publicarse — a diferencia de una foto, hace
+        falta sondear `status_code` del contenedor hasta que llegue a
+        `FINISHED` (o falle) antes de intentar `media_publish`. Exige una
+        `video_url` públicamente accesible (Instagram no admite adjuntar el
+        archivo directamente, igual que con imágenes)."""
+        import time
+
+        endpoint_media = f"{GRAPH_API_BASE}/{self.ig_user_id}/media"
+        endpoint_publish = f"{GRAPH_API_BASE}/{self.ig_user_id}/media_publish"
+        if dry_run:
+            return ""
+        if not self.tiene_token_configurado():
+            raise ErrorClienteMeta("Falta META_PAGE_ACCESS_TOKEN: no se puede publicar el Reel de Instagram.")
+        if not self.tiene_instagram_configurado():
+            raise ErrorClienteMeta("Falta META_IG_USER_ID: no se puede publicar el Reel de Instagram.")
+        if not video_url:
+            raise ErrorClienteMeta("Falta una URL pública de video para el Reel de Instagram.")
+
+        cuerpo_media, tipo_media = _multipart(
+            {
+                "media_type": "REELS", "video_url": video_url, "caption": caption,
+                "access_token": self._access_token,
+            }
+        )
+        contenedor = self._peticion_json(endpoint_media, cuerpo_media, tipo_media)
+        creation_id = contenedor.get("id")
+        if not creation_id:
+            raise ErrorClienteMeta("Meta no devolvió un ID de contenedor de Reel de Instagram.")
+
+        transcurrido = 0
+        while transcurrido < espera_maxima_segundos:
+            estado = self._peticion_get_json(
+                f"{GRAPH_API_BASE}/{creation_id}",
+                {"fields": "status_code", "access_token": self._access_token},
+            )
+            status_code = estado.get("status_code")
+            if status_code == "FINISHED":
+                break
+            if status_code == "ERROR":
+                raise ErrorClienteMeta(f"Meta no pudo procesar el video del Reel de Instagram: {estado}")
+            time.sleep(intervalo_segundos)
+            transcurrido += intervalo_segundos
+        else:
+            raise ErrorClienteMeta(
+                f"El video del Reel de Instagram no terminó de procesarse en {espera_maxima_segundos}s."
+            )
+
+        cuerpo_publish, tipo_publish = _multipart(
+            {"creation_id": creation_id, "access_token": self._access_token}
+        )
+        publicado = self._peticion_json(endpoint_publish, cuerpo_publish, tipo_publish)
+        media_id = publicado.get("id")
+        if not media_id:
+            raise ErrorClienteMeta("Meta no devolvió un ID de publicación de Reel de Instagram.")
+        return media_id

@@ -362,9 +362,9 @@ class TestGenerarReelaboracion(unittest.TestCase):
 
     def test_genera_nota_propia_con_atribucion_y_traza_sin_duplicar_la_original(self):
         src = _guardar_noticia_medio(
-            self.db, 1, "Medio Nacional", "El dólar cerró en alza",
-            "El tipo de cambio mayorista subió y los analistas lo atribuyen a la demanda estacional. " * 3,
-            territorio="nacional",
+            self.db, 1, "Medio Provincial", "Aumento en el boleto de colectivo en Jujuy",
+            "El Gobierno provincial confirmó la actualización de la tarifa del transporte urbano. " * 3,
+            territorio="provincial",
         )
         with patch("motor_noticias.contenido_propio.crear_redactor", return_value=_RedactorFake()):
             resultados = generar_contenido_propio(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS)
@@ -375,7 +375,7 @@ class TestGenerarReelaboracion(unittest.TestCase):
         nota = self.db.obtener(reelab[0].noticia_id)
         self.assertEqual(nota["origen_ingreso"], OrigenIngreso.CONTENIDO_PROPIO.value)
         self.assertIn("(reescrito)", nota["titulo_preparado"])
-        self.assertIn("Fuente: Medio Nacional", nota["texto_preparado"])
+        self.assertIn("Fuente: Medio Provincial", nota["texto_preparado"])
         self.assertEqual(nota["url_fuente"], self.db.obtener(src)["url_fuente"])  # atribución real
         self.assertEqual(nota["observacion_interna"], f"reelaboracion_de:{src}")
         self.assertIn(src, self.db.ids_fuente_reelaborados())

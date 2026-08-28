@@ -90,13 +90,15 @@ FUENTES_MEDIOS_DEFAULT = [
     "Jujuy al Momento",
     "Jujuy Gráfico",
 ]
-# Territorios cuyas notas de medio vale la pena reelaborar como contenido
-# propio. Local/departamental salen solas y rápido por el circuito urgente;
-# reelaborar ahí competiría con la noticia local original. El foco de la
-# mezcla 50/50 es sustituir las franjas que hoy se llenan con externas
-# provinciales (y, si un medio de Jujuy cubre un tema nacional, ese
-# contexto también sirve).
-TERRITORIOS_REELABORABLES = ("provincial", "nacional")
+# Solo se reelabora contenido PROVINCIAL (noticias de Jujuy). Local/
+# departamental salen solas por el circuito urgente y reelaborarlas
+# competiría con la nota local original. Lo que un medio de Jujuy publica
+# como "nacional" es, en la práctica, deportes/política/farándula de wire
+# sin relación con el departamento (se comprobó: fútbol de Julián Álvarez,
+# etc.) y encima se duplica entre sí — queda afuera hasta tener un filtro
+# de relevancia real. El objetivo de la mezcla 50/50 son justamente las
+# franjas que hoy se llenan con externas provinciales.
+TERRITORIOS_REELABORABLES = ("provincial",)
 # Aunque el medio sea de Jujuy, no se reelabora contenido de SEO/apuestas/
 # horóscopo/promoción que a veces se cuela en sus feeds.
 PATRONES_NO_REELABORABLES = (

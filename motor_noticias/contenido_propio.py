@@ -140,6 +140,10 @@ PATRONES_NO_REELABORABLES = (
     "desaparec", "paradero", "busqueda de la joven", "búsqueda de la joven",
     "inconsciente", "sin vida", "hallado muerto", "hallada muerta",
     "femicid", "abusad", "narcotrafic", "narcomenud",
+    # marcadores de columna de opinión / editorial (no es nota informativa)
+    "columna de opinion", "columna de opinión", "el problema no reside",
+    "a mi juicio", "no es casual que", "lo que se ve es", "vale preguntarse",
+    "reflexion final", "reflexión final",
 )
 IDENTIDAD_REELABORACION = "https://ledesma-participa.local/contenido-propio/reelaboracion/{id}"
 

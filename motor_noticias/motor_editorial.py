@@ -367,6 +367,13 @@ def generar_agenda(
         existente = db.obtener_agenda_item(fecha, hora)
         noticia_existente = db.obtener(existente["noticia_id"]) if existente and existente["noticia_id"] else None
 
+        # Una noticia que ya quedó `descartada` (rechazada o filtrada) no
+        # puede seguir ocupando su franja: se libera para que la cascada la
+        # rellene. Sin esto, una franja con una nota descartada queda
+        # bloqueada y no publica nada.
+        if noticia_existente is not None and noticia_existente["estado"] == Estado.DESCARTADA.value:
+            noticia_existente = None
+
         # Congelada de verdad: una DECISIÓN HUMANA (aprobó/rechazó) o la
         # noticia ya publicada. El Motor Editorial nunca la toca.
         decidida_por_humano = noticia_existente is not None and (

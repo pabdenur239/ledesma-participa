@@ -1,4 +1,5 @@
 import itertools
+import math
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,7 @@ def _crear_noticia(
     estado: str = Estado.PREPARADA.value,
     titulo: str = None,
     categoria_tematica: str = None,
+    origen_ingreso: str = "automatico",
 ) -> Noticia:
     n = next(_CONTADOR)
     titulo = titulo or f"Noticia de prueba {territorio} #{n}"
@@ -52,6 +54,7 @@ def _crear_noticia(
         texto_preparado="Texto preparado de prueba.",
         urgente=urgente,
         categoria_tematica=categoria_tematica,
+        origen_ingreso=origen_ingreso,
     )
     db.guardar(noticia)
     return noticia
@@ -555,6 +558,107 @@ class TestIntegracionConMotorContinuo(BaseAgendaTest):
         self.assertEqual(entradas[0].territorio, "local")
         noticia = self.db.obtener(entradas[0].noticia_id)
         self.assertEqual(noticia["titulo_original"], item_local["titulo"])
+
+
+class TestMezclaContenidoPropio(BaseAgendaTest):
+    """Regla de mezcla editorial: >=50% de las franjas normales con contenido
+    propio, sustituyendo externas provincial/nacional cuando hay nota propia
+    `preparada` disponible; nunca local/departamental; flexible si no hay
+    material propio."""
+
+    FECHA = "2026-08-12"
+
+    # Titulares claramente distintos entre sí (sin localidades ni fechas
+    # compartidas) para que el gate de "mismo hecho" no los confunda.
+    TITULOS_PROPIOS = [
+        "Claves del nuevo régimen de coparticipación minera",
+        "Qué cambia con la actualización del boleto estudiantil gratuito",
+        "Cómo tramitar la licencia de conducir digital paso a paso",
+        "Resumen económico: variación del salario docente en el trimestre",
+        "Contexto: la obra del acueducto y su impacto en el consumo domiciliario",
+        "Guía de vacunación antigripal para adultos mayores este invierno",
+        "Explicación breve del cronograma de pago a proveedores del Estado",
+        "Datos: matrícula universitaria comparada con el año anterior",
+        "Qué implica la nueva mesa de trabajo sobre residuos urbanos",
+        "Síntesis deportiva del fin de semana en el torneo regional",
+        "Contexto agropecuario: precios de la caña frente a la campaña previa",
+        "Información útil: horarios de atención de los centros de salud",
+        "Claves de la reforma del estatuto del empleado municipal",
+        "Resumen de las obras de pavimentación previstas para el semestre",
+    ]
+
+    def _crear_propias(self, cantidad=None):
+        cantidad = cantidad or len(HORARIOS_DEFAULT)
+        for i in range(cantidad):
+            _crear_noticia(
+                self.db, "provincial", titulo=self.TITULOS_PROPIOS[i % len(self.TITULOS_PROPIOS)],
+                origen_ingreso="contenido_propio", fecha_recoleccion=_iso(timedelta(hours=3)),
+            )
+
+    def _agenda(self):
+        return generar_agenda(self.db, fecha=self.FECHA, ahora=AHORA)
+
+    def _propias_en(self, entradas):
+        return [
+            e for e in entradas
+            if e.noticia_id and self.db.obtener(e.noticia_id)["origen_ingreso"] == "contenido_propio"
+        ]
+
+    def test_sin_material_propio_todas_las_franjas_quedan_externas(self):
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial")
+        entradas = [e for e in self._agenda() if e.tipo == "normal"]
+        self.assertEqual(self._propias_en(entradas), [])
+        self.assertTrue(all(e.noticia_id for e in entradas))  # total preservado
+
+    def test_propio_sustituye_externas_provinciales_hasta_el_objetivo(self):
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial")
+        self._crear_propias()
+        entradas = [e for e in self._agenda() if e.tipo == "normal"]
+        self.assertEqual(len(entradas), len(HORARIOS_DEFAULT))  # total preservado
+        objetivo = math.ceil(0.5 * len(HORARIOS_DEFAULT))
+        self.assertEqual(len(self._propias_en(entradas)), objetivo)
+
+    def test_nunca_desplaza_una_externa_local_ni_departamental(self):
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "local")
+        self._crear_propias()
+        entradas = [e for e in self._agenda() if e.tipo == "normal"]
+        for e in entradas:
+            noticia = self.db.obtener(e.noticia_id)
+            self.assertEqual(noticia["origen_ingreso"], "automatico")
+            self.assertEqual(noticia["territorio"], "local")
+
+    def test_no_agenda_una_nota_propia_sobre_un_hecho_ya_agendado(self):
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial", titulo="Suba de tarifas de colectivo en toda la region")
+        # única nota propia: mismo hecho que las externas -> no debe entrar
+        _crear_noticia(
+            self.db, "provincial", titulo="Suba de tarifas de colectivo en toda la region",
+            origen_ingreso="contenido_propio", fecha_recoleccion=_iso(timedelta(hours=3)),
+        )
+        entradas = [e for e in self._agenda() if e.tipo == "normal"]
+        self.assertEqual(self._propias_en(entradas), [])
+
+    def test_urgentes_no_cuentan_para_la_proporcion(self):
+        _crear_noticia(self.db, "local", urgente=True, titulo="Urgente local corte de ruta")
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial")
+        self._crear_propias()
+        entradas = self._agenda()
+        self.assertEqual(len([e for e in entradas if e.tipo == "urgente"]), 1)
+        normales = [e for e in entradas if e.tipo == "normal"]
+        self.assertEqual(len(self._propias_en(normales)), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
+
+    def test_regeneracion_no_degrada_una_nota_propia_ya_asignada(self):
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial")
+        self._crear_propias()
+        ids_1 = {e.noticia_id for e in self._propias_en(self._agenda())}
+        ids_2 = {e.noticia_id for e in self._propias_en(self._agenda())}
+        self.assertEqual(ids_1, ids_2)
+        self.assertEqual(len(ids_1), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
 
 
 if __name__ == "__main__":

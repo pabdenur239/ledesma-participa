@@ -1,10 +1,13 @@
+import json
+import math
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, NamedTuple, Optional
 
 from .db import Database
-from .dedupe import normalizar_url
+from .dedupe import es_mismo_contenido, normalizar_url, palabras_clave, refieren_a_hecho_distinto
 from .entretenimiento import es_entretenimiento_o_curiosidad
-from .models import Estado, RevisionEstado
+from .models import Estado, OrigenIngreso, RevisionEstado
 
 # Estados de la propia noticia que congelan su espacio en la agenda: una vez
 # que un humano decidió (aprobó/rechazó) o la noticia ya se publicó, el
@@ -52,6 +55,56 @@ ANTIGUEDAD_MAXIMA_HORAS = 48
 # espectáculos/curiosidades/tendencias virales verificable (nunca elige un
 # nivel inferior si existe uno superior apto).
 ORDEN_CASCADA = ("local", "departamental", "provincial", "nacional")
+
+# Regla de mezcla editorial (agregada 28/8/2026): en las franjas normales se
+# apunta a que al menos esta proporción sea contenido propio de Ledesma
+# Participa, sustituyendo publicaciones externas cuando hay una nota propia
+# `preparada` válida disponible. Es un objetivo flexible, no una cuota
+# rígida: si no hay material propio de calidad para una franja, se mantiene
+# la externa. Configurable en `config/agenda.json`.
+CONFIG_AGENDA_PATH = Path(__file__).resolve().parent.parent / "config" / "agenda.json"
+PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT = 0.5
+
+# La regla de mezcla NUNCA desplaza una publicación externa de estos
+# territorios: son las noticias que deben salir primero y sin demora. El
+# contenido propio solo reemplaza a externas de prioridad provincial o
+# inferior (provincial / nacional / temática / entretenimiento).
+TERRITORIOS_PROTEGIDOS_MEZCLA = ("local", "departamental")
+
+
+def _proporcion_minima_contenido_propio(path: Optional[Path] = None) -> float:
+    """Lee `config/agenda.json` → "proporcion_minima_contenido_propio"
+    (default 0.5). Se relee en cada llamada, se puede ajustar sin reiniciar
+    nada. Un valor fuera de [0, 1] o ilegible cae al default."""
+    try:
+        with open(path or CONFIG_AGENDA_PATH, encoding="utf-8") as f:
+            valor = float(json.load(f).get(
+                "proporcion_minima_contenido_propio", PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
+            ))
+        return valor if 0.0 <= valor <= 1.0 else PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
+
+
+def _es_mismo_hecho(titulo_a: str, titulo_b: str) -> bool:
+    """True si dos títulos son la misma nota real (mismo criterio que el
+    gate de deduplicación de publicación). Se usa para no programar una
+    nota propia sobre un hecho que ya ocupa otra franja del día."""
+    if refieren_a_hecho_distinto(titulo_a, titulo_b):
+        return False
+    return es_mismo_contenido(palabras_clave(titulo_a or ""), palabras_clave(titulo_b or ""))
+
+
+def _sigue_siendo_elegible(noticia: dict, fecha_limite: str) -> bool:
+    """Mismas condiciones que aplica `candidato_editorial` para que una
+    noticia pueda ocupar una franja automática: `preparada`, no rechazada,
+    sin riesgo editorial obligatorio y dentro de la antigüedad máxima."""
+    return (
+        noticia.get("estado") == Estado.PREPARADA.value
+        and noticia.get("revision_estado") != RevisionEstado.RECHAZADA.value
+        and not noticia.get("requiere_revision_especial")
+        and (noticia.get("fecha_recoleccion") or "") >= fecha_limite
+    )
 
 
 class EntradaAgenda(NamedTuple):
@@ -253,6 +306,29 @@ def generar_agenda(
     # para preferir la menos usada (evitar monotonía sin cuota rígida).
     conteo_categorias_tematicas: dict = {}
 
+    # Regla de mezcla editorial: objetivo de al menos `objetivo_propio`
+    # franjas normales con contenido propio (>=50% de `len(horarios)` por
+    # defecto). `titulos_en_agenda` acumula los títulos ya comprometidos en
+    # el día (empezando por las urgentes) para no agendar una nota propia
+    # sobre un hecho que ya ocupa otra franja. Las urgentes no cuentan para
+    # la proporción (quedan fuera de la mezcla por diseño).
+    objetivo_propio = math.ceil(_proporcion_minima_contenido_propio() * len(horarios))
+    propio_en_normales = 0
+    titulos_en_agenda: List[str] = []
+    for entrada_previa in entradas:
+        if entrada_previa.noticia_id:
+            noticia_previa = db.obtener(entrada_previa.noticia_id)
+            if noticia_previa:
+                titulos_en_agenda.append(noticia_previa["titulo_original"])
+
+    def _registrar_normal(noticia_asignada: Optional[dict]) -> None:
+        nonlocal propio_en_normales
+        if not noticia_asignada:
+            return
+        titulos_en_agenda.append(noticia_asignada.get("titulo_original") or "")
+        if noticia_asignada.get("origen_ingreso") == OrigenIngreso.CONTENIDO_PROPIO.value:
+            propio_en_normales += 1
+
     for hora in horarios:
         existente = db.obtener_agenda_item(fecha, hora)
         noticia_existente = db.obtener(existente["noticia_id"]) if existente and existente["noticia_id"] else None
@@ -263,6 +339,7 @@ def generar_agenda(
         )
         if protegido:
             usados.add(noticia_existente["id"])
+            _registrar_normal(noticia_existente)
             entradas.append(
                 EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
             )
@@ -276,6 +353,7 @@ def generar_agenda(
         if existente is not None and _es_franja_pasada(fecha, hora, ahora):
             if noticia_existente is not None:
                 usados.add(noticia_existente["id"])
+                _registrar_normal(noticia_existente)
                 entradas.append(
                     EntradaAgenda(
                         fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente"
@@ -296,10 +374,55 @@ def generar_agenda(
         candidato = _buscar_candidato_cascada(
             db, usados_para_busqueda, fecha_limite, conteo_categorias_tematicas
         )
+
+        # Regla de mezcla editorial (>=50% contenido propio en franjas
+        # normales). Nunca toca local/departamental (deben salir primero)
+        # ni la institucional (franja reservada aparte).
+        ocupante_es_propio = (
+            noticia_existente is not None
+            and noticia_existente.get("origen_ingreso") == OrigenIngreso.CONTENIDO_PROPIO.value
+        )
+        cascada_no_protegida = (
+            candidato is not None
+            and candidato.get("territorio") not in TERRITORIOS_PROTEGIDOS_MEZCLA
+        )
+        if (
+            ocupante_es_propio
+            and cascada_no_protegida
+            and candidato.get("origen_ingreso") != OrigenIngreso.CONTENIDO_PROPIO.value
+            and _sigue_siendo_elegible(noticia_existente, fecha_limite)
+        ):
+            # Estabilidad entre ciclos: una nota propia ya asignada y todavía
+            # válida no se degrada a externa solo porque la cascada, con esa
+            # nota excluida de la búsqueda, encontró otra externa. Solo la
+            # desplaza una externa local/departamental (rama de arriba).
+            candidato = noticia_existente
+        elif (
+            cascada_no_protegida
+            and candidato.get("origen_ingreso") != OrigenIngreso.CONTENIDO_PROPIO.value
+            and propio_en_normales < objetivo_propio
+        ):
+            # Esta franja iba a cubrirse con una externa provincial o
+            # inferior y aún no se alcanzó el objetivo de contenido propio:
+            # se reemplaza por la mejor nota propia `preparada` disponible,
+            # siempre que no repita un hecho ya agendado hoy. Flexible: si
+            # no hay nota propia apta, se mantiene la externa.
+            propio = db.candidato_contenido_propio(usados_para_busqueda, fecha_limite)
+            # La nota propia no debe repetir un hecho ya comprometido hoy
+            # (otra franja o una urgente) ni el hecho de la externa a la que
+            # reemplazaría — evita canibalización propia/externa sobre la
+            # misma noticia.
+            titulos_a_evitar = titulos_en_agenda + [candidato.get("titulo_original") or ""]
+            if propio is not None and not any(
+                _es_mismo_hecho(propio["titulo_original"], titulo) for titulo in titulos_a_evitar
+            ):
+                candidato = propio
+
         id_existente_item = existente["id"] if existente else None
 
         if candidato:
             usados.add(candidato["id"])
+            _registrar_normal(candidato)
             if candidato["id"] == id_existente_noticia:
                 # mismo candidato de antes: nada que actualizar en la base.
                 entradas.append(

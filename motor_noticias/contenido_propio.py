@@ -48,8 +48,17 @@ CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "config" / "conte
 FUENTES_PRIMARIAS_DEFAULT = [
     "Municipalidad de Libertador General San Martín",
     "Prensa Jujuy (Gobierno de Jujuy)",
+    "Ministerio de Salud de la Nación",
 ]
-MAX_NOTAS_POR_DIA_DEFAULT = 3
+# Tope de seguridad de notas propias generadas por día calendario local. No
+# es una cuota objetivo: el generador ya se autolimita (solo produce una
+# nota cuando un extractor determinístico reconoce un patrón textual
+# explícito en una fuente primaria oficial, con dedup por URL/hash/
+# fingerprint). Subido de 3 a 12 el 28/8/2026 para que la regla de mezcla
+# editorial (>=50% contenido propio en franjas normales, ver
+# `motor_editorial.generar_agenda`) tenga material suficiente; 12 = piso de
+# la grilla diaria, nunca puede empujar el total por encima de la grilla.
+MAX_NOTAS_POR_DIA_DEFAULT = 12
 VENTANA_HORAS_DEFAULT = 48
 PALABRAS_CLAVE_SERVICIO_DEFAULT = [
     "corte de", "corte programado", "cronograma", "vencimiento", "vence el",

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Union
 
-from .models import Estado, Noticia, RevisionEstado
+from .models import Estado, Noticia, OrigenIngreso, RevisionEstado
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS noticias (
@@ -552,6 +552,42 @@ class Database:
             query += f" AND id NOT IN ({placeholders})"
             params.extend(sorted(excluidos_ids))
         query += " ORDER BY fecha_recoleccion DESC LIMIT 1"
+        cur = self.conn.execute(query, params)
+        fila = cur.fetchone()
+        return dict(fila) if fila else None
+
+    def candidato_contenido_propio(self, excluidos_ids: set, fecha_limite: str) -> Optional[dict]:
+        """Mejor candidato `preparada` de origen `contenido_propio` para la
+        regla de mezcla editorial (>=50% de contenido propio en las franjas
+        normales, ver `motor_editorial.generar_agenda`). Mismas protecciones
+        que `candidato_editorial` (no rechazado, no usado en ninguna agenda,
+        sin riesgo editorial obligatorio, dentro de la antigüedad máxima),
+        pero filtrando por `origen_ingreso` en vez de por un territorio
+        fijo: se prefiere el mejor territorio (local > departamental >
+        provincial > nacional) y, a igualdad, el más reciente. No sustituye
+        a `candidato_editorial` en la cascada: es una consulta aparte que el
+        Motor Editorial usa solo cuando decide cubrir una franja con
+        contenido propio en lugar de una publicación externa."""
+        query = (
+            "SELECT * FROM noticias WHERE estado = ? AND origen_ingreso = ? "
+            "AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL) "
+            "AND territorio IN ('local', 'departamental', 'provincial', 'nacional')"
+        )
+        params: list = [
+            Estado.PREPARADA.value,
+            OrigenIngreso.CONTENIDO_PROPIO.value,
+            RevisionEstado.RECHAZADA.value,
+            fecha_limite,
+        ]
+        if excluidos_ids:
+            placeholders = ",".join("?" * len(excluidos_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(sorted(excluidos_ids))
+        query += (
+            " ORDER BY CASE territorio WHEN 'local' THEN 0 WHEN 'departamental' THEN 1 "
+            "WHEN 'provincial' THEN 2 ELSE 3 END, fecha_recoleccion DESC LIMIT 1"
+        )
         cur = self.conn.execute(query, params)
         fila = cur.fetchone()
         return dict(fila) if fila else None

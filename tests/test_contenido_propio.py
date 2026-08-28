@@ -324,6 +324,12 @@ class TestDetectarReelaboraciones(unittest.TestCase):
         _guardar_noticia_medio(self.db, 1, "Blog Random", "Algo", "Texto largo. " * 6)
         self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
 
+    def test_ignora_contenido_de_apuestas_o_seo(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial",
+                               "Los mejores casinos con ruleta en 2026",
+                               "Analizamos los sitios de apuestas y su código promocional. " * 4)
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
     def test_no_reelabora_dos_veces_la_misma_nota(self):
         _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Suba de tarifas en Jujuy",
                                "Aumento confirmado del transporte provincial. " * 4)

@@ -71,13 +71,15 @@ NOMBRE_FUENTE_PROPIA = "Ledesma Participa (contenido propio)"
 
 # Medios periodísticos ya aceptados por el sistema que la REELABORACIÓN de
 # contenido propio puede usar como materia prima (autorización editorial
-# 28/8/2026). Solo medios de noticias reales (local / provincial / nacional
-# confiable); se excluyen a propósito los feeds temáticos de
-# entretenimiento, cocina, salud e internacional puro, que ya alimentan la
-# diversificación de la cascada y no aportan valor local. La reelaboración
-# nunca copia el texto: reescribe con el redactor del proyecto
-# (`config/redaccion.json`) y conserva SIEMPRE la atribución al medio de
-# origen (nombre + enlace a la nota original).
+# 28/8/2026). Solo medios de Jujuy: son los que cubren el departamento y la
+# provincia. Los medios nacionales (La Nación / Infobae) quedan afuera a
+# propósito: su volumen es mayormente nacional/internacional/deportivo/SEO
+# (turismo en España, F1, casinos, dólar en Perú…), sin valor para una
+# página hiperlocal — se comprobó en la primera corrida. Se pueden agregar
+# por config si en el futuro se suma un filtro de relevancia. La
+# reelaboración nunca copia el texto: reescribe con el redactor del
+# proyecto (`config/redaccion.json`) y conserva SIEMPRE la atribución al
+# medio de origen (nombre + enlace a la nota original).
 FUENTES_MEDIOS_DEFAULT = [
     "InfoYungas",
     "Canal 6 Libertador",
@@ -87,15 +89,22 @@ FUENTES_MEDIOS_DEFAULT = [
     "El Tribuno de Jujuy",
     "Jujuy al Momento",
     "Jujuy Gráfico",
-    "La Nación",
-    "Infobae",
 ]
 # Territorios cuyas notas de medio vale la pena reelaborar como contenido
 # propio. Local/departamental salen solas y rápido por el circuito urgente;
 # reelaborar ahí competiría con la noticia local original. El foco de la
 # mezcla 50/50 es sustituir las franjas que hoy se llenan con externas
-# provinciales/nacionales.
+# provinciales (y, si un medio de Jujuy cubre un tema nacional, ese
+# contexto también sirve).
 TERRITORIOS_REELABORABLES = ("provincial", "nacional")
+# Aunque el medio sea de Jujuy, no se reelabora contenido de SEO/apuestas/
+# horóscopo/promoción que a veces se cuela en sus feeds.
+PATRONES_NO_REELABORABLES = (
+    "casino", "casinos", "ruleta", "apuesta", "apuestas", "tragamonedas",
+    "horoscopo", "horóscopo", "tarot", "zodiaco", "zodíaco", "signos del",
+    "codigo promocional", "código promocional", "cupon de descuento",
+    "cupón de descuento", "mejores viajes", "que ver en", "guia de compras",
+)
 IDENTIDAD_REELABORACION = "https://ledesma-participa.local/contenido-propio/reelaboracion/{id}"
 
 
@@ -475,6 +484,9 @@ def detectar_reelaboraciones(
         titulo = noticia["titulo_original"] or ""
         texto = noticia["texto_original"] or ""
         if not texto or es_entretenimiento_o_curiosidad(titulo, texto):
+            continue
+        blob = f"{titulo} {texto}".lower()
+        if any(p in blob for p in PATRONES_NO_REELABORABLES):
             continue
 
         url_identidad = IDENTIDAD_REELABORACION.format(id=noticia["id"])

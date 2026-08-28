@@ -12,9 +12,7 @@
     "TodoJujuy",
     "El Tribuno de Jujuy",
     "Jujuy al Momento",
-    "Jujuy Gráfico",
-    "La Nación",
-    "Infobae"
+    "Jujuy Gráfico"
   ],
   "max_notas_por_dia": 12,
   "ventana_horas": 48,

@@ -514,7 +514,11 @@ def detectar_reelaboraciones(
 
 def _contenido_propio_generadas_hoy(db: Database, ahora_local: datetime) -> int:
     inicio_dia_utc = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
-    return db.contar_por_origen_desde(OrigenIngreso.CONTENIDO_PROPIO.value, inicio_dia_utc)
+    # Un borrador que quedó `descartada` (patrón filtrado, gate de calidad,
+    # fuente sin hechos) no consume el cupo diario de notas útiles.
+    return db.contar_por_origen_desde(
+        OrigenIngreso.CONTENIDO_PROPIO.value, inicio_dia_utc, excluir_descartadas=True
+    )
 
 
 @dataclass

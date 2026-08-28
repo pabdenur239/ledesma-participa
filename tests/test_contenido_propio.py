@@ -247,13 +247,18 @@ class TestGenerarContenidoPropio(unittest.TestCase):
         self.assertEqual(noticia["estado"], Estado.PREPARADA.value)
 
     def test_no_supera_el_tope_diario_acumulado_entre_corridas(self):
-        for n in range(1, 5):
+        # Fuentes locales -> las notas quedan `preparada` (útiles): el cupo
+        # diario cuenta esas, no los borradores descartados.
+        for n in range(1, 6):
             _guardar_noticia_fuente(
                 self.db, n, "Municipio de Prueba", f"Aviso {n}",
-                f"Se realizará un corte de agua programado el jueves en el sector {n}.",
+                f"Se realizará un corte de agua programado el jueves en Libertador "
+                f"General San Martín, sector {n}.",
             )
         primera_corrida = generar_contenido_propio(self.db, ahora=AHORA, config=CONFIG_PRUEBA)
-        self.assertEqual(len(primera_corrida), 3)  # tope de la config de prueba
+        self.assertEqual(
+            sum(1 for r in primera_corrida if r.resultado == "preparada"), 3
+        )  # tope de la config de prueba
 
         segunda_corrida = generar_contenido_propio(self.db, ahora=AHORA, config=CONFIG_PRUEBA)
         self.assertEqual(segunda_corrida, [])  # ya se alcanzó el tope del día, no genera una 4ta

@@ -256,14 +256,20 @@ class Database:
         )
         return [dict(fila) for fila in cur.fetchall()]
 
-    def contar_por_origen_desde(self, origen_ingreso: str, fecha_limite: str) -> int:
+    def contar_por_origen_desde(
+        self, origen_ingreso: str, fecha_limite: str, excluir_descartadas: bool = False
+    ) -> int:
         """Cuántas noticias con este `origen_ingreso` se recolectaron desde
         `fecha_limite` — usado por `contenido_propio` para respetar el tope
-        diario acumulado (no por corrida)."""
-        cur = self.conn.execute(
-            "SELECT COUNT(*) FROM noticias WHERE origen_ingreso = ? AND fecha_recoleccion >= ?",
-            (origen_ingreso, fecha_limite),
-        )
+        diario acumulado (no por corrida). Con `excluir_descartadas=True` no
+        cuenta las que quedaron `descartada`: un borrador fallido o filtrado
+        no debe consumir el cupo diario de notas útiles."""
+        query = "SELECT COUNT(*) FROM noticias WHERE origen_ingreso = ? AND fecha_recoleccion >= ?"
+        params = [origen_ingreso, fecha_limite]
+        if excluir_descartadas:
+            query += " AND estado != ?"
+            params.append(Estado.DESCARTADA.value)
+        cur = self.conn.execute(query, params)
         return cur.fetchone()[0]
 
     def guardar(self, noticia: Noticia) -> int:

@@ -31,10 +31,13 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .db import Database
+from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Noticia, OrigenIngreso
-from .motor_editorial import ZONA_JUJUY
+from .motor_editorial import ZONA_JUJUY, _es_mismo_hecho
 from .pipeline import normalizar_noticia, procesar_noticia
+from .redaccion import crear_redactor
 from .redaccion.base import Redactor
+from .redaccion.ollama import ErrorRedaccionOllama
 
 logger = logging.getLogger("motor_noticias.contenido_propio")
 
@@ -65,6 +68,35 @@ PALABRAS_CLAVE_SERVICIO_DEFAULT = [
     "inscripción", "inscripcion", "operativo",
 ]
 NOMBRE_FUENTE_PROPIA = "Ledesma Participa (contenido propio)"
+
+# Medios periodísticos ya aceptados por el sistema que la REELABORACIÓN de
+# contenido propio puede usar como materia prima (autorización editorial
+# 28/8/2026). Solo medios de noticias reales (local / provincial / nacional
+# confiable); se excluyen a propósito los feeds temáticos de
+# entretenimiento, cocina, salud e internacional puro, que ya alimentan la
+# diversificación de la cascada y no aportan valor local. La reelaboración
+# nunca copia el texto: reescribe con el redactor del proyecto
+# (`config/redaccion.json`) y conserva SIEMPRE la atribución al medio de
+# origen (nombre + enlace a la nota original).
+FUENTES_MEDIOS_DEFAULT = [
+    "InfoYungas",
+    "Canal 6 Libertador",
+    "Jujuy al día",
+    "Somos Jujuy",
+    "TodoJujuy",
+    "El Tribuno de Jujuy",
+    "Jujuy al Momento",
+    "Jujuy Gráfico",
+    "La Nación",
+    "Infobae",
+]
+# Territorios cuyas notas de medio vale la pena reelaborar como contenido
+# propio. Local/departamental salen solas y rápido por el circuito urgente;
+# reelaborar ahí competiría con la noticia local original. El foco de la
+# mezcla 50/50 es sustituir las franjas que hoy se llenan con externas
+# provinciales/nacionales.
+TERRITORIOS_REELABORABLES = ("provincial", "nacional")
+IDENTIDAD_REELABORACION = "https://ledesma-participa.local/contenido-propio/reelaboracion/{id}"
 
 
 def _cargar_config(path: Optional[Path] = None) -> dict:
@@ -219,7 +251,7 @@ def _extraer_explicador(texto: str) -> Optional[dict]:
 
 @dataclass
 class NotaPropiaCandidata:
-    tipo: str  # "servicio" | "agenda" | "datos_contexto" | "explicador"
+    tipo: str  # "servicio" | "agenda" | "datos_contexto" | "explicador" | "reelaboracion"
     titulo: str
     texto: str
     url_identidad: str
@@ -227,6 +259,10 @@ class NotaPropiaCandidata:
     fuente_real_url: str
     localidad: Optional[str]
     ids_fuente: List[int]
+    # Solo para "reelaboracion": territorio heredado de la noticia de medio
+    # de origen (ya clasificada y vetada), para no reclasificar el texto
+    # reescrito.
+    territorio_origen: Optional[str] = None
 
 
 def _fecha_legible(fecha_recoleccion_iso: str) -> str:
@@ -387,6 +423,83 @@ def detectar_oportunidades(
     return notas
 
 
+def _titulos_ya_comprometidos_hoy(db: Database, fecha_iso: str) -> List[str]:
+    """Títulos de las noticias que ya ocupan una franja (normal o urgente)
+    en la agenda de hoy. Sirve para no reelaborar un hecho que ya va a
+    publicarse —ni como externa ni como otra nota propia—, evitando que
+    salgan las dos sobre lo mismo con pocos minutos de diferencia."""
+    titulos = []
+    for item in db.listar_agenda(fecha_iso):
+        if item.get("noticia_id"):
+            noticia = db.obtener(item["noticia_id"])
+            if noticia:
+                titulos.append(noticia["titulo_original"])
+    return titulos
+
+
+def detectar_reelaboraciones(
+    db: Database, ahora: Optional[datetime] = None, config: Optional[dict] = None
+) -> List[NotaPropiaCandidata]:
+    """Detecta noticias de medios periodísticos ya recolectadas y aptas que
+    conviene reelaborar como contenido propio de Ledesma Participa. Nunca
+    publica ni guarda nada: devuelve candidatas para `generar_contenido_propio`.
+
+    Condiciones para reelaborar una nota de medio:
+      - fuente en `fuentes_medios` (medio ya aceptado por el sistema);
+      - `estado = 'preparada'`, dentro de la ventana de antigüedad;
+      - territorio provincial o nacional (local/departamental salen solas);
+      - sin riesgo editorial obligatorio, no entretenimiento;
+      - no reelaborada antes (misma URL de identidad determinística);
+      - su hecho no está ya comprometido en la agenda de hoy ni cubierto por
+        otra nota propia de esta misma tanda (dedup por hecho)."""
+    config = config or _cargar_config()
+    if not config.get("reelaboracion_habilitada", True):
+        return []
+    fuentes_medios = config.get("fuentes_medios") or FUENTES_MEDIOS_DEFAULT
+    ventana_horas = config.get("ventana_horas", VENTANA_HORAS_DEFAULT)
+
+    ahora_local = (ahora or datetime.now(ZONA_JUJUY)).astimezone(ZONA_JUJUY)
+    fecha_iso = ahora_local.strftime("%Y-%m-%d")
+    fecha_limite = (ahora_local.astimezone(timezone.utc) - timedelta(hours=ventana_horas)).isoformat()
+
+    titulos_evitar = _titulos_ya_comprometidos_hoy(db, fecha_iso)
+
+    candidatas: List[NotaPropiaCandidata] = []
+    for noticia in db.noticias_de_fuentes_recientes(fuentes_medios, fecha_limite):
+        if noticia["estado"] != "preparada":
+            continue
+        if noticia["territorio"] not in TERRITORIOS_REELABORABLES:
+            continue
+        if noticia["requiere_revision_especial"]:
+            continue
+        titulo = noticia["titulo_original"] or ""
+        texto = noticia["texto_original"] or ""
+        if not texto or es_entretenimiento_o_curiosidad(titulo, texto):
+            continue
+
+        url_identidad = IDENTIDAD_REELABORACION.format(id=noticia["id"])
+        if db.obtener_por_url(url_identidad):
+            continue  # ya reelaborada
+        if any(_es_mismo_hecho(titulo, t) for t in titulos_evitar):
+            continue
+
+        titulos_evitar.append(titulo)  # dedup por hecho dentro de la tanda
+        candidatas.append(
+            NotaPropiaCandidata(
+                tipo="reelaboracion",
+                titulo=titulo,
+                texto=texto,
+                url_identidad=url_identidad,
+                fuente_real_nombre=noticia["nombre_fuente"],
+                fuente_real_url=noticia["url_fuente"],
+                localidad=None,
+                ids_fuente=[noticia["id"]],
+                territorio_origen=noticia["territorio"],
+            )
+        )
+    return candidatas
+
+
 def _contenido_propio_generadas_hoy(db: Database, ahora_local: datetime) -> int:
     inicio_dia_utc = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
     return db.contar_por_origen_desde(OrigenIngreso.CONTENIDO_PROPIO.value, inicio_dia_utc)
@@ -419,20 +532,53 @@ def generar_contenido_propio(
         logger.info("Contenido propio: ya se alcanzó el máximo de %s notas de hoy.", max_notas)
         return []
 
+    # Primero las notas determinísticas de fuentes primarias oficiales
+    # (extractores por patrón, redactor identidad — el texto ya es final).
+    # Después, si queda cupo, las reelaboraciones de notas de medios
+    # (reescritas con el redactor del proyecto, atribución al medio siempre).
     candidatas = detectar_oportunidades(db, ahora_local, config)
+    candidatas += detectar_reelaboraciones(db, ahora_local, config)
+
+    redactor_reelaboracion: Optional[Redactor] = None
     resultados = []
     for candidata in candidatas[:cupo_restante]:
+        es_reelaboracion = candidata.tipo == "reelaboracion"
         cruda = {
             "titulo": candidata.titulo,
             "texto": candidata.texto,
-            "url": candidata.url_identidad,
+            # La reelaboración conserva la URL real del medio como `url_fuente`
+            # (la usa la atribución "Fuente y nota completa:" al publicar); la
+            # dedup de ingreso va contra la URL de identidad sintética.
+            "url": candidata.fuente_real_url if es_reelaboracion else candidata.url_identidad,
             "fuente": NOMBRE_FUENTE_PROPIA,
             "fecha": ahora_local.isoformat(),
             "localidad": candidata.localidad,
         }
         noticia = normalizar_noticia(cruda)
         noticia.origen_ingreso = OrigenIngreso.CONTENIDO_PROPIO.value
-        noticia_procesada, resultado_pipeline = procesar_noticia(db, noticia, _RedactorIdentidad())
+
+        if es_reelaboracion:
+            if redactor_reelaboracion is None:
+                redactor_reelaboracion = crear_redactor("ollama")
+            try:
+                noticia_procesada, resultado_pipeline = procesar_noticia(
+                    db, noticia, redactor_reelaboracion,
+                    clave_dedup=candidata.url_identidad,
+                    territorio_forzado=candidata.territorio_origen,
+                )
+            except ErrorRedaccionOllama as error:
+                logger.warning(
+                    "Contenido propio (reelaboracion) omitida, redactor no disponible: %s — %s",
+                    error, candidata.titulo,
+                )
+                continue
+            if resultado_pipeline == "preparada":
+                _fijar_atribucion_y_traza(
+                    db, noticia_procesada, candidata.fuente_real_nombre, candidata.ids_fuente[0]
+                )
+        else:
+            noticia_procesada, resultado_pipeline = procesar_noticia(db, noticia, _RedactorIdentidad())
+
         logger.info(
             "Contenido propio (%s): %s — %s", candidata.tipo, resultado_pipeline, candidata.titulo
         )
@@ -444,3 +590,23 @@ def generar_contenido_propio(
             )
         )
     return resultados
+
+
+def _fijar_atribucion_y_traza(
+    db: Database, noticia: Noticia, medio: str, id_fuente: int
+) -> None:
+    """Cierra una nota reelaborada: agrega la atribución explícita al medio
+    de origen al final del texto preparado (el enlace a la nota completa lo
+    agrega el publicador desde `url_fuente`) y deja la traza
+    `reelaboracion_de:<id>` en `observacion_interna` para deduplicación y
+    para que el Motor Editorial no vuelva a agendar la nota original."""
+    texto = (noticia.texto_preparado or "").rstrip()
+    if medio and medio.lower() not in texto.lower():
+        texto = f"{texto}\n\nFuente: {medio}"
+    db.conn.execute(
+        "UPDATE noticias SET texto_preparado = ?, observacion_interna = ? WHERE id = ?",
+        (texto, f"reelaboracion_de:{id_fuente}", noticia.id),
+    )
+    db.conn.commit()
+    noticia.texto_preparado = texto
+    noticia.observacion_interna = f"reelaboracion_de:{id_fuente}"

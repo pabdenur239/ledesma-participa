@@ -330,6 +330,10 @@ def generar_agenda(
     fecha_limite = _fecha_limite_antiguedad(ahora_utc)
 
     usados = db.noticias_ids_usadas_en_agenda()
+    # Una noticia de medio ya reelaborada como contenido propio no vuelve a
+    # competir en la cascada: publicar la externa original y su reelaboración
+    # sería el mismo hecho dos veces.
+    usados |= db.ids_fuente_reelaborados()
     entradas: List[EntradaAgenda] = list(resolver_urgentes(db, fecha, usados, fecha_limite))
     # Cuenta, dentro de esta corrida, cuántas veces se usó cada categoría
     # temática de diversificación: alimenta `_buscar_candidato_tematico`

@@ -64,10 +64,35 @@ def normalizar_noticia(cruda: dict) -> Noticia:
 
 
 def procesar_noticia(
-    db: Database, noticia: Noticia, redactor: Redactor, categoria: Optional[str] = None
+    db: Database,
+    noticia: Noticia,
+    redactor: Redactor,
+    categoria: Optional[str] = None,
+    clave_dedup: Optional[str] = None,
+    territorio_forzado: Optional[str] = None,
 ) -> Tuple[Noticia, str]:
-    noticia.url_normalizada = normalizar_url(noticia.url_fuente)
-    noticia.hash_contenido = hash_contenido(noticia.titulo_original, noticia.texto_original)
+    """`clave_dedup` (opcional): cuando se pasa, la deduplicación de ingreso
+    se hace contra esa clave sintética (URL de identidad propia) en vez de
+    contra `url_fuente` + hash del texto original. Lo usa la reelaboración
+    de contenido propio (`motor_noticias.contenido_propio`): una nota propia
+    reescrita a partir de una noticia de un medio conserva `url_fuente` = URL
+    real del medio (para la atribución "Fuente y nota completa:"), pero no
+    debe contar como duplicado de esa misma noticia del medio ya recolectada.
+    La clave sintética es única y estable por noticia de origen, así que
+    reintentar la reelaboración de la misma nota sigue siendo idempotente.
+
+    `territorio_forzado` (opcional): la reelaboración parte de una noticia de
+    medio YA clasificada y vetada por el sistema (provincial o nacional);
+    hereda ese territorio en vez de reclasificar el texto reescrito, que
+    puede quedar `sin_clasificar` al perder alguna mención geográfica en la
+    reescritura. El riesgo editorial sí se reevalúa siempre sobre el texto
+    final."""
+    if clave_dedup:
+        noticia.url_normalizada = normalizar_url(clave_dedup)
+        noticia.hash_contenido = hash_contenido(clave_dedup, "")
+    else:
+        noticia.url_normalizada = normalizar_url(noticia.url_fuente)
+        noticia.hash_contenido = hash_contenido(noticia.titulo_original, noticia.texto_original)
 
     clasificacion = clasificar_territorio(
         noticia.titulo_original,
@@ -84,8 +109,14 @@ def procesar_noticia(
     noticia.relevancia_local = clasificacion["relevante"]
     noticia.motivo_relevancia = clasificacion["motivo_relevancia"]
     noticia.localidad = clasificacion["localidad"]
-    noticia.territorio = clasificacion["territorio"]
-    noticia.motivo_territorio = clasificacion["motivo_territorio"]
+    if territorio_forzado:
+        noticia.territorio = territorio_forzado
+        noticia.motivo_territorio = (
+            f"Territorio heredado de la noticia de origen ({territorio_forzado})."
+        )
+    else:
+        noticia.territorio = clasificacion["territorio"]
+        noticia.motivo_territorio = clasificacion["motivo_territorio"]
 
     if db.existe_duplicado(noticia.url_normalizada, noticia.hash_contenido):
         return noticia, "duplicado"

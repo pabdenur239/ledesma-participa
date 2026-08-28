@@ -3,6 +3,19 @@
     "Municipalidad de Libertador General San Martín",
     "Prensa Jujuy (Gobierno de Jujuy)"
   ],
+  "reelaboracion_habilitada": true,
+  "fuentes_medios": [
+    "InfoYungas",
+    "Canal 6 Libertador",
+    "Jujuy al día",
+    "Somos Jujuy",
+    "TodoJujuy",
+    "El Tribuno de Jujuy",
+    "Jujuy al Momento",
+    "Jujuy Gráfico",
+    "La Nación",
+    "Infobae"
+  ],
   "max_notas_por_dia": 12,
   "ventana_horas": 48,
   "palabras_clave_servicio": [

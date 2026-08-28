@@ -660,6 +660,25 @@ class Database:
         cur = self.conn.execute("SELECT DISTINCT noticia_id FROM agenda_item WHERE noticia_id IS NOT NULL")
         return {fila["noticia_id"] for fila in cur.fetchall()}
 
+    def ids_fuente_reelaborados(self) -> set:
+        """Ids de noticias de medios que ya tienen una nota propia
+        reelaborada a partir de ellas (traza `reelaboracion_de:<id>` en
+        `observacion_interna`). El Motor Editorial las trata como ya usadas
+        para no agendar a la vez la nota original externa y su reelaboración
+        propia (canibalización)."""
+        cur = self.conn.execute(
+            "SELECT observacion_interna FROM noticias "
+            "WHERE origen_ingreso = ? AND observacion_interna LIKE 'reelaboracion_de:%'",
+            (OrigenIngreso.CONTENIDO_PROPIO.value,),
+        )
+        ids = set()
+        for fila in cur.fetchall():
+            try:
+                ids.add(int((fila["observacion_interna"] or "").split(":", 1)[1]))
+            except (IndexError, ValueError):
+                continue
+        return ids
+
     def obtener_agenda_item(self, fecha: str, hora: Optional[str]) -> Optional[dict]:
         cur = self.conn.execute(
             "SELECT * FROM agenda_item WHERE fecha = ? AND hora = ? AND tipo = 'normal'",

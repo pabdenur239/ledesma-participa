@@ -17,6 +17,20 @@ def _sin_acentos(texto: str) -> str:
     return "".join(c for c in normalizado if not unicodedata.combining(c))
 
 
+# Nombre propio del medio: aparece en la firma de toda nota de contenido
+# propio ("Nota propia de Ledesma Participa…") y NO es una referencia
+# geográfica. Se neutraliza antes de buscar localidades para que esa firma
+# no clasifique la nota como del Departamento Ledesma (bug real: una nota
+# reelaborada de alcance nacional quedó como "departamental" y se publicó
+# como urgente local). "Departamento Ledesma" / "Ledesma" como lugar real
+# siguen contando: solo se quita la secuencia exacta "ledesma participa".
+MARCA_PROPIA_NORMALIZADA = "ledesma participa"
+
+
+def _quitar_marca_propia(texto_norm: str) -> str:
+    return texto_norm.replace(MARCA_PROPIA_NORMALIZADA, " ")
+
+
 def _contiene_alguna(texto_norm: str, terminos: list) -> Optional[str]:
     """Busca cada término como palabra completa (límites \\b), no como
     substring crudo: un término corto como "Libertador" no debe disparar
@@ -56,7 +70,7 @@ def clasificar_relevancia(
                 "localidad": match,
             }
 
-    contenido = _sin_acentos(f"{titulo} {texto}")
+    contenido = _quitar_marca_propia(_sin_acentos(f"{titulo} {texto}"))
 
     match = _contiene_alguna(contenido, config["maxima_prioridad"])
     if match:

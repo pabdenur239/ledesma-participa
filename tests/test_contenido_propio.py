@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from motor_noticias.contenido_propio import (
     NOMBRE_FUENTE_PROPIA,
@@ -10,10 +11,44 @@ from motor_noticias.contenido_propio import (
     _extraer_explicador,
     _extraer_servicio,
     detectar_oportunidades,
+    detectar_reelaboraciones,
     generar_contenido_propio,
 )
 from motor_noticias.db import Database
 from motor_noticias.models import Estado, Noticia, OrigenIngreso, RevisionEstado
+from motor_noticias.redaccion.base import Redactor
+
+
+class _RedactorFake(Redactor):
+    """Simula un redactor que reescribe (no copia) sin llamar a la red."""
+
+    def redactar(self, noticia):
+        return (
+            f"{noticia.titulo_original} (reescrito)",
+            f"Reescritura propia: {(noticia.texto_original or '')[:120]}",
+        )
+
+
+def _guardar_noticia_medio(db, n, nombre_fuente, titulo, texto, territorio="provincial",
+                           fecha_recoleccion=None, requiere_revision_especial=False,
+                           estado=Estado.PREPARADA.value):
+    noticia = Noticia(
+        id=None,
+        titulo_original=titulo,
+        texto_original=texto,
+        url_fuente=f"https://{nombre_fuente.lower().replace(' ', '')}.test/nota-{n}",
+        url_normalizada=f"https://{nombre_fuente.lower().replace(' ', '')}.test/nota-{n}",
+        nombre_fuente=nombre_fuente,
+        fecha_fuente="",
+        fecha_recoleccion=(fecha_recoleccion or datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)).isoformat(),
+        estado=estado,
+        hash_contenido=f"hash-medio-{n}",
+        territorio=territorio,
+        titulo_preparado=titulo,
+        texto_preparado=texto,
+        requiere_revision_especial=requiere_revision_especial,
+    )
+    return db.guardar(noticia)
 
 AHORA = datetime(2026, 8, 21, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -244,6 +279,108 @@ class TestGenerarContenidoPropio(unittest.TestCase):
         noticia = self.db.obtener(resultados[0].noticia_id)
         self.assertNotEqual(noticia["territorio"], "institucional")
         self.assertIsNotNone(noticia["territorio"])
+
+
+CONFIG_MEDIOS = {
+    "fuentes_primarias": ["Municipio de Prueba"],
+    "fuentes_medios": ["Medio Provincial", "Medio Nacional", "Medio Local"],
+    "reelaboracion_habilitada": True,
+    "max_notas_por_dia": 12,
+    "ventana_horas": 48,
+    "palabras_clave_servicio": ["corte de"],
+}
+AHORA_MEDIOS = datetime(2026, 8, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+
+class TestDetectarReelaboraciones(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.tmpdir.name) / "test.db")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def test_toma_una_nota_provincial_de_un_medio(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Suba de tarifas en Jujuy",
+                               "El Gobierno provincial confirmó un aumento del transporte. " * 4)
+        cs = detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS)
+        self.assertEqual(len(cs), 1)
+        self.assertEqual(cs[0].tipo, "reelaboracion")
+        self.assertEqual(cs[0].fuente_real_nombre, "Medio Provincial")
+        self.assertIn("medioprovincial.test/nota-1", cs[0].fuente_real_url)
+
+    def test_ignora_local_y_departamental(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Local", "Obra en Libertador",
+                               "Vecinos de Libertador reclaman. " * 4, territorio="local")
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
+    def test_ignora_riesgo_editorial_obligatorio(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Caso judicial en Jujuy",
+                               "El imputado fue detenido. " * 4, requiere_revision_especial=True)
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
+    def test_ignora_fuente_que_no_es_medio_configurado(self):
+        _guardar_noticia_medio(self.db, 1, "Blog Random", "Algo", "Texto largo. " * 6)
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
+    def test_no_reelabora_dos_veces_la_misma_nota(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Suba de tarifas en Jujuy",
+                               "Aumento confirmado del transporte provincial. " * 4)
+        with patch("motor_noticias.contenido_propio.crear_redactor", return_value=_RedactorFake()):
+            generar_contenido_propio(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS)
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
+    def test_no_reelabora_un_hecho_ya_en_la_agenda_de_hoy(self):
+        src = _guardar_noticia_medio(self.db, 1, "Medio Provincial",
+                                     "Suba de tarifas de colectivo en Jujuy",
+                                     "Aumento del boleto confirmado por el Gobierno. " * 4)
+        self.db.guardar_agenda_item("2026-08-21", "15:00", "normal", "provincial", src,
+                                    AHORA_MEDIOS.isoformat())
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
+
+class TestGenerarReelaboracion(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.tmpdir.name) / "test.db")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def test_genera_nota_propia_con_atribucion_y_traza_sin_duplicar_la_original(self):
+        src = _guardar_noticia_medio(
+            self.db, 1, "Medio Nacional", "El dólar cerró en alza",
+            "El tipo de cambio mayorista subió y los analistas lo atribuyen a la demanda estacional. " * 3,
+            territorio="nacional",
+        )
+        with patch("motor_noticias.contenido_propio.crear_redactor", return_value=_RedactorFake()):
+            resultados = generar_contenido_propio(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS)
+
+        reelab = [r for r in resultados if r.tipo == "reelaboracion"]
+        self.assertEqual(len(reelab), 1)
+        self.assertEqual(reelab[0].resultado, "preparada")  # no la trató como duplicado de la original
+        nota = self.db.obtener(reelab[0].noticia_id)
+        self.assertEqual(nota["origen_ingreso"], OrigenIngreso.CONTENIDO_PROPIO.value)
+        self.assertIn("(reescrito)", nota["titulo_preparado"])
+        self.assertIn("Fuente: Medio Nacional", nota["texto_preparado"])
+        self.assertEqual(nota["url_fuente"], self.db.obtener(src)["url_fuente"])  # atribución real
+        self.assertEqual(nota["observacion_interna"], f"reelaboracion_de:{src}")
+        self.assertIn(src, self.db.ids_fuente_reelaborados())
+
+    def test_redactor_no_disponible_no_rompe_la_corrida(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Nota provincial",
+                               "Contenido provincial suficiente para reescribir. " * 4)
+        from motor_noticias.redaccion.ollama import ErrorRedaccionOllama
+
+        class _RedactorCaido(Redactor):
+            def redactar(self, noticia):
+                raise ErrorRedaccionOllama("Ollama no responde")
+
+        with patch("motor_noticias.contenido_propio.crear_redactor", return_value=_RedactorCaido()):
+            resultados = generar_contenido_propio(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS)
+        self.assertEqual([r for r in resultados if r.tipo == "reelaboracion"], [])
 
 
 if __name__ == "__main__":

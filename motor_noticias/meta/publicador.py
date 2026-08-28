@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 
 from ..db import Database
-from ..dedupe import es_mismo_contenido, palabras_clave
+from ..dedupe import es_mismo_contenido, palabras_clave, refieren_a_hecho_distinto
 from ..models import Estado, OrigenIngreso, RevisionEstado
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
@@ -304,7 +304,16 @@ def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datet
     coincide exactamente — la señal más fuerte), y si no alcanza, por
     fingerprint de contenido normalizado (palabras clave del título) para
     cubrir el caso de dos registros internos distintos (otra fuente, un
-    título apenas distinto) que en realidad son la misma noticia."""
+    título apenas distinto) que en realidad son la misma noticia.
+
+    Un match por fingerprint se descarta si `refieren_a_hecho_distinto`
+    detecta que los dos títulos nombran localidades o fechas de calendario
+    distintas: los boletines recurrentes que comparten plantilla (informe
+    diario de clima/dólar, avisos de "cortes de energía en <localidad>",
+    programación de partidos por jornada) tienen fingerprints casi
+    idénticos pero son notas nuevas y distintas cada vez — se estaban
+    bloqueando como falsos duplicados y no llegaban a publicarse por
+    ninguna red (verificado en producción 28/8/2026)."""
     fecha_limite = (ahora_utc - timedelta(hours=VENTANA_DEDUPLICACION_HORAS)).isoformat()
     candidatas = db.noticias_publicadas_recientes(fecha_limite, excluir_id=noticia["id"])
     if not candidatas:
@@ -321,8 +330,12 @@ def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datet
     )
     if not palabras_propias_titulo:
         return None
+    titulo_propio = noticia.get("titulo_original") or ""
     for candidata in candidatas:
-        if es_mismo_contenido(palabras_propias_titulo, palabras_clave(candidata.get("titulo_original") or "")):
+        titulo_candidata = candidata.get("titulo_original") or ""
+        if es_mismo_contenido(palabras_propias_titulo, palabras_clave(titulo_candidata)):
+            if refieren_a_hecho_distinto(titulo_propio, titulo_candidata):
+                continue
             return candidata
         # Corroboración cruzada entre fuentes distintas: dos medios que cubren
         # el mismo hecho real suelen titularlo con palabras muy distintas
@@ -345,6 +358,8 @@ def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datet
                 f"{candidata.get('titulo_original') or ''} {candidata.get('texto_original') or ''}"
             )
             if es_mismo_contenido(palabras_propias_completas, palabras_candidata_completas):
+                if refieren_a_hecho_distinto(titulo_propio, titulo_candidata):
+                    continue
                 return candidata
     return None
 

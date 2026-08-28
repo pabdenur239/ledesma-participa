@@ -1,6 +1,12 @@
 import unittest
 
-from motor_noticias.dedupe import es_mismo_contenido, hash_contenido, normalizar_url, palabras_clave
+from motor_noticias.dedupe import (
+    es_mismo_contenido,
+    hash_contenido,
+    normalizar_url,
+    palabras_clave,
+    refieren_a_hecho_distinto,
+)
 
 
 class TestDedupe(unittest.TestCase):
@@ -89,6 +95,44 @@ class TestEsMismoContenido(unittest.TestCase):
             "entre San Martín y Sarmiento"
         )
         self.assertFalse(es_mismo_contenido(local, pelicula))
+
+
+class TestRefierenAHechoDistinto(unittest.TestCase):
+    def test_aviso_de_cortes_de_energia_de_dos_localidades_distintas(self):
+        # Caso real 28/8/2026: el aviso de cortes en Libertador se bloqueaba
+        # como "duplicado" del aviso de cortes en Yuto del día anterior.
+        a = "Anuncian cortes de energía por tareas de mantenimiento en Libertador, Purmamarca y San Salvador"
+        b = "Anuncian cortes de energía por tareas de mantenimiento en Yuto"
+        self.assertTrue(es_mismo_contenido(palabras_clave(a), palabras_clave(b)))
+        self.assertTrue(refieren_a_hecho_distinto(a, b))
+
+    def test_informe_diario_de_dos_dias_distintos(self):
+        a = "Clima y dólar en Libertador: informe del 27/08/2026"
+        b = "Clima y dólar en Libertador: informe del 26/08/2026"
+        self.assertTrue(es_mismo_contenido(palabras_clave(a), palabras_clave(b)))
+        self.assertTrue(refieren_a_hecho_distinto(a, b))
+
+    def test_pronostico_del_tiempo_de_dos_fechas_en_texto(self):
+        a = "Clima en Jujuy hoy: cuál es el pronóstico del tiempo para el 24 de agosto de 2026"
+        b = "Clima en Jujuy hoy: cuál es el pronóstico del tiempo para el 23 de agosto de 2026"
+        self.assertTrue(refieren_a_hecho_distinto(a, b))
+
+    def test_misma_localidad_y_sin_fecha_no_se_considera_distinto(self):
+        # Duplicado genuino cruzado entre fuentes: ambos hablan de Libertador
+        # y del mismo corte programado — debe seguir bloqueándose.
+        a = "Este domingo realizarán tareas de mejoras programadas en el servicio eléctrico en Libertador"
+        b = "Interrupción programada de energía para este domingo en Libertador"
+        self.assertFalse(refieren_a_hecho_distinto(a, b))
+
+    def test_sin_localidades_ni_fechas_no_se_considera_distinto(self):
+        a = "Gimnasia de Jujuy, ante una prueba clave frente a Patronato"
+        b = "Gimnasia ante un desafío clave frente a Patronato: ganar tras tres fechas sin victorias"
+        self.assertFalse(refieren_a_hecho_distinto(a, b))
+
+    def test_una_sola_nombra_localidad_no_alcanza_para_distinguir(self):
+        a = "Aprehendieron a tres personas en distintos procedimientos"
+        b = "En distintos procedimientos, demoraron a tres malvivientes en Libertador"
+        self.assertFalse(refieren_a_hecho_distinto(a, b))
 
 
 if __name__ == "__main__":

@@ -107,6 +107,36 @@ def _sigue_siendo_elegible(noticia: dict, fecha_limite: str) -> bool:
     )
 
 
+def _mezcla_propio_para_franja(
+    db: Database,
+    candidato_externo: Optional[dict],
+    excluidos_ids: set,
+    fecha_limite: str,
+    titulos_en_agenda: List[str],
+    propio_en_normales: int,
+    objetivo_propio: int,
+) -> Optional[dict]:
+    """Regla de mezcla editorial: devuelve la mejor nota propia `preparada`
+    para cubrir una franja normal en lugar de `candidato_externo`, o `None`
+    si no corresponde sustituir — ya se alcanzó el objetivo de contenido
+    propio del día, el candidato externo es local/departamental (tiene
+    prioridad y no se desplaza) o es contenido propio, no hay nota propia
+    apta, o la nota propia repetiría un hecho ya comprometido en el día."""
+    if propio_en_normales >= objetivo_propio or candidato_externo is None:
+        return None
+    if candidato_externo.get("origen_ingreso") == OrigenIngreso.CONTENIDO_PROPIO.value:
+        return None
+    if candidato_externo.get("territorio") in TERRITORIOS_PROTEGIDOS_MEZCLA:
+        return None
+    propio = db.candidato_contenido_propio(excluidos_ids, fecha_limite)
+    if propio is None:
+        return None
+    titulos_a_evitar = titulos_en_agenda + [candidato_externo.get("titulo_original") or ""]
+    if any(_es_mismo_hecho(propio["titulo_original"], titulo) for titulo in titulos_a_evitar):
+        return None
+    return propio
+
+
 class EntradaAgenda(NamedTuple):
     fecha: str
     hora: Optional[str]
@@ -333,16 +363,56 @@ def generar_agenda(
         existente = db.obtener_agenda_item(fecha, hora)
         noticia_existente = db.obtener(existente["noticia_id"]) if existente and existente["noticia_id"] else None
 
-        protegido = noticia_existente is not None and (
-            noticia_existente["revision_estado"] in REVISIONES_PROTEGIDAS
-            or noticia_existente["estado"] == Estado.PUBLICADA.value
+        # Congelada de verdad: una DECISIÓN HUMANA (aprobó/rechazó) o la
+        # noticia ya publicada. El Motor Editorial nunca la toca.
+        decidida_por_humano = noticia_existente is not None and (
+            (
+                noticia_existente["revision_estado"] == RevisionEstado.APROBADA.value
+                and not noticia_existente.get("revision_automatica")
+            )
+            or noticia_existente["revision_estado"] == RevisionEstado.RECHAZADA.value
         )
-        if protegido:
+        ya_publicada = (
+            noticia_existente is not None
+            and noticia_existente["estado"] == Estado.PUBLICADA.value
+        )
+        if decidida_por_humano or ya_publicada:
             usados.add(noticia_existente["id"])
             _registrar_normal(noticia_existente)
             entradas.append(
                 EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
             )
+            continue
+
+        # Franja aprobada SOLO por elegibilidad automática (sin decisión
+        # humana) y todavía sin publicar: la cascada no la reevalúa —evita
+        # rotar la grilla ya armada sin motivo—, pero la regla de mezcla
+        # editorial sí puede cubrirla con contenido propio.
+        aprobada_solo_automatica = (
+            noticia_existente is not None
+            and noticia_existente["revision_estado"] == RevisionEstado.APROBADA.value
+            and noticia_existente.get("revision_automatica")
+        )
+        if aprobada_solo_automatica and not (existente is not None and _es_franja_pasada(fecha, hora, ahora)):
+            propio = _mezcla_propio_para_franja(
+                db, noticia_existente, usados - {noticia_existente["id"]}, fecha_limite,
+                titulos_en_agenda, propio_en_normales, objetivo_propio,
+            )
+            elegida = propio or noticia_existente
+            usados.add(elegida["id"])
+            _registrar_normal(elegida)
+            if elegida["id"] == noticia_existente["id"]:
+                entradas.append(
+                    EntradaAgenda(fecha, hora, "normal", existente["territorio"], existente["noticia_id"], "existente")
+                )
+            else:
+                db.guardar_agenda_item(
+                    fecha, hora, "normal", elegida["territorio"], elegida["id"],
+                    datetime.now(timezone.utc).isoformat(), id_existente=existente["id"],
+                )
+                entradas.append(
+                    EntradaAgenda(fecha, hora, "normal", elegida["territorio"], elegida["id"], "actualizado")
+                )
             continue
 
         # Franja ya evaluada antes y cuya hora ya pasó: no se generan
@@ -382,13 +452,10 @@ def generar_agenda(
             noticia_existente is not None
             and noticia_existente.get("origen_ingreso") == OrigenIngreso.CONTENIDO_PROPIO.value
         )
-        cascada_no_protegida = (
-            candidato is not None
-            and candidato.get("territorio") not in TERRITORIOS_PROTEGIDOS_MEZCLA
-        )
         if (
             ocupante_es_propio
-            and cascada_no_protegida
+            and candidato is not None
+            and candidato.get("territorio") not in TERRITORIOS_PROTEGIDOS_MEZCLA
             and candidato.get("origen_ingreso") != OrigenIngreso.CONTENIDO_PROPIO.value
             and _sigue_siendo_elegible(noticia_existente, fecha_limite)
         ):
@@ -397,25 +464,12 @@ def generar_agenda(
             # nota excluida de la búsqueda, encontró otra externa. Solo la
             # desplaza una externa local/departamental (rama de arriba).
             candidato = noticia_existente
-        elif (
-            cascada_no_protegida
-            and candidato.get("origen_ingreso") != OrigenIngreso.CONTENIDO_PROPIO.value
-            and propio_en_normales < objetivo_propio
-        ):
-            # Esta franja iba a cubrirse con una externa provincial o
-            # inferior y aún no se alcanzó el objetivo de contenido propio:
-            # se reemplaza por la mejor nota propia `preparada` disponible,
-            # siempre que no repita un hecho ya agendado hoy. Flexible: si
-            # no hay nota propia apta, se mantiene la externa.
-            propio = db.candidato_contenido_propio(usados_para_busqueda, fecha_limite)
-            # La nota propia no debe repetir un hecho ya comprometido hoy
-            # (otra franja o una urgente) ni el hecho de la externa a la que
-            # reemplazaría — evita canibalización propia/externa sobre la
-            # misma noticia.
-            titulos_a_evitar = titulos_en_agenda + [candidato.get("titulo_original") or ""]
-            if propio is not None and not any(
-                _es_mismo_hecho(propio["titulo_original"], titulo) for titulo in titulos_a_evitar
-            ):
+        else:
+            propio = _mezcla_propio_para_franja(
+                db, candidato, usados_para_busqueda, fecha_limite,
+                titulos_en_agenda, propio_en_normales, objetivo_propio,
+            )
+            if propio is not None:
                 candidato = propio
 
         id_existente_item = existente["id"] if existente else None

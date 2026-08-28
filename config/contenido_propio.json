@@ -1,8 +1,7 @@
 {
   "fuentes_primarias": [
     "Municipalidad de Libertador General San Martín",
-    "Prensa Jujuy (Gobierno de Jujuy)",
-    "Ministerio de Salud de la Nación"
+    "Prensa Jujuy (Gobierno de Jujuy)"
   ],
   "max_notas_por_dia": 12,
   "ventana_horas": 48,

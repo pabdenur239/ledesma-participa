@@ -32,6 +32,7 @@ def _crear_noticia(
     titulo: str = None,
     categoria_tematica: str = None,
     origen_ingreso: str = "automatico",
+    revision_automatica: bool = False,
 ) -> Noticia:
     n = next(_CONTADOR)
     titulo = titulo or f"Noticia de prueba {territorio} #{n}"
@@ -55,6 +56,7 @@ def _crear_noticia(
         urgente=urgente,
         categoria_tematica=categoria_tematica,
         origen_ingreso=origen_ingreso,
+        revision_automatica=revision_automatica,
     )
     db.guardar(noticia)
     return noticia
@@ -650,6 +652,43 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         self.assertEqual(len([e for e in entradas if e.tipo == "urgente"]), 1)
         normales = [e for e in entradas if e.tipo == "normal"]
         self.assertEqual(len(self._propias_en(normales)), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
+
+    def test_sustituye_una_externa_aprobada_solo_por_elegibilidad_automatica(self):
+        # Primera pasada: sin material propio -> la grilla se llena de
+        # externas, que en producción quedan aprobadas automáticamente.
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial")
+        self._agenda()
+        # Ahora todas las externas de la grilla pasan a aprobada automática.
+        for row in self.db.listar_agenda(self.FECHA):
+            if row["noticia_id"]:
+                self.db.conn.execute(
+                    "UPDATE noticias SET revision_estado='aprobada', revision_automatica=1 WHERE id=?",
+                    (row["noticia_id"],),
+                )
+        self.db.conn.commit()
+        # Aparece material propio: la regla de mezcla debe cubrir el objetivo
+        # aun sobre franjas ya aprobadas automáticamente.
+        self._crear_propias()
+        entradas = [e for e in self._agenda() if e.tipo == "normal"]
+        self.assertEqual(
+            len(self._propias_en(entradas)), math.ceil(0.5 * len(HORARIOS_DEFAULT))
+        )
+
+    def test_no_sustituye_una_externa_aprobada_por_un_humano(self):
+        for _ in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(self.db, "provincial")
+        self._agenda()
+        for row in self.db.listar_agenda(self.FECHA):
+            if row["noticia_id"]:
+                self.db.conn.execute(
+                    "UPDATE noticias SET revision_estado='aprobada', revision_automatica=0 WHERE id=?",
+                    (row["noticia_id"],),
+                )
+        self.db.conn.commit()
+        self._crear_propias()
+        entradas = [e for e in self._agenda() if e.tipo == "normal"]
+        self.assertEqual(self._propias_en(entradas), [])
 
     def test_regeneracion_no_degrada_una_nota_propia_ya_asignada(self):
         for _ in range(len(HORARIOS_DEFAULT)):

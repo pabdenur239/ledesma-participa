@@ -48,7 +48,6 @@ CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "config" / "conte
 FUENTES_PRIMARIAS_DEFAULT = [
     "Municipalidad de Libertador General San Martín",
     "Prensa Jujuy (Gobierno de Jujuy)",
-    "Ministerio de Salud de la Nación",
 ]
 # Tope de seguridad de notas propias generadas por día calendario local. No
 # es una cuota objetivo: el generador ya se autolimita (solo produce una

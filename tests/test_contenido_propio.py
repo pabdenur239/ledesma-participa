@@ -335,6 +335,25 @@ class TestDetectarReelaboraciones(unittest.TestCase):
                                "Analizamos los sitios de apuestas y su código promocional. " * 4)
         self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
 
+    def test_ignora_politica_partidaria_y_temas_fuera_del_allowlist(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial",
+                               "Internas del PJ: la Justicia Electoral definió el cronograma",
+                               "El peronismo provincial discute la interna partidaria de cara a los comicios. " * 3)
+        _guardar_noticia_medio(self.db, 2, "Medio Provincial",
+                               "Choque en la esquina del centro",
+                               "Un auto y una moto colisionaron esta madrugada sin heridos de gravedad. " * 3)
+        self.assertEqual(detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS), [])
+
+    def test_no_reelabora_dos_notas_del_mismo_hecho_con_titulos_distintos(self):
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial",
+                               "Así se vio el eclipse lunar en Jujuy",
+                               "El eclipse total de luna se observó con cielo despejado en toda la provincia de Jujuy. " * 3)
+        _guardar_noticia_medio(self.db, 2, "Medio Provincial",
+                               "Fotos de la luna de sangre",
+                               "El eclipse total de luna se observó con cielo despejado en toda la provincia de Jujuy anoche. " * 3)
+        cs = detectar_reelaboraciones(self.db, ahora=AHORA_MEDIOS, config=CONFIG_MEDIOS)
+        self.assertEqual(len(cs), 1)
+
     def test_no_reelabora_dos_veces_la_misma_nota(self):
         _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Suba de tarifas en Jujuy",
                                "Aumento confirmado del transporte provincial. " * 4)
@@ -381,8 +400,8 @@ class TestGenerarReelaboracion(unittest.TestCase):
         self.assertIn(src, self.db.ids_fuente_reelaborados())
 
     def test_redactor_no_disponible_no_rompe_la_corrida(self):
-        _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Nota provincial",
-                               "Contenido provincial suficiente para reescribir. " * 4)
+        _guardar_noticia_medio(self.db, 1, "Medio Provincial", "Nueva tarifa de transporte",
+                               "El Gobierno provincial confirmó la actualizacion de la tarifa del colectivo. " * 4)
         from motor_noticias.redaccion.ollama import ErrorRedaccionOllama
 
         class _RedactorCaido(Redactor):

@@ -31,11 +31,13 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .db import Database
+from .dedupe import es_mismo_contenido, palabras_clave
 from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Noticia, OrigenIngreso
 from .motor_editorial import ZONA_JUJUY, _es_mismo_hecho
 from .pipeline import normalizar_noticia, procesar_noticia
 from .redaccion import crear_redactor
+from .riesgo_editorial import evaluar_riesgo_editorial
 from .redaccion.base import Redactor
 from .redaccion.ollama import ErrorRedaccionOllama
 
@@ -99,13 +101,45 @@ FUENTES_MEDIOS_DEFAULT = [
 # de relevancia real. El objetivo de la mezcla 50/50 son justamente las
 # franjas que hoy se llenan con externas provinciales.
 TERRITORIOS_REELABORABLES = ("provincial",)
-# Aunque el medio sea de Jujuy, no se reelabora contenido de SEO/apuestas/
-# horóscopo/promoción que a veces se cuela en sus feeds.
+# La reelaboración solo cubre temas editorialmente seguros: el texto debe
+# mencionar al menos una de estas palabras. Deja afuera de entrada política,
+# policiales, judicial, tragedias, salud sensible — que además nunca deben
+# rellenar una franja (regla editorial del proyecto) — sin depender de que
+# el gate de riesgo por palabras clave los detecte.
+TEMAS_REELABORABLES = (
+    # servicio / infraestructura
+    "corte de", "corte programado", "obra", "obras", "pavimenta",
+    "agua potable", "servicio electrico", "servicio eléctrico", "energia",
+    "energía", "transito", "tránsito", "transporte", "colectivo", "ruta",
+    "cronograma", "vencimiento", "tramite", "trámite", "turnos",
+    "inscripcion", "inscripción",
+    # cultura / educacion / deporte / comunidad
+    "muestra", "feria", "festival", "teatro", "concierto", "espectaculo cultural",
+    "congreso", "jornada", "taller", "capacitacion", "capacitación", "escuela",
+    "colegio", "universidad", "estudiantes", "docentes", "biblioteca",
+    "torneo", "campeonato", "certamen", "aniversario", "efemeride", "efeméride",
+    "dia de", "día de", "celebra", "homenaje", "reconocimiento",
+    # economia / datos / clima / ambiente
+    "precio", "tarifa", "dolar", "dólar", "inflacion", "inflación", "presupuesto",
+    "paritaria", "salario", "jubilacion", "jubilación", "produccion", "producción",
+    "cosecha", "turismo", "pronostico", "pronóstico", "clima", "temperatura",
+    "alerta meteorologica", "alerta meteorológica", "eclipse", "lluvia",
+    "vacunacion", "vacunación", "campaña de salud", "operativo sanitario",
+)
+# Aunque un tema pase el allowlist, si el texto toca alguno de estos
+# términos no se reelabora (SEO/apuestas + huecos del gate de riesgo:
+# política partidaria, personas desaparecidas, hechos sin identificar).
 PATRONES_NO_REELABORABLES = (
     "casino", "casinos", "ruleta", "apuesta", "apuestas", "tragamonedas",
     "horoscopo", "horóscopo", "tarot", "zodiaco", "zodíaco", "signos del",
     "codigo promocional", "código promocional", "cupon de descuento",
     "cupón de descuento", "mejores viajes", "que ver en", "guia de compras",
+    " pj ", "peronismo", "radicalismo", "la campora", "la cámpora",
+    "interna partidaria", "internas del", "justicia electoral", "comicios",
+    "precandidat", "lista de candidat",
+    "desaparec", "paradero", "busqueda de la joven", "búsqueda de la joven",
+    "inconsciente", "sin vida", "hallado muerto", "hallada muerta",
+    "femicid", "abusad", "narcotrafic", "narcomenud",
 )
 IDENTIDAD_REELABORACION = "https://ledesma-participa.local/contenido-propio/reelaboracion/{id}"
 
@@ -474,6 +508,15 @@ def detectar_reelaboraciones(
     fecha_limite = (ahora_local.astimezone(timezone.utc) - timedelta(hours=ventana_horas)).isoformat()
 
     titulos_evitar = _titulos_ya_comprometidos_hoy(db, fecha_iso)
+    # Huellas de contenido (palabras clave del cuerpo) ya cubiertas: las de
+    # las notas propias `preparada` recientes más las elegidas en esta
+    # tanda. Atrapa dos notas del mismo hecho aunque tengan títulos muy
+    # distintos ("eclipse lunar" vs "luna de sangre").
+    huellas_cubiertas = [
+        palabras_clave(f"{r['titulo_original']} {r['texto_original'] or ''}")
+        for r in db.noticias_de_fuentes_recientes([NOMBRE_FUENTE_PROPIA], fecha_limite)
+        if r["estado"] == "preparada"
+    ]
 
     candidatas: List[NotaPropiaCandidata] = []
     for noticia in db.noticias_de_fuentes_recientes(fuentes_medios, fecha_limite):
@@ -487,8 +530,13 @@ def detectar_reelaboraciones(
         texto = noticia["texto_original"] or ""
         if not texto or es_entretenimiento_o_curiosidad(titulo, texto):
             continue
-        blob = f"{titulo} {texto}".lower()
+        blob = f" {titulo} {texto} ".lower()
+        if not any(t in blob for t in TEMAS_REELABORABLES):
+            continue  # fuera del allowlist de temas seguros
         if any(p in blob for p in PATRONES_NO_REELABORABLES):
+            continue
+        riesgo = evaluar_riesgo_editorial(titulo, texto, None, None, noticia["nombre_fuente"])
+        if riesgo["requiere_revision_especial"] or riesgo["categoria_riesgo"]:
             continue
 
         url_identidad = IDENTIDAD_REELABORACION.format(id=noticia["id"])
@@ -496,8 +544,12 @@ def detectar_reelaboraciones(
             continue  # ya reelaborada
         if any(_es_mismo_hecho(titulo, t) for t in titulos_evitar):
             continue
+        huella = palabras_clave(f"{titulo} {texto}")
+        if any(es_mismo_contenido(huella, h) for h in huellas_cubiertas):
+            continue  # mismo hecho que otra nota propia, aunque el título difiera
 
         titulos_evitar.append(titulo)  # dedup por hecho dentro de la tanda
+        huellas_cubiertas.append(huella)
         candidatas.append(
             NotaPropiaCandidata(
                 tipo="reelaboracion",

@@ -36,15 +36,33 @@ class NotificationService {
   final GlobalKey<NavigatorState> navigatorKey;
   final FlutterLocalNotificationsPlugin _notificacionesLocales = FlutterLocalNotificationsPlugin();
 
+  // Dedup: getInitialMessage() y onMessageOpenedApp pueden entregar el
+  // mismo mensaje (mismo arranque en frío tocando la notificación) — sin
+  // esto, se navegaría dos veces a la misma noticia.
+  String? _ultimoMessageIdAbierto;
+
   NotificationService(this.navigatorKey);
 
   Future<bool> inicializar() async {
     try {
       await Firebase.initializeApp();
-      // Debe registrarse acá (después de initializeApp, una sola vez):
-      // es la función que FCM ejecuta en un isolate aparte cuando llega
-      // un mensaje con la app completamente cerrada.
+
+      // Bug real corregido: estos tres registros (apertura por toque) se
+      // hacían al FINAL de esta función, después de varios `await` lentos
+      // (permiso de notificaciones, suscripción al tópico, token FCM). Con
+      // la app recién resumida desde segundo plano y el dispositivo
+      // aplicando su propia gestión agresiva de batería (Motorola
+      // "moto_freezer"), esa cadena podía no terminar de correr todavía
+      // cuando llegaba el toque de la notificación — el evento de
+      // `onMessageOpenedApp` se perdía en silencio porque nadie estaba
+      // escuchando. Van primero, inmediatamente después de initializeApp,
+      // sin nada más por delante.
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onMessageOpenedApp.listen(_manejarAperturaPorNotificacion);
+      final mensajeInicial = await FirebaseMessaging.instance.getInitialMessage();
+      if (mensajeInicial != null) {
+        _manejarAperturaPorNotificacion(mensajeInicial);
+      }
 
       await _notificacionesLocales.initialize(
         const InitializationSettings(
@@ -52,7 +70,7 @@ class NotificationService {
         ),
         onDidReceiveNotificationResponse: (respuesta) {
           final noticiaId = respuesta.payload;
-          if (noticiaId != null) _abrirNoticia(noticiaId);
+          if (noticiaId != null) _abrirNoticiaCuandoElNavigatorEsteListo(noticiaId);
         },
       );
       await _notificacionesLocales
@@ -76,17 +94,6 @@ class NotificationService {
       // del sistema a mano, reutilizando el mismo canal.
       FirebaseMessaging.onMessage.listen(_mostrarNotificacionEnPrimerPlano);
 
-      // Se tocó la notificación con la app en segundo plano (no cerrada).
-      FirebaseMessaging.onMessageOpenedApp.listen((mensaje) {
-        final noticiaId = mensaje.data['noticia_id'];
-        if (noticiaId != null) _abrirNoticia(noticiaId);
-      });
-
-      // La app estaba cerrada y se abrió tocando la notificación.
-      final mensajeInicial = await messaging.getInitialMessage();
-      final noticiaIdInicial = mensajeInicial?.data['noticia_id'];
-      if (noticiaIdInicial != null) _abrirNoticia(noticiaIdInicial);
-
       return true;
     } catch (error) {
       // Esperable hasta que se configure un proyecto real de Firebase.
@@ -95,6 +102,17 @@ class NotificationService {
       }
       return false;
     }
+  }
+
+  void _manejarAperturaPorNotificacion(RemoteMessage mensaje) {
+    final noticiaId = mensaje.data['noticia_id'];
+    if (noticiaId == null) return;
+    final idMensaje = mensaje.messageId;
+    if (idMensaje != null && idMensaje == _ultimoMessageIdAbierto) {
+      return; // ya se navegó por este mismo mensaje (getInitialMessage + onMessageOpenedApp)
+    }
+    _ultimoMessageIdAbierto = idMensaje;
+    _abrirNoticiaCuandoElNavigatorEsteListo(noticiaId);
   }
 
   Future<void> _mostrarNotificacionEnPrimerPlano(RemoteMessage mensaje) async {
@@ -116,12 +134,25 @@ class NotificationService {
     );
   }
 
-  void _abrirNoticia(String noticiaId) {
+  /// Bug real corregido: antes usaba `navigatorKey.currentState?.push(...)`
+  /// directo — si el Navigator todavía no estaba montado (primer frame sin
+  /// dibujar todavía), el `?.` descartaba la apertura en silencio, sin
+  /// reintento ni error. Ahora espera al próximo frame construido antes de
+  /// navegar, las veces que haga falta.
+  void _abrirNoticiaCuandoElNavigatorEsteListo(String noticiaId) {
     final id = int.tryParse(noticiaId);
     if (id == null) return;
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(builder: (_) => DetalleScreen(noticiaId: id)),
-    );
+
+    void intentar() {
+      final estado = navigatorKey.currentState;
+      if (estado == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => intentar());
+        return;
+      }
+      estado.push(MaterialPageRoute(builder: (_) => DetalleScreen(noticiaId: id)));
+    }
+
+    intentar();
   }
 }
 

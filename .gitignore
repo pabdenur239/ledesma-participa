@@ -30,3 +30,8 @@ data/*.lock
 
 .venv/
 data/reels/
+
+# Binarios de la app Android (APK/AAB) generados en exports/android/ — se
+# guardan ahí como entregable local, no se versionan (pesan ~50 MB c/u).
+exports/android/*.apk
+exports/android/*.aab

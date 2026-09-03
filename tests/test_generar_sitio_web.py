@@ -181,6 +181,19 @@ class TestGenerarSitioWeb(unittest.TestCase):
         self.assertEqual(len(indice), 1)
         self.assertIn("nota para sitemap", indice[0]["buscable"])
 
+    def test_genera_pagina_de_contacto_publica_enlazada_desde_el_pie(self):
+        self.db.guardar(_noticia(hash_contenido="c1"))
+        self._generar()
+
+        contacto = self.salida_dir / "contacto" / "index.html"
+        self.assertTrue(contacto.exists())
+        contenido = contacto.read_text(encoding="utf-8")
+        self.assertIn("Contacto", contenido)
+        self.assertIn("ledesmaparticipa@gmail.com", contenido)
+
+        index_html = (self.salida_dir / "index.html").read_text(encoding="utf-8")
+        self.assertIn('href="contacto/"', index_html)
+
     def test_pagina_de_articulo_incluye_fuente_y_enlace_original(self):
         self.db.guardar(_noticia(
             hash_contenido="fuente",
@@ -347,6 +360,33 @@ class TestApiJson(unittest.TestCase):
         self.assertEqual(detalle["fuente_url"], "https://fuente-real.test/nota-original")
         self.assertIsInstance(detalle["texto_parrafos"], list)
         self.assertTrue(len(detalle["texto_parrafos"]) > 0)
+
+    def test_feed_de_la_app_excluye_noticias_de_mas_de_90_dias(self):
+        from datetime import datetime, timedelta, timezone
+
+        reciente = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        vieja = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+        self.db.guardar(_noticia(
+            hash_contenido="reciente", titulo_preparado="Nota reciente",
+            fecha_fuente=reciente, fecha_recoleccion=reciente,
+        ))
+        vieja_id = self.db.guardar(_noticia(
+            hash_contenido="vieja", titulo_preparado="Nota vieja",
+            fecha_fuente=vieja, fecha_recoleccion=vieja,
+        ))
+        self._generar()
+
+        feed = self._leer_json("feed.json")
+        self.assertEqual([item["titulo"] for item in feed], ["Nota reciente"])
+        # El detalle por id se sigue generando (deep links / notificaciones).
+        self.assertTrue((self.salida_dir / "api" / "noticia" / f"{vieja_id}.json").exists())
+
+    def test_toda_noticia_de_la_api_muestra_una_fuente(self):
+        self.db.guardar(_noticia(hash_contenido="propia", nombre_fuente=""))
+        self._generar()
+
+        feed = self._leer_json("feed.json")
+        self.assertEqual(feed[0]["fuente_nombre"], "Ledesma Participa")
 
     def test_nunca_expone_campos_de_trabajo_interno(self):
         self.db.guardar(_noticia(

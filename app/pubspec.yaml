@@ -1,7 +1,7 @@
 name: ledesma_participa_app
 description: "App móvil oficial de Ledesma Participa — consume la API de solo lectura del sistema existente, sin backend nuevo."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '>=3.4.0 <4.0.0'

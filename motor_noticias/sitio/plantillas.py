@@ -67,6 +67,7 @@ PIE_HTML_PLANTILLA = """
     <p>{descripcion}</p>
     <p class="pie-enlaces">
       {enlaces_sociales}
+      <a href="{ruta_raiz}contacto/">Contacto</a>
       <a href="{ruta_raiz}privacy.html">Privacidad</a>
       <a href="{ruta_raiz}data-deletion.html">Eliminación de datos</a>
     </p>
@@ -115,6 +116,7 @@ def encabezado_html(*, ruta_raiz: str, seccion_activa: Optional[str] = None) -> 
     <nav class="nav">
       {nav}
       <a href="{ruta_raiz}buscar/">Buscar</a>
+      <a href="{ruta_raiz}contacto/">Contacto</a>
     </nav>
   </div>
 </header>
@@ -236,6 +238,33 @@ def pagina_noticia(*, n: dict, relacionadas: List[dict], ruta_raiz: str, config_
   {fuente_html}
 </article>
 {relacionadas_html}
+</main>""",
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+    ]
+    return "\n".join(partes)
+
+
+def pagina_contacto(*, ruta_raiz: str, config_sitio: dict, url_base: str) -> str:
+    email = config_sitio.get("email_contacto", "")
+    sitio = (config_sitio.get("base_url_produccion") or "").rstrip("/") + "/"
+    nombre = config_sitio.get("nombre", "Ledesma Participa")
+    partes = [
+        cabecera_html(
+            titulo_pagina="Contacto — Ledesma Participa",
+            descripcion="Datos de contacto de Ledesma Participa: correo, sitio web y vías de consulta.",
+            url_canonica=url_base,
+            ruta_raiz=ruta_raiz,
+        ),
+        encabezado_html(ruta_raiz=ruta_raiz),
+        f"""<main class="ancho ancho-articulo">
+  <h1 class="titulo-seccion">Contacto</h1>
+  <p>Para consultas, correcciones, información, reclamos o contacto con
+  {escapar(nombre)}, podés comunicarte a través del correo indicado.</p>
+  <ul>
+    <li><strong>Medio:</strong> {escapar(nombre)}</li>
+    <li><strong>Correo:</strong> <a href="mailto:{escapar(email)}">{escapar(email)}</a></li>
+    <li><strong>Sitio:</strong> <a href="{escapar(sitio)}">{escapar(sitio)}</a></li>
+  </ul>
 </main>""",
         cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
     ]

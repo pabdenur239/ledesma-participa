@@ -43,9 +43,18 @@ class ApiService {
     }
   }
 
+  /// Antigüedad máxima del contenido que la app muestra como normal, por
+  /// la política de Google Play "News and Magazines" (contenido reciente,
+  /// menos de 3 meses). El backend ya excluye lo más viejo de las listas
+  /// de la API; este filtro es una segunda barrera en el cliente por si
+  /// llega contenido viejo desde la caché local.
+  static const _antiguedadMaxima = Duration(days: 90);
+
   List<Noticia> _parsearLista(String cuerpo) {
     final datos = jsonDecode(cuerpo) as List;
-    return datos.map((e) => Noticia.fromJson(e as Map<String, dynamic>)).toList();
+    final items = datos.map((e) => Noticia.fromJson(e as Map<String, dynamic>)).toList();
+    final limite = DateTime.now().subtract(_antiguedadMaxima);
+    return items.where((n) => n.fecha != null && n.fecha!.isAfter(limite)).toList();
   }
 
   Future<List<Noticia>> obtenerFeed() => _obtenerLista('feed.json', claveCache: 'feed');

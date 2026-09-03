@@ -11,7 +11,7 @@ import json
 import re
 import shutil
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import List, Optional
@@ -194,7 +194,11 @@ def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
         "url_relativa": f"noticias/{noticia['id']}-{slug}/",
         "fecha_legible": _fecha_legible(fecha_dt),
         "fecha_orden": _fecha_orden(fecha_dt),
-        "nombre_fuente": (noticia.get("nombre_fuente") or "").strip(),
+        # Toda noticia debe mostrar su fuente (requisito Google Play "News
+        # and Magazines"). Los collectors siempre guardan `nombre_fuente`;
+        # el único caso sin fuente externa es contenido producido por el
+        # propio medio, que se rotula como tal.
+        "nombre_fuente": (noticia.get("nombre_fuente") or "").strip() or "Ledesma Participa",
         "url_fuente": (noticia.get("url_fuente") or "").strip(),
         "imagen_web": imagen_web,
         "imagen_og": imagen_og,
@@ -320,6 +324,19 @@ MAXIMO_FEED_API = 100
 MAXIMO_URGENTES_API = 20
 MAXIMO_POR_CATEGORIA_API = 100
 
+# Google Play "News and Magazines" exige que el contenido mostrado como
+# normal tenga menos de 3 meses. Las listas de la API que consume la app
+# (feed, urgentes, categorías) no incluyen noticias más viejas que esto.
+# No se borra nada del servidor: el HTML del sitio y el detalle por id
+# (api/noticia/{id}.json, usado por deep links y notificaciones) siguen
+# disponibles.
+DIAS_MAXIMO_CONTENIDO_APP = 90
+
+
+def _es_reciente_para_app(n: dict) -> bool:
+    limite = datetime.now(timezone.utc) - timedelta(days=DIAS_MAXIMO_CONTENIDO_APP)
+    return n["fecha_orden"] >= limite
+
 
 def _url_absoluta(ruta: Optional[str], base_url: str) -> Optional[str]:
     """`imagen_web` ya viene absoluta cuando es una URL externa (ver
@@ -349,16 +366,16 @@ def _datos_api_resumen(n: dict, base_url: str) -> dict:
         "localidad": n["localidad"],
         "urgente": n["urgente"],
         "url": base_url + n["url_relativa"],
+        # Fuente visible también en las tarjetas de lista, no solo en el
+        # detalle (requisito Google Play "News and Magazines").
+        "fuente_nombre": n["nombre_fuente"],
+        "fuente_url": n["url_fuente"] or None,
     }
 
 
 def _datos_api_detalle(n: dict, base_url: str) -> dict:
     datos = _datos_api_resumen(n, base_url)
-    datos.update({
-        "texto_parrafos": n["texto_parrafos"],
-        "fuente_nombre": n["nombre_fuente"],
-        "fuente_url": n["url_fuente"] or None,
-    })
+    datos["texto_parrafos"] = n["texto_parrafos"]
     return datos
 
 
@@ -368,23 +385,28 @@ def _escribir_api_json(salida_dir: Path, noticias: List[dict], base_url: str) ->
         json.dumps({"generado_en": datetime.now(timezone.utc).isoformat()}),
     )
 
+    # Listas que la app muestra como contenido normal: solo noticias
+    # recientes (< DIAS_MAXIMO_CONTENIDO_APP). El detalle por id se sigue
+    # generando para todas (deep links / notificaciones).
+    noticias_app = [n for n in noticias if _es_reciente_para_app(n)]
+
     # Feed: mismo criterio de prioridad editorial que la portada del sitio
     # (`_elegir_destacadas`/`PRIORIDAD_SECCION`) — cronológico dentro de
     # cada nivel territorial, LOCAL > DEPARTAMENTAL > PROVINCIAL > NACIONAL
     # > el resto — aplicado a TODA la lista, no solo a las 3 destacadas.
     feed_ordenado = sorted(
-        enumerate(noticias),
+        enumerate(noticias_app),
         key=lambda par: (PRIORIDAD_SECCION.get(par[1]["seccion_slug"], 9), par[0]),
     )
     feed = [_datos_api_resumen(n, base_url) for _, n in feed_ordenado[:MAXIMO_FEED_API]]
     _escribir(salida_dir / "api" / "feed.json", json.dumps(feed, ensure_ascii=False))
 
-    urgentes = [_datos_api_resumen(n, base_url) for n in noticias if n["urgente"]][:MAXIMO_URGENTES_API]
+    urgentes = [_datos_api_resumen(n, base_url) for n in noticias_app if n["urgente"]][:MAXIMO_URGENTES_API]
     _escribir(salida_dir / "api" / "urgentes.json", json.dumps(urgentes, ensure_ascii=False))
 
     categorias_meta = []
     for slug, etiqueta, filtro in CATEGORIAS_API:
-        items = [_datos_api_resumen(n, base_url) for n in noticias if filtro(n)][:MAXIMO_POR_CATEGORIA_API]
+        items = [_datos_api_resumen(n, base_url) for n in noticias_app if filtro(n)][:MAXIMO_POR_CATEGORIA_API]
         _escribir(salida_dir / "api" / "categoria" / f"{slug}.json", json.dumps(items, ensure_ascii=False))
         categorias_meta.append({"slug": slug, "etiqueta": etiqueta, "cantidad": len(items)})
     _escribir(salida_dir / "api" / "categorias.json", json.dumps(categorias_meta, ensure_ascii=False))
@@ -491,6 +513,14 @@ def generar_sitio(
         salida_dir / "assets" / "search-index.json",
         json.dumps(_construir_indice_busqueda(noticias), ensure_ascii=False),
     )
+
+    # Página de contacto (pública, enlazada desde el menú y el pie de todas
+    # las páginas — requisito Google Play "News and Magazines").
+    _escribir(
+        salida_dir / "contacto" / "index.html",
+        plantillas.pagina_contacto(ruta_raiz="../", config_sitio=config_sitio, url_base=base_url + "contacto/"),
+    )
+    urls_sitemap.append(base_url + "contacto/")
 
     # API JSON de solo lectura (app móvil).
     _escribir_api_json(salida_dir, noticias, base_url)

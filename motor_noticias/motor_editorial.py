@@ -56,14 +56,17 @@ ANTIGUEDAD_MAXIMA_HORAS = 48
 # nivel inferior si existe uno superior apto).
 ORDEN_CASCADA = ("local", "departamental", "provincial", "nacional")
 
-# Regla de mezcla editorial (agregada 28/8/2026): en las franjas normales se
-# apunta a que al menos esta proporción sea contenido propio de Ledesma
-# Participa, sustituyendo publicaciones externas cuando hay una nota propia
-# `preparada` válida disponible. Es un objetivo flexible, no una cuota
-# rígida: si no hay material propio de calidad para una franja, se mantiene
-# la externa. Configurable en `config/agenda.json`.
+# Regla de mezcla editorial (agregada 28/8/2026, subida a 70% el 17/9/2026
+# para bajar el contenido externo directo a un máximo de 30%): en las
+# franjas normales se apunta a que al menos esta proporción sea contenido
+# propio de Ledesma Participa, sustituyendo publicaciones externas cuando
+# hay una nota propia `preparada` válida disponible. Es un objetivo
+# flexible, no una cuota rígida: si no hay material propio de calidad para
+# una franja, se mantiene la externa (nunca se degrada calidad ni se
+# inventa contenido para cumplir el porcentaje). Configurable en
+# `config/agenda.json`.
 CONFIG_AGENDA_PATH = Path(__file__).resolve().parent.parent / "config" / "agenda.json"
-PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT = 0.5
+PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT = 0.7
 
 # La regla de mezcla NUNCA desplaza una publicación externa de estos
 # territorios: son las noticias que deben salir primero y sin demora. El

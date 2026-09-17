@@ -119,8 +119,16 @@ def procesar_noticia(
         noticia.motivo_territorio = clasificacion["motivo_territorio"]
 
     if db.existe_duplicado(noticia.url_normalizada, noticia.hash_contenido):
+        db.registrar_descarte(
+            titulo=noticia.titulo_original,
+            motivo="duplicado",
+            fuente=noticia.nombre_fuente,
+            localidad=noticia.localidad,
+            territorio=noticia.territorio,
+        )
         return noticia, "duplicado"
 
+    motivo_descarte = None
     if noticia.territorio in TERRITORIOS_SIEMPRE_ELEGIBLES:
         apta_para_preparar = True
     elif noticia.territorio in TERRITORIOS_CON_GATE_EDITORIAL:
@@ -128,22 +136,43 @@ def procesar_noticia(
         # prepararse si superan un gate mínimo de calidad editorial (sin IA):
         # solo quedan disponibles para la cascada cuando falte contenido
         # local/departamental, nunca reemplazan a `relevancia_local`.
-        apta_para_preparar = evaluar_elegibilidad_editorial(
+        gate = evaluar_elegibilidad_editorial(
             noticia.titulo_original, noticia.texto_original, noticia.nombre_fuente
-        )["elegible"]
+        )
+        apta_para_preparar = gate["elegible"]
+        if not apta_para_preparar:
+            motivo_descarte = ("fuente_insuficiente", gate["motivo"])
     else:  # sin_clasificar: solo se prepara como último recurso editorial
         # (cascada nivel 5) si además de pasar el mismo gate mínimo de
         # calidad que provincial/nacional, es contenido de entretenimiento/
         # espectáculos/curiosidades/tendencia viral verificable. Cualquier
         # otro contenido sin_clasificar sigue sin prepararse, igual que hoy.
-        apta_para_preparar = evaluar_elegibilidad_editorial(
+        gate = evaluar_elegibilidad_editorial(
             noticia.titulo_original, noticia.texto_original, noticia.nombre_fuente
-        )["elegible"] and es_entretenimiento_o_curiosidad(noticia.titulo_original, noticia.texto_original)
+        )
+        apta_para_preparar = gate["elegible"] and es_entretenimiento_o_curiosidad(
+            noticia.titulo_original, noticia.texto_original
+        )
+        if not apta_para_preparar:
+            motivo_descarte = (
+                ("fuente_insuficiente", gate["motivo"]) if not gate["elegible"]
+                else ("fuera_de_alcance", noticia.motivo_territorio)
+            )
 
     if not apta_para_preparar:
         noticia.estado = Estado.DESCARTADA.value
         _aplicar_riesgo_editorial(noticia)
         db.guardar(noticia)
+        motivo, detalle = motivo_descarte or ("otro", None)
+        db.registrar_descarte(
+            titulo=noticia.titulo_original,
+            motivo=motivo,
+            fuente=noticia.nombre_fuente,
+            localidad=noticia.localidad,
+            territorio=noticia.territorio,
+            detalle=detalle,
+            noticia_id=noticia.id,
+        )
         return noticia, "descartada"
 
     titulo_preparado, texto_preparado = redactor.redactar(noticia)

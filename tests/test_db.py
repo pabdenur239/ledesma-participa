@@ -164,6 +164,36 @@ class TestReservarProgramacionMetaClaimAtomico(unittest.TestCase):
         self.assertEqual(len({id_fb, id_ig, id_story}), 3)
         self.assertEqual(len(self.db.listar_programacion_meta("2026-08-12")), 3)
 
+    def test_registrar_descarte_y_resumen(self):
+        self.db.registrar_descarte(
+            titulo="Nota A", motivo="duplicado", fuente="Fuente", localidad="Libertador",
+            territorio="local",
+        )
+        self.db.registrar_descarte(
+            titulo="Nota B", motivo="duplicado", fuente="Fuente", localidad=None,
+            territorio="provincial",
+        )
+        self.db.registrar_descarte(
+            titulo="Nota C", motivo="fuera_de_alcance", fuente="Fuente", localidad=None,
+            territorio="sin_clasificar",
+        )
+
+        resumen_total = self.db.resumen_descartes("1970-01-01T00:00:00+00:00")
+        self.assertEqual(resumen_total["total"], 3)
+        self.assertEqual(resumen_total["por_motivo"]["duplicado"], 2)
+
+        resumen_local = self.db.resumen_descartes(
+            "1970-01-01T00:00:00+00:00", territorios=("local", "departamental")
+        )
+        self.assertEqual(resumen_local["total"], 1)
+        self.assertEqual(resumen_local["por_motivo"], {"duplicado": 1})
+
+        descartes_local = self.db.listar_descartes(
+            "1970-01-01T00:00:00+00:00", territorios=("local", "departamental")
+        )
+        self.assertEqual(len(descartes_local), 1)
+        self.assertEqual(descartes_local[0]["titulo"], "Nota A")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -173,6 +173,40 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(resultados[1][1], "duplicado")
         self.assertEqual(len(self.db.listar()), 1)
 
+    def test_duplicado_queda_registrado_en_descarte_log(self):
+        base = {
+            "titulo": "Obras en Libertador General San Martín",
+            "texto": "El municipio de Libertador General San Martín anunció obras viales.",
+            "url": "https://ejemplo.test/libertador-2",
+            "fuente": "Prueba",
+            "fecha": "2026-08-01",
+        }
+        duplicado = dict(base, url="https://ejemplo.test/libertador-2?utm_source=facebook")
+        ejecutar_pipeline(self.db, ColectorDePrueba([base, duplicado]), self.redactor)
+        descartes = self.db.listar_descartes("1970-01-01T00:00:00+00:00")
+        self.assertEqual(len(descartes), 1)
+        self.assertEqual(descartes[0]["motivo"], "duplicado")
+        self.assertEqual(descartes[0]["territorio"], "local")
+
+    def test_noticia_sin_clasificar_descartada_queda_registrada(self):
+        items = [
+            {
+                "titulo": "Estrenó su nuevo disco el músico internacional",
+                "texto": (
+                    "El artista presentó su nuevo álbum en una gira mundial "
+                    "sin fechas confirmadas todavía."
+                ),
+                "url": "https://ejemplo.test/sin-clasificar-descarte-1",
+                "fuente": "Prueba",
+                "fecha": "2026-08-01",
+            }
+        ]
+        ejecutar_pipeline(self.db, ColectorDePrueba(items), self.redactor)
+        descartes = self.db.listar_descartes("1970-01-01T00:00:00+00:00")
+        self.assertEqual(len(descartes), 1)
+        self.assertEqual(descartes[0]["motivo"], "fuera_de_alcance")
+        self.assertEqual(descartes[0]["territorio"], "sin_clasificar")
+
 
 class TestNormalizarNoticiaDecodificaEntidadesHTML(unittest.TestCase):
     """Bug real detectado en producción: el collector de Jujuy al día no

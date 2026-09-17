@@ -619,7 +619,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         self._crear_propias()
         entradas = [e for e in self._agenda() if e.tipo == "normal"]
         self.assertEqual(len(entradas), len(HORARIOS_DEFAULT))  # total preservado
-        objetivo = math.ceil(0.5 * len(HORARIOS_DEFAULT))
+        objetivo = math.ceil(0.7 * len(HORARIOS_DEFAULT))
         self.assertEqual(len(self._propias_en(entradas)), objetivo)
 
     def test_nunca_desplaza_una_externa_local_ni_departamental(self):
@@ -651,7 +651,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         entradas = self._agenda()
         self.assertEqual(len([e for e in entradas if e.tipo == "urgente"]), 1)
         normales = [e for e in entradas if e.tipo == "normal"]
-        self.assertEqual(len(self._propias_en(normales)), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
+        self.assertEqual(len(self._propias_en(normales)), math.ceil(0.7 * len(HORARIOS_DEFAULT)))
 
     def test_sustituye_una_externa_aprobada_solo_por_elegibilidad_automatica(self):
         # Primera pasada: sin material propio -> la grilla se llena de
@@ -672,7 +672,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         self._crear_propias()
         entradas = [e for e in self._agenda() if e.tipo == "normal"]
         self.assertEqual(
-            len(self._propias_en(entradas)), math.ceil(0.5 * len(HORARIOS_DEFAULT))
+            len(self._propias_en(entradas)), math.ceil(0.7 * len(HORARIOS_DEFAULT))
         )
 
     def test_no_sustituye_una_externa_aprobada_por_un_humano(self):
@@ -697,7 +697,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         ids_1 = {e.noticia_id for e in self._propias_en(self._agenda())}
         ids_2 = {e.noticia_id for e in self._propias_en(self._agenda())}
         self.assertEqual(ids_1, ids_2)
-        self.assertEqual(len(ids_1), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
+        self.assertEqual(len(ids_1), math.ceil(0.7 * len(HORARIOS_DEFAULT)))
 
 
 if __name__ == "__main__":

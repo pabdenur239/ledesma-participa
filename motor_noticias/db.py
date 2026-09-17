@@ -89,7 +89,43 @@ CREATE TABLE IF NOT EXISTS programacion_meta (
 );
 CREATE INDEX IF NOT EXISTS idx_programacion_meta_fecha ON programacion_meta(fecha);
 CREATE INDEX IF NOT EXISTS idx_programacion_meta_estado ON programacion_meta(estado);
+
+-- Trazabilidad de información detectada que NO termina publicada (agregada
+-- 17/9/2026): un duplicado nunca se guardaba en `noticias` (se descartaba en
+-- silencio, sin dejar rastro) y una `noticia` que sí queda `descartada` no
+-- tenía un motivo normalizado y consultable aparte de sus propios campos de
+-- texto libre. No reemplaza ni reescribe la deduplicación ni los filtros
+-- existentes: solo deja constancia de cuándo actúan, para poder detectar si
+-- el sistema está descartando noticias locales válidas por error.
+CREATE TABLE IF NOT EXISTS descarte_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_hora TEXT NOT NULL,
+    noticia_id INTEGER,
+    titulo TEXT NOT NULL,
+    fuente TEXT,
+    localidad TEXT,
+    territorio TEXT,
+    motivo TEXT NOT NULL,
+    detalle TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_descarte_log_fecha ON descarte_log(fecha_hora);
 """
+
+# Motivos normalizados de descarte (INFORMACIÓN LOCAL NO PUBLICADA): la
+# lista es fija a propósito, para que el resumen operativo pueda agrupar sin
+# depender de texto libre. "otro" cubre cualquier caso real no previsto acá.
+MOTIVOS_DESCARTE = (
+    "irrelevante",
+    "duplicado",
+    "fuente_insuficiente",
+    "informacion_no_verificable",
+    "ya_publicada",
+    "error_tecnico",
+    "filtro_demasiado_restrictivo",
+    "fuera_de_alcance",
+    "contenido_vencido",
+    "otro",
+)
 
 # Columnas agregadas en migraciones no destructivas: una base ya existente
 # conserva sus filas y solo suma las columnas que le falten.
@@ -221,6 +257,58 @@ class Database:
         )
         return cur.fetchone() is not None
 
+    def registrar_descarte(
+        self,
+        titulo: str,
+        motivo: str,
+        fuente: Optional[str] = None,
+        localidad: Optional[str] = None,
+        territorio: Optional[str] = None,
+        detalle: Optional[str] = None,
+        noticia_id: Optional[int] = None,
+        fecha_hora: Optional[str] = None,
+    ) -> None:
+        """Deja constancia de una noticia detectada que no se publica (ver
+        `MOTIVOS_DESCARTE`). Nunca bloquea ni altera el flujo que la llama:
+        solo trazabilidad. Un `motivo` fuera de `MOTIVOS_DESCARTE` se guarda
+        igual (mejor un registro con motivo inesperado que perderlo)."""
+        self.conn.execute(
+            "INSERT INTO descarte_log (fecha_hora, noticia_id, titulo, fuente, localidad, territorio, motivo, detalle) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                fecha_hora or datetime.now(timezone.utc).isoformat(),
+                noticia_id, titulo, fuente, localidad, territorio, motivo, detalle,
+            ),
+        )
+        self.conn.commit()
+
+    def resumen_descartes(self, fecha_limite: str, territorios: Optional[tuple] = None) -> dict:
+        """Totales por motivo desde `fecha_limite` (ISO UTC), opcionalmente
+        acotado a un subconjunto de territorios (p.ej. `("local",
+        "departamental")` para el control específico de información local no
+        publicada). Base del resumen diario — sin auditoría compleja."""
+        query = "SELECT motivo, COUNT(*) AS cantidad FROM descarte_log WHERE fecha_hora >= ?"
+        params: list = [fecha_limite]
+        if territorios:
+            placeholders = ",".join("?" * len(territorios))
+            query += f" AND territorio IN ({placeholders})"
+            params.extend(territorios)
+        query += " GROUP BY motivo"
+        cur = self.conn.execute(query, params)
+        por_motivo = {fila["motivo"]: fila["cantidad"] for fila in cur.fetchall()}
+        return {"total": sum(por_motivo.values()), "por_motivo": por_motivo}
+
+    def listar_descartes(self, fecha_limite: str, territorios: Optional[tuple] = None) -> list:
+        query = "SELECT * FROM descarte_log WHERE fecha_hora >= ?"
+        params: list = [fecha_limite]
+        if territorios:
+            placeholders = ",".join("?" * len(territorios))
+            query += f" AND territorio IN ({placeholders})"
+            params.extend(territorios)
+        query += " ORDER BY fecha_hora DESC"
+        cur = self.conn.execute(query, params)
+        return [dict(fila) for fila in cur.fetchall()]
+
     def noticias_publicadas_recientes(self, fecha_limite: str, excluir_id: Optional[int] = None) -> list:
         """Noticias ya publicadas (`estado = 'publicada'`) desde
         `fecha_limite`, para el gate de deduplicación por contenido antes de
@@ -253,6 +341,17 @@ class Database:
             f"SELECT * FROM noticias WHERE nombre_fuente IN ({placeholders}) "
             "AND estado != ? AND fecha_recoleccion >= ? ORDER BY fecha_recoleccion DESC",
             (*nombres_fuente, Estado.DESCARTADA.value, fecha_limite),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def noticias_recolectadas_entre(self, fecha_inicio_utc: str, fecha_fin_utc: str) -> list:
+        """Todas las noticias (cualquier estado) recolectadas en un rango UTC
+        semiabierto [inicio, fin). Base del resumen operativo diario: a
+        diferencia de `noticias_de_fuentes_recientes`, no filtra por fuente
+        ni excluye `descartada`."""
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE fecha_recoleccion >= ? AND fecha_recoleccion < ?",
+            (fecha_inicio_utc, fecha_fin_utc),
         )
         return [dict(fila) for fila in cur.fetchall()]
 

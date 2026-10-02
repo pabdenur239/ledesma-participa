@@ -1,0 +1,11 @@
+[Unit]
+Description=Ledesma Participa - Timer publicidad comercial (18:00 + reintentos dentro de la hora)
+
+[Timer]
+OnCalendar=*-*-* 18:00:00
+OnCalendar=*-*-* 18:20:00
+OnCalendar=*-*-* 18:40:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

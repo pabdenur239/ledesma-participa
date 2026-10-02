@@ -1,0 +1,12 @@
+[Unit]
+Description=Ledesma Participa - Publicidad comercial diaria (adicional 18:00)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ledesma
+Group=ledesma
+WorkingDirectory=/opt/ledesma-participa
+EnvironmentFile=/opt/ledesma-participa/.env
+ExecStart=/opt/ledesma-participa/.venv/bin/python /opt/ledesma-participa/publicar_publicidad_meta.py

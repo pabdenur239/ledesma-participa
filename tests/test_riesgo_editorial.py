@@ -112,5 +112,38 @@ class TestRiesgoEditorial(unittest.TestCase):
         self.assertTrue(r["requiere_revision_especial"])
 
 
+class TestViolenciaYHechosSensibles(unittest.TestCase):
+    """Bug real (simulación 2/10/2026): 'una joven denunció una brutal
+    agresión de su hermano' competía normalmente porque ningún término
+    exacto coincidía. Las familias de palabras la mandan a revisión humana."""
+
+    def test_detecta_variantes_de_violencia(self):
+        casos = [
+            "Jujuy: una joven denunció una brutal agresión de su hermano dentro de su vivienda",
+            "Un hombre golpeó a su pareja en Fraile Pintado",
+            "Investigan un femicidio en Perico",
+            "Caso de violencia familiar en Calilegua",
+            "Denuncian maltrato a una adulta mayor",
+            "Detienen a un abusador en Libertador",
+            "Lo mataron a la salida de un boliche",
+            "Agredieron a un docente en una escuela",
+        ]
+        for titulo in casos:
+            with self.subTest(titulo=titulo):
+                self.assertTrue(evaluar_riesgo_editorial(titulo, "")["requiere_revision_especial"])
+
+    def test_no_marca_noticias_validas_sin_violencia(self):
+        casos = [
+            "Nueva obra de pavimentación en Libertador",
+            "El dólar se disparó y la inflación golpea los bolsillos",
+            "Golpe de calor: recomendaciones para el verano",
+            "Violento choque en la ruta 34 sin heridos graves",
+            "Corte de agua programado en Libertador",
+        ]
+        for titulo in casos:
+            with self.subTest(titulo=titulo):
+                self.assertFalse(evaluar_riesgo_editorial(titulo, "")["requiere_revision_especial"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -302,8 +302,12 @@ class TestIntegracionMotorEditorial(unittest.TestCase):
         # disponible — queda para revisión humana, y provincial pasa a
         # ocupar el primer lugar en su lugar.
         self.assertNotIn("local", territorios)
-        self.assertEqual(territorios[0], "provincial")
-        self.assertLess(territorios.index("provincial"), territorios.index("nacional"))
+        # Scoring editorial único (2/10/2026): el orden entre niveles ya no es
+        # rígido (una nacional relevante puede ganarle a una local/provincial
+        # menor, ver tests/test_scoring_editorial.py); acá solo se verifica
+        # que todas las candidatas aptas compiten y ocupan franjas.
+        self.assertIn("provincial", territorios)
+        self.assertIn("nacional", territorios)
 
 
 if __name__ == "__main__":

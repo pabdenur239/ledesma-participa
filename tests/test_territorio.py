@@ -124,7 +124,7 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
     def test_url_seccion_argentina_es_nacional_via_fallback(self):
         r = clasificar_territorio(
             "Ganancias del trimestre",
-            "La inflación afectó los balances de varias empresas del sector.",
+            "La suba de costos afectó los balances de varias empresas del sector.",
             nombre_fuente="La Nación",
             url="https://www.lanacion.com.ar/economia/ganancias-del-trimestre-nid1/",
             categoria="Economía",
@@ -177,7 +177,7 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
         self.assertNotEqual(r["territorio"], "nacional")
 
     # 11. Noticia internacional genérica → sin_clasificar
-    def test_internacional_generica_queda_sin_clasificar(self):
+    def test_internacional_generica_queda_internacional(self):
         r = clasificar_territorio(
             "Guerra en Europa",
             "El conflicto en Europa continúa golpeando a la población civil.",
@@ -185,7 +185,7 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
             url="https://www.lanacion.com.ar/el-mundo/guerra-en-europa-nid4/",
             categoria="El Mundo",
         )
-        self.assertEqual(r["territorio"], "sin_clasificar")
+        self.assertEqual(r["territorio"], "internacional")
 
     # 12. Jujuy en medio nacional → provincial
     def test_jujuy_en_medio_nacional_es_provincial(self):
@@ -268,12 +268,106 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
             entradas = generar_agenda(db, fecha="2026-08-12", horarios=("08:00", "10:30"))
             territorios = [e.territorio for e in entradas]
             self.assertIn("nacional", territorios)
-            self.assertLess(territorios.index("local"), territorios.index("nacional"))
+            self.assertIn("local", territorios)  # orden por scoring, no cascada rígida
         finally:
             db.close()
             tmpdir.cleanup()
 
     # 15. suite completa: cubierto por `python3 -m unittest discover -s tests`
+
+
+class TestCorreccionesTerritoriales(unittest.TestCase):
+    """Casos reales mal clasificados detectados en la simulación del
+    2/10/2026 (causa: firma del medio y menciones de paso en el cuerpo)."""
+
+    def test_antofagasta_no_es_provincial(self):
+        r = clasificar_territorio(
+            "Alertan por posibles derrumbes y nevadas en Antofagasta",
+            "Se recomendó a transportistas a informarse antes de emprender viaje de Jujuy a la cordillera.",
+            nombre_fuente="El Tribuno de Jujuy",
+        )
+        self.assertEqual(r["territorio"], "internacional")
+
+    def test_yuto_es_departamental_aunque_el_cuerpo_nombre_a_libertador(self):
+        r = clasificar_territorio(
+            "Jujuy: motociclistas resultaron heridos tras impactar contra un tractor en Yuto",
+            "Jujuy al día ® – Ambos fueron derivados al hospital Oscar Orias de Libertador General San Martín.",
+            nombre_fuente="Jujuy al día",
+        )
+        self.assertEqual(r["territorio"], "departamental")
+        self.assertEqual(r["localidad"], "Yuto")
+
+    def test_inflacion_nacional_no_es_provincial_por_la_firma_del_medio(self):
+        r = clasificar_territorio(
+            "La inflación mayorista en julio fue de 0,8% y el Gobierno celebró",
+            "Jujuy al día ® – El índice de precios mayorista registró una desaceleración y el presidente "
+            "Javier Milei festejó.",
+            nombre_fuente="Jujuy al día",
+        )
+        self.assertEqual(r["territorio"], "nacional")
+
+    def test_paritarias_nacionales_no_son_provinciales(self):
+        r = clasificar_territorio(
+            "Ranking de paritarias: qué sectores le ganaron a la inflación en el último año",
+            "Jujuy al día ® – Solo siete convenios tuvieron variaciones salariales superiores al IPC.",
+            nombre_fuente="Jujuy al día",
+        )
+        self.assertEqual(r["territorio"], "nacional")
+
+    def test_otra_provincia_en_el_titulo_es_nacional(self):
+        r = clasificar_territorio(
+            "Fuerte temporal en Salta deja calles anegadas",
+            "Vecinos que viajaban desde Jujuy quedaron varados.",
+            nombre_fuente="El Tribuno de Jujuy",
+        )
+        self.assertEqual(r["territorio"], "nacional")
+
+    def test_localidad_jujena_sin_nombrar_jujuy_es_provincial(self):
+        r = clasificar_territorio(
+            "Anuncian cortes de energía por tareas de mantenimiento en San Pedro de Jujuy",
+            "Las tareas se realizarán durante la mañana.",
+            nombre_fuente="Prensa",
+        )
+        self.assertEqual(r["territorio"], "provincial")
+
+    def test_libertador_y_jujuy_siguen_clasificandose(self):
+        self.assertEqual(
+            clasificar_territorio("Corte de agua en Libertador General San Martín", "Sin servicio.")["territorio"],
+            "local",
+        )
+        self.assertEqual(
+            clasificar_territorio("Nueva obra en Calilegua", "El municipio informó.")["territorio"],
+            "departamental",
+        )
+        self.assertEqual(
+            clasificar_territorio("Nueva obra en Tilcara", "Jujuy avanza.")["territorio"], "provincial"
+        )
+
+    def test_el_libertador_procer_no_es_la_ciudad(self):
+        r = clasificar_territorio("Así se creó El Libertador, la película de IA sobre San Martín", "")
+        self.assertNotIn(r["territorio"], ("local", "departamental"))
+        r = clasificar_territorio("Choque en Avenida del Libertador en Buenos Aires", "")
+        self.assertEqual(r["territorio"], "nacional")
+
+    def test_firma_de_la_nacion_no_borra_el_marcador_nacional(self):
+        r = clasificar_territorio(
+            "Los hospitales comenzarán a cobrar a extranjeros",
+            "Lo dispuso el Ministerio de Salud de la Nación.",
+            nombre_fuente="La Nación",
+        )
+        self.assertEqual(r["territorio"], "nacional")
+
+    def test_medio_jujeno_con_firma_y_sin_otra_evidencia_sigue_provincial(self):
+        r = clasificar_territorio(
+            "Anuncian cortes de energía por tareas de mantenimiento en el barrio Centro",
+            "Jujuy al día ® – Las tareas se realizarán durante la mañana.",
+            nombre_fuente="Jujuy al día",
+        )
+        self.assertEqual(r["territorio"], "provincial")
+
+    def test_libertador_en_el_cuerpo_sin_otra_localidad_en_el_titulo_sigue_siendo_local(self):
+        r = clasificar_territorio("Choque en la ruta 34", "El hecho ocurrió en Libertador General San Martín.")
+        self.assertEqual(r["territorio"], "local")
 
 
 if __name__ == "__main__":

@@ -96,7 +96,37 @@
       "arma de fuego",
       "apuñalado",
       "apuñalada",
-      "secuestro"
+      "secuestro",
+      "violencia familiar",
+      "violencia intrafamiliar",
+      "violencia doméstica",
+      "violencia contra la mujer",
+      "golpiza",
+      "maltrato",
+      "agresión sexual",
+      "abuso",
+      "abusada",
+      "abusado",
+      "abusador",
+      "amenazas de muerte",
+      "tentativa de homicidio",
+      "intento de femicidio",
+      "lesiones graves",
+      "baleado",
+      "baleada",
+      "balacera",
+      "tiroteo",
+      "apuñalamiento",
+      "acuchillado",
+      "acuchillada",
+      "linchamiento",
+      "tortura",
+      "brutal agresión",
+      "brutal ataque",
+      "brutal golpiza",
+      "acoso sexual",
+      "acosador",
+      "acosada"
     ],
     "salud_dudosa": [
       "remedio milagroso",
@@ -123,6 +153,32 @@
       "sin evidencia cientifica",
       "medicina alternativa cura",
       "tratamiento no aprobado"
+    ]
+  },
+  "patrones": {
+    "_descripcion": "Familias de palabras (expresiones regulares sobre texto en minúsculas y sin acentos) que complementan los términos exactos: reconocen variantes (agredió, agredida, agresiones, golpeó a su pareja...) sin depender de una palabra exacta. Una coincidencia envía la noticia a revisión humana obligatoria (no la elimina).",
+    "muertes": [
+      "\\bfemicid\\w*",
+      "\\bhomicid\\w*",
+      "\\basesin\\w*",
+      "\\b(lo|la|los|las) mat(o|aron)\\b",
+      "\\bsin vida\\b",
+      "\\bcuerpo sin vida\\b",
+      "\\bmuert[oa]s?\\b"
+    ],
+    "contenido_violento": [
+      "\\bagre(sion|siones|dio|dida|dido|didas|didos|dieron|dir|sor|sora|sores)\\b",
+      "\\bviolencias?\\b",
+      "\\bgolpe(o|ada|ado|adas|ados|aron|ar)\\b",
+      "\\bmaltrat\\w*",
+      "\\babus(o|os|ada|ado|adas|ados|ador|adores|aron|ar)\\b",
+      "\\bapunal\\w*",
+      "\\bacuchill\\w*",
+      "\\bbale(o|ado|ada|aron|aduras)\\b",
+      "\\bamenaz\\w* de muerte\\b",
+      "\\bvejac\\w*",
+      "\\bviol(o|aron|ada|ador)\\b",
+      "\\bataca(do|da|ron) a (golpes|punaladas|tiros|machetazos)\\b"
     ]
   }
 }

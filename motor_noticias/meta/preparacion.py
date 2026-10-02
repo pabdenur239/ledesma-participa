@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 from ..db import Database
 from ..models import RevisionEstado
 from .contenido import ContenidoFacebook, _titulo_y_texto_finales, generar_contenido_facebook
-from .imagen import generar_placa, generar_story
+from .imagen import generar_placa, generar_placa_urgente, generar_story
 
 
 class ErrorPreparacionFacebook(RuntimeError):
@@ -39,12 +39,26 @@ def _resolver_imagen(noticia: dict, db: Optional[Database]) -> Tuple[Optional[st
     return ruta_texto, True
 
 
+def _resolver_imagen_urgente(noticia: dict) -> str:
+    """Imagen con la identidad visual URGENTE (rojo): conserva la foto
+    original válida con la banda roja, o genera la placa roja si no hay
+    foto (una placa normal generada automáticamente no cuenta como foto).
+    No se persiste en `imagen_publicacion_ruta`: el archivo es
+    determinístico por contenido y se reutiliza en reintentos, y la imagen
+    original de la noticia queda intacta."""
+    ruta_actual = noticia.get("imagen_publicacion_ruta")
+    foto = None if noticia.get("imagen_generada_automaticamente") else ruta_actual
+    titulo, _ = _titulo_y_texto_finales(noticia)
+    return str(generar_placa_urgente(titulo, fuente=noticia.get("nombre_fuente"), imagen_original=foto))
+
+
 def preparar_publicacion(
     noticia: dict,
     dry_run: bool = True,
     incluir_menciones: Optional[bool] = None,
     menciones: Optional[List[str]] = None,
     db: Optional[Database] = None,
+    urgente: bool = False,
 ) -> ContenidoFacebook:
     """Punto de entrada único para preparar una publicación de Facebook.
 
@@ -61,6 +75,9 @@ def preparar_publicacion(
     Si se pasa `db`, la elección de imagen (original o placa recién
     generada) queda persistida en la noticia para no regenerarse en
     llamadas futuras.
+
+    `urgente=True` (solo circuito urgente) usa la identidad visual roja
+    URGENTE en lugar de la imagen/placa habitual.
     """
     if noticia.get("revision_estado") != RevisionEstado.APROBADA.value:
         raise ErrorPreparacionFacebook(
@@ -79,7 +96,12 @@ def preparar_publicacion(
         noticia, incluir_menciones=incluir_menciones, menciones=menciones
     )
 
-    imagen_ruta, generada_automaticamente = _resolver_imagen(noticia, db)
+    if urgente:
+        # Solo el circuito urgente pide esto (clave "urgente-<id>"): el rojo
+        # queda reservado exclusivamente a URGENTES.
+        imagen_ruta, generada_automaticamente = _resolver_imagen_urgente(noticia), True
+    else:
+        imagen_ruta, generada_automaticamente = _resolver_imagen(noticia, db)
     contenido.imagen_url = imagen_ruta
     contenido.imagen_generada_automaticamente = generada_automaticamente
 

@@ -642,7 +642,9 @@ class TestAgendaEditorial(unittest.TestCase):
     def test_agenda_muestra_urgente(self):
         from motor_noticias.motor_editorial import generar_agenda
 
-        noticia = self._crear_noticia_local_preparada()
+        noticia = self._crear_noticia_local_preparada(
+            titulo="Corte de luz en todo Libertador General San Martín hasta la noche"
+        )
         self.db.marcar_urgente(noticia.id, True)
         generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",))
 

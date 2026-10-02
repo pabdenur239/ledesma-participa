@@ -1,4 +1,5 @@
 import json
+import re
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,18 @@ def _contiene_alguna(texto_norm: str, terminos: list) -> Optional[str]:
     return None
 
 
+def _coincide_patron(texto_norm: str, patrones) -> Optional[str]:
+    """Familias de palabras (regex de `patrones` en riesgo_editorial.json):
+    reconocen variantes ("agredió", "agresiones", "golpeó") sin depender de
+    una palabra exacta. Bug real: "una joven denunció una brutal agresión
+    de su hermano" no se detectaba porque ningún término exacto coincidía."""
+    for patron in patrones:
+        encontrado = re.search(patron, texto_norm)
+        if encontrado:
+            return encontrado.group(0)
+    return None
+
+
 def evaluar_riesgo_editorial(
     titulo_original: str,
     texto_original: str,
@@ -42,8 +55,9 @@ def evaluar_riesgo_editorial(
         )
     )
 
+    patrones = {k: v for k, v in config.get("patrones", {}).items() if not k.startswith("_")}
     for categoria, terminos in config["categorias"].items():
-        match = _contiene_alguna(contenido, terminos)
+        match = _contiene_alguna(contenido, terminos) or _coincide_patron(contenido, patrones.get(categoria, ()))
         if match:
             return {
                 "requiere_revision_especial": True,

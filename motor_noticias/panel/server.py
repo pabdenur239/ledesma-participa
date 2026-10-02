@@ -571,7 +571,7 @@ def _resultado_carga_manual_html(resultado: ResultadoIngresoManual) -> str:
         acciones_extra = ""
         motivo_html = (
             f"<p><strong>Motivo:</strong> {_e(resultado.motivo_territorio)}</p>"
-            if resultado.territorio == "sin_clasificar"
+            if resultado.territorio in ("sin_clasificar", "internacional")
             else "<p><strong>Motivo:</strong> no superó el control mínimo de calidad editorial "
             "(contenido insuficiente, publicitario o no periodístico).</p>"
         )

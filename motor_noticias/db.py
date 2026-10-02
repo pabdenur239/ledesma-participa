@@ -643,13 +643,36 @@ class Database:
         fila = cur.fetchone()
         return dict(fila) if fila else None
 
+    def candidatos_editoriales(self, excluidos_ids: set, fecha_limite: str) -> list:
+        """Todas las candidatas `preparada` para competir por una franja
+        (scoring editorial único, ver `motor_editorial`): mismas protecciones
+        que `candidato_editorial` (no rechazadas, no usadas en ninguna
+        agenda, sin riesgo editorial obligatorio, dentro de la antigüedad
+        máxima), sin filtrar por territorio — el motor decide en Python qué
+        territorios/categorías compiten y cuál gana por puntaje."""
+        query = (
+            "SELECT * FROM noticias WHERE estado = ? "
+            "AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
+        )
+        params: list = [Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value, fecha_limite]
+        if excluidos_ids:
+            placeholders = ",".join("?" * len(excluidos_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(sorted(excluidos_ids))
+        query += " ORDER BY fecha_recoleccion DESC"
+        cur = self.conn.execute(query, params)
+        return [dict(fila) for fila in cur.fetchall()]
+
     def candidatos_urgentes(self, excluidos_ids: set, fecha_limite: str) -> list:
-        """Noticias locales/departamentales marcadas urgentes, `preparada`,
-        no rechazadas, sin riesgo editorial obligatorio, no usadas todavía
-        en ninguna agenda."""
+        """Noticias marcadas urgentes, `preparada`, no rechazadas, sin riesgo
+        editorial obligatorio, no usadas todavía en ninguna agenda. Desde el
+        scoring editorial único (2/10/2026) incluye provincial/nacional: el
+        flag lo pone `scoring_editorial` (solo acontecimientos
+        extraordinarios) y `motor_editorial.resolver_urgentes` lo confirma."""
         query = (
             "SELECT * FROM noticias WHERE estado = ? AND urgente = 1 "
-            "AND territorio IN ('local', 'departamental') "
+            "AND territorio IN ('local', 'departamental', 'provincial', 'nacional') "
             "AND revision_estado != ? AND fecha_recoleccion >= ? "
             "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
         )

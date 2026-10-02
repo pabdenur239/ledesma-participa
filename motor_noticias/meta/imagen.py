@@ -334,3 +334,136 @@ def generar_story(
         ruta.write_bytes(datos_png)
 
     return ruta
+
+
+# --- Identidad visual URGENTE (agregada 2/10/2026) -----------------------
+# LEDESMA PARTICIPA + ROJO = INFORMACIÓN URGENTE. El rojo queda reservado
+# EXCLUSIVAMENTE a las publicaciones del circuito urgente (clave
+# "urgente-<id>" en `meta/publicador.py`): ni las placas normales ni las
+# noticias simplemente "importantes" lo usan, para no desgastar la señal.
+COLOR_URGENTE = "#d00000"
+COLOR_URGENTE_OSCURO = "#7a0000"
+COLOR_URGENTE_TEXTO = "#ffffff"
+ALTO_BANDA_URGENTE = 250
+ALTO_BANDA_TITULO_URGENTE = 330
+MAXIMO_LINEAS_TITULO_URGENTE = 5
+TIMEOUT_DESCARGA_IMAGEN = 15
+MAX_BYTES_IMAGEN = 15 * 1024 * 1024
+
+
+def _encabezado_urgente(dibujo: ImageDraw.ImageDraw) -> None:
+    """Banda roja superior: "URGENTE" grande + identificación de la marca."""
+    dibujo.rectangle([(0, 0), (ANCHO_PLACA, ALTO_BANDA_URGENTE)], fill=COLOR_URGENTE)
+    dibujo.text((MARGEN_X, 40), "LEDESMA PARTICIPA", font=_cargar_fuente(40), fill=COLOR_URGENTE_TEXTO)
+    dibujo.text((MARGEN_X, 95), "URGENTE", font=_cargar_fuente(130), fill=COLOR_URGENTE_TEXTO)
+
+
+def _recortar_cuadrado(imagen: Image.Image) -> Image.Image:
+    """Escala y recorta al centro a 1080x1080 (sin deformar la foto)."""
+    imagen = imagen.convert("RGB")
+    escala = max(ANCHO_PLACA / imagen.width, ALTO_PLACA / imagen.height)
+    nueva = imagen.resize((max(1, round(imagen.width * escala)), max(1, round(imagen.height * escala))))
+    x = (nueva.width - ANCHO_PLACA) // 2
+    y = (nueva.height - ALTO_PLACA) // 2
+    return nueva.crop((x, y, x + ANCHO_PLACA, y + ALTO_PLACA))
+
+
+def generar_imagen_urgente_sin_foto_png(titulo: str, fuente: str = "") -> bytes:
+    """Placa URGENTE para una noticia sin imagen: fondo rojo dominante,
+    "URGENTE" grande, titular debajo en blanco (alto contraste) y la marca
+    Ledesma Participa claramente presente arriba y en el pie."""
+    imagen = Image.new("RGB", (ANCHO_PLACA, ALTO_PLACA), COLOR_URGENTE)
+    dibujo = ImageDraw.Draw(imagen)
+    _encabezado_urgente(dibujo)
+    dibujo.rectangle([(MARGEN_X, ALTO_BANDA_URGENTE + 10), (ANCHO_PLACA - MARGEN_X, ALTO_BANDA_URGENTE + 18)],
+                     fill=COLOR_URGENTE_TEXTO)
+
+    fuente_titulo = _cargar_fuente(64)
+    lineas = _envolver_texto_pixeles(
+        dibujo, titulo, fuente_titulo, ANCHO_PLACA - 2 * MARGEN_X, MAXIMO_LINEAS_TITULO_URGENTE
+    )
+    y = ALTO_BANDA_URGENTE + 80
+    for linea in lineas:
+        dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_URGENTE_TEXTO)
+        y += 80
+
+    y_footer = ALTO_PLACA - ALTO_BANDA_FOOTER
+    dibujo.rectangle([(0, y_footer), (ANCHO_PLACA, ALTO_PLACA)], fill=COLOR_URGENTE_OSCURO)
+    fuente_footer = _cargar_fuente(30)
+    dibujo.text((MARGEN_X, y_footer + 30), "LEDESMA PARTICIPA · Información urgente",
+                font=fuente_footer, fill=COLOR_URGENTE_TEXTO)
+    if fuente:
+        dibujo.text((MARGEN_X, y_footer + 78), f"Fuente: {fuente}", font=_cargar_fuente(26), fill=COLOR_URGENTE_TEXTO)
+
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def generar_imagen_urgente_con_foto_png(foto: bytes, titulo: str) -> bytes:
+    """Conserva la foto válida de la noticia (recortada a 1080x1080) y le
+    agrega la banda roja "URGENTE" arriba y el titular legible sobre una
+    franja inferior oscura con filete rojo. Lanza `OSError`/`ValueError`
+    si los bytes no son una imagen válida."""
+    imagen = _recortar_cuadrado(Image.open(io.BytesIO(foto)))
+    dibujo = ImageDraw.Draw(imagen)
+    _encabezado_urgente(dibujo)
+
+    y_titulo = ALTO_PLACA - ALTO_BANDA_TITULO_URGENTE
+    capa = Image.new("RGBA", (ANCHO_PLACA, ALTO_BANDA_TITULO_URGENTE), (0, 0, 0, 200))
+    imagen.paste(capa, (0, y_titulo), capa)
+    dibujo = ImageDraw.Draw(imagen)
+    dibujo.rectangle([(0, y_titulo), (ANCHO_PLACA, y_titulo + 12)], fill=COLOR_URGENTE)
+    fuente_titulo = _cargar_fuente(52)
+    lineas = _envolver_texto_pixeles(dibujo, titulo, fuente_titulo, ANCHO_PLACA - 2 * MARGEN_X, 4)
+    y = y_titulo + 40
+    for linea in lineas:
+        dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_URGENTE_TEXTO)
+        y += 64
+
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _descargar_imagen(url: str) -> bytes:
+    import urllib.request
+
+    peticion = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (LedesmaParticipa)"})
+    with urllib.request.urlopen(peticion, timeout=TIMEOUT_DESCARGA_IMAGEN) as respuesta:
+        return respuesta.read(MAX_BYTES_IMAGEN)
+
+
+def generar_placa_urgente(
+    titulo: str,
+    fuente: Optional[str] = None,
+    imagen_original: Optional[str] = None,
+    directorio_salida: Optional[Path] = None,
+    descargar=_descargar_imagen,
+) -> Path:
+    """Genera (o reutiliza, mismo criterio determinístico que
+    `generar_placa`) la imagen URGENTE de una publicación. Si hay
+    `imagen_original` (URL remota o ruta local) válida, la conserva con la
+    banda roja; si no hay, o no se puede obtener/abrir, genera la placa roja
+    sin foto — una urgente nunca queda sin imagen por esto."""
+    directorio_salida = Path(directorio_salida or DIRECTORIO_PLACAS_DEFAULT)
+    directorio_salida.mkdir(parents=True, exist_ok=True)
+    identificador = _hash_contenido_placa(titulo, "", fuente or "", imagen_original or "")
+    ruta = directorio_salida / f"urgente_{identificador}.png"
+    if ruta.exists():
+        return ruta
+
+    datos_png = None
+    if imagen_original:
+        try:
+            if imagen_original.startswith(("http://", "https://")):
+                foto = descargar(imagen_original)
+            else:
+                foto = Path(imagen_original).read_bytes()
+            datos_png = generar_imagen_urgente_con_foto_png(foto, titulo)
+        except Exception as error:  # foto inválida o inaccesible: placa roja sin foto
+            logger.warning("No se pudo usar la imagen original para la urgente (%s): %s", imagen_original, error)
+    if datos_png is None:
+        datos_png = generar_imagen_urgente_sin_foto_png(titulo, fuente or "")
+    ruta.write_bytes(datos_png)
+    return ruta

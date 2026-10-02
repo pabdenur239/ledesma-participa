@@ -472,7 +472,9 @@ class TestReemplazoAutomaticoDePropuestasPendientes(BaseAgendaTest):
 
 class TestUrgentes(BaseAgendaTest):
     def test_urgente_local_aparece_fuera_de_las_franjas_normales(self):
-        urgente = _crear_noticia(self.db, "local", urgente=True)
+        urgente = _crear_noticia(
+            self.db, "local", urgente=True, titulo="Corte de luz en todo Libertador hasta la noche"
+        )
 
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
 
@@ -490,7 +492,7 @@ class TestUrgentes(BaseAgendaTest):
         self.assertEqual(noticia["estado"], Estado.PREPARADA.value)
         self.assertEqual(noticia["revision_estado"], "pendiente")
 
-    def test_urgente_no_local_ni_departamental_no_se_propone_como_urgente(self):
+    def test_provincial_comun_no_se_propone_como_urgente(self):
         _crear_noticia(self.db, "provincial", urgente=True)
 
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
@@ -624,9 +626,16 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         self.assertEqual(len(self._propias_en(entradas)), objetivo)
 
     def test_nunca_desplaza_una_externa_local_ni_departamental(self):
+        # Propias de relevancia similar a las locales (sin señales fuertes):
+        # con el scoring único la local gana la franja por cercanía, y la
+        # regla de mezcla no la desplaza.
         for _ in range(len(HORARIOS_DEFAULT)):
             _crear_noticia(self.db, "local")
-        self._crear_propias()
+        for i in range(len(HORARIOS_DEFAULT)):
+            _crear_noticia(
+                self.db, "provincial", titulo=f"Nota propia provincial de rutina numero {i}",
+                origen_ingreso="contenido_propio", fecha_recoleccion=_iso(timedelta(hours=3)),
+            )
         entradas = [e for e in self._agenda() if e.tipo == "normal"]
         for e in entradas:
             noticia = self.db.obtener(e.noticia_id)

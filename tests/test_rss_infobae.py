@@ -178,15 +178,18 @@ class TestPipelineConFixtureRSS(unittest.TestCase):
         self.assertEqual(noticia.territorio, "nacional")
         self.assertFalse(noticia.relevancia_local)
 
-    def test_noticia_internacional_sin_marca_nacional_queda_sin_clasificar(self):
+    def test_noticia_internacional_sin_marca_nacional_queda_internacional(self):
         # Infobae es un feed internacional (secciones por país en la URL):
         # no se marca "nacional" solo por venir de esta fuente.
         resultados = ejecutar_pipeline(self.db, ColectorRSSDePrueba(self.contenido), self.redactor)
         noticia, resultado = next(
             (n, r) for n, r in resultados if n.titulo_original == TITULO_SIN_CLASIFICAR
         )
+        # Desde 2/10/2026 se distingue el nivel "internacional" (antes
+        # sin_clasificar); igual que antes, no se prepara (no es local,
+        # provincial ni nacional, ni entretenimiento).
         self.assertEqual(resultado, "descartada")
-        self.assertEqual(noticia.territorio, "sin_clasificar")
+        self.assertEqual(noticia.territorio, "internacional")
 
     def test_duplicado_no_se_almacena_dos_veces(self):
         resultados = ejecutar_pipeline(self.db, ColectorRSSDePrueba(self.contenido), self.redactor)
@@ -306,10 +309,13 @@ class TestIntegracionMotorEditorial(unittest.TestCase):
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00", "10:30", "13:00"))
 
         territorios = [e.territorio for e in entradas]
-        self.assertEqual(territorios[0], "local")
+        # Scoring editorial único (2/10/2026): el orden entre niveles ya no es
+        # rígido (una nacional relevante puede ganarle a una local/provincial
+        # menor, ver tests/test_scoring_editorial.py); acá solo se verifica
+        # que todas las candidatas aptas compiten y ocupan franjas.
+        self.assertIn("local", territorios)
         self.assertIn("provincial", territorios)
-        self.assertLess(territorios.index("local"), territorios.index("nacional"))
-        self.assertLess(territorios.index("provincial"), territorios.index("nacional"))
+        self.assertIn("nacional", territorios)
 
 
 if __name__ == "__main__":

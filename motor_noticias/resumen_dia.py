@@ -30,7 +30,7 @@ CANTIDAD_MAXIMA = 6
 # Orden de prioridad editorial para elegir qué entra en el resumen cuando
 # hay más de 6 candidatas: igual criterio que la cascada normal, locales y
 # departamentales primero ("Priorizar locales y departamentales").
-PRIORIDAD_TERRITORIO = {"local": 0, "departamental": 1, "provincial": 2, "nacional": 3, "sin_clasificar": 4}
+PRIORIDAD_TERRITORIO = {"local": 0, "departamental": 1, "provincial": 2, "nacional": 3, "internacional": 4, "sin_clasificar": 4}
 
 
 def _prioridad(noticia: dict) -> tuple:

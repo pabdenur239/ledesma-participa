@@ -487,7 +487,9 @@ def _publicar_noticia_en_clave(
             )
 
     try:
-        contenido = preparar_publicacion(noticia, dry_run=True, db=db)
+        contenido = preparar_publicacion(
+            noticia, dry_run=True, db=db, urgente=clave.startswith("urgente-")
+        )
     except ErrorPreparacionFacebook as error:
         logger.error("Franja %s %s bloqueada: %s", fecha, clave, error)
         return ResultadoFranja(fecha, clave, noticia["id"], "bloqueada_sin_imagen")

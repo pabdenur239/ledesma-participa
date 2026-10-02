@@ -143,9 +143,8 @@ class TestCargaManualValida(BaseIngresoManualTest):
         self.assertNotIn("confirmar con otra fuente", noticia["titulo_preparado"] or "")
         self.assertNotIn("confirmar con otra fuente", noticia["texto_preparado"] or "")
 
-    # 9. urgente false por defecto (para contenido que no es local/departamental:
-    # esas noticias sí se marcan urgente automáticamente, ver TEXTO_LOCAL en
-    # TestIntegracionAgendaFranjas y pipeline.py → TERRITORIOS_SIEMPRE_ELEGIBLES)
+    # 9. urgente false por defecto (solo se marca urgente automáticamente lo
+    # que `scoring_editorial` clasifica URGENTE, ver pipeline.py)
     def test_urgente_false_por_defecto(self):
         resultado = cargar_noticia_manual(self.db, self.redactor, fuente="Vecino", texto=TEXTO_PROVINCIAL)
         self.assertFalse(resultado.urgente)
@@ -314,10 +313,8 @@ class TestIntegracionAgendaFranjas(BaseIngresoManualTest):
         with patch("motor_noticias.ingreso_manual.generar_agenda"):
             cargar_noticia_manual(self.db, self.redactor, fuente="Ledesma Soy", texto=TEXTO_LOCAL)
 
-        # La noticia local recién cargada sale ahora como propuesta "urgente"
-        # aparte (ver TERRITORIOS_SIEMPRE_ELEGIBLES en pipeline.py): no
-        # compite por la franja fija de las 08:00, así que se la busca por
-        # hora explícita en vez de asumir la posición 0 de `entradas`.
+        # La franja de las 08:00 ya pasó: la local recién cargada no la
+        # reemplaza. Se busca la entrada por hora explícita.
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
         entrada_franja = next(e for e in entradas if e.hora == "08:00")
         self.assertEqual(entrada_franja.noticia_id, provincial.id)
@@ -332,9 +329,8 @@ class TestIntegracionAgendaFranjas(BaseIngresoManualTest):
         with patch("motor_noticias.ingreso_manual.generar_agenda"):
             cargar_noticia_manual(self.db, self.redactor, fuente="Ledesma Soy", texto=TEXTO_LOCAL)
 
-        # Idem: la noticia local cargada ahora sale como urgente aparte, no
-        # reemplaza la franja de las 13:00 (eso es justamente lo que prueba
-        # este test), así que se busca la entrada por hora explícita.
+        # La local cargada ahora no reemplaza la franja aprobada de las 13:00
+        # (eso es justamente lo que prueba este test).
         entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("13:00",), ahora=AHORA)
         entrada_franja = next(e for e in entradas if e.hora == "13:00")
         self.assertEqual(entrada_franja.noticia_id, provincial.id)

@@ -301,13 +301,28 @@ class TestApiJson(unittest.TestCase):
         self.assertEqual(feed[0]["categoria_slug"], "libertador")  # la local va primero
 
     def test_urgentes_solo_incluye_marcadas_urgentes(self):
-        self.db.guardar(_noticia(hash_contenido="u1", urgente=True))
+        self.db.guardar(_noticia(
+            hash_contenido="u1", urgente=True, territorio="local",
+            titulo_original="Corte de luz en todo Libertador General San Martín hasta la noche",
+        ))
         self.db.guardar(_noticia(hash_contenido="u2", urgente=False))
         self._generar()
 
         urgentes = self._leer_json("urgentes.json")
         self.assertEqual(len(urgentes), 1)
         self.assertTrue(urgentes[0]["urgente"])
+
+    def test_flag_urgente_historico_de_futbol_teatro_o_turismo_no_se_muestra_urgente(self):
+        # Regla anterior: toda local quedaba urgente=1. La app solo muestra
+        # URGENTE lo que la clasificación única (scoring) confirma.
+        for i, titulo in enumerate((
+            "Gran final del torneo de fútbol infantil en Libertador",
+            "Obra de teatro en el Centro Cultural de Libertador",
+            "Promocionan escapadas turísticas a Calilegua este fin de semana",
+        )):
+            self.db.guardar(_noticia(hash_contenido=f"h{i}", urgente=True, territorio="local", titulo_original=titulo))
+        self._generar()
+        self.assertEqual(self._leer_json("urgentes.json"), [])
 
     def test_categorias_reales_incluyen_tematica_y_las_vacias_quedan_vacias(self):
         self.db.guardar(_noticia(hash_contenido="c1", territorio="local"))

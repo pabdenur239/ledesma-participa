@@ -77,11 +77,11 @@ class TestNoticiaDelDia(BaseTest):
         # Bug real corregido: si se llama resolver_urgentes ANTES (como hace
         # ciclo_continuo._actualizar_agenda), Noticia del Día no debe volver
         # a tomar esa misma noticia.
-        local_urgente = _noticia(self.db, "local", "Alerta local urgente", urgente=True)
+        local_urgente = _noticia(self.db, "local", "Corte de luz en todo Libertador hasta la noche", urgente=True)
 
         usados = self.db.noticias_ids_usadas_en_agenda()
         fecha_limite = (AHORA.astimezone(timezone.utc) - timedelta(hours=48)).isoformat()
-        entradas_urgentes = resolver_urgentes(self.db, "2026-08-21", usados, fecha_limite)
+        entradas_urgentes = resolver_urgentes(self.db, "2026-08-21", usados, fecha_limite, AHORA)
         self.assertEqual(len(entradas_urgentes), 1)
         self.assertEqual(entradas_urgentes[0].noticia_id, local_urgente.id)
 

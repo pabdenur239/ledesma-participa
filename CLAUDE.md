@@ -81,23 +81,25 @@ referencia estable — no reinterpretar por criterio propio en cada tarea:
 - No publicar rumores, acusaciones sin confirmar, datos privados, contenido
   difamatorio, ni noticias sobre menores o tragedias usadas como
   entretenimiento.
-- **Toda noticia local (Libertador) o departamental (Ledesma) relevante y
-  verificada se publica de inmediato, sin esperar la siguiente franja
-  fija** — regla vigente desde 17/8/2026. `pipeline.procesar_noticia` marca
-  `urgente = True` automáticamente en cuanto la noticia llega a "preparada"
-  con `territorio` en `local`/`departamental` (`TERRITORIOS_SIEMPRE_ELEGIBLES`
-  en `motor_noticias/pipeline.py`), sea cual sea su origen (collector
-  automático o carga manual vía panel). No hace falta tildar "Urgente" a
-  mano para que se dispare: el tildado manual sigue existiendo solo para
-  casos donde un humano quiera marcar como urgente algo que la
-  clasificación territorial no detectó. A partir de ahí se reutiliza el
-  circuito ya existente sin cambios: `candidatos_urgentes` la propone (ya
-  excluye por su cuenta cualquier noticia con riesgo editorial obligatorio
-  o rechazada) y `publicar_urgentes` (`publicar_urgentes_meta.py`, corrida
-  cada 15 minutos) la publica sola en cuanto es apta — mismas reglas de
-  riesgo editorial y elegibilidad automática que cualquier franja fija.
-  Departamental/provincial/nacional en franja fija siguen exactamente con
-  el esquema programado existente; esta regla no los toca.
+- **Scoring editorial único (vigente desde 2/10/2026)** —
+  `motor_noticias/scoring_editorial.py` + `config/scoring_editorial.json`.
+  Una sola clasificación alimenta franjas, circuito inmediato y placa roja.
+  Base 0–100 = impacto (25) + urgencia (20) + magnitud (20) + relevancia
+  para nuestra audiencia (15) + actualidad (10) + interés (10); bonus
+  territorial aparte (Libertador +12, Ledesma +9, Jujuy +5, nacional 0).
+  Cada franja de cascada elige la candidata de mayor puntaje total: ser
+  local suma pero no garantiza ganar. **Inmediato (URGENTE)**: local/
+  departamental con base ≥ 70 (sin bonus) y urgencia real en el título;
+  provincial/nacional solo si es extraordinaria (base ≥ 80, urgencia ≥ 16,
+  relevancia para la audiencia ≥ 10). Ya NO se publica de inmediato una
+  local solo por ser local. El tildado manual "Urgente" del panel (carga
+  manual) se sigue respetando. `pipeline.procesar_noticia` marca
+  `urgente`, `resolver_urgentes` lo confirma con el mismo scoring y
+  `publicar_urgentes` (cada 15 min) publica con la identidad visual roja
+  (banda URGENTE sobre la foto, o placa roja sin foto). El rojo queda
+  reservado exclusivamente a URGENTES. Riesgo editorial, rechazo,
+  deduplicación y vigencia siguen excluyendo de todo circuito automático.
+  Ajustar señales/umbrales solo en el JSON, con caso real documentado.
 - Deduplicación, vigencia (`ANTIGUEDAD_MAXIMA_HORAS`), fuente verificable y
   filtros de riesgo siempre activos — no se eliminan ni se relajan.
 - Cada publicación real: imagen, texto autocontenido con "Fuente y nota

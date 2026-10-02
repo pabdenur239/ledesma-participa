@@ -84,14 +84,16 @@ class TestPipelineConFixtureRSS(unittest.TestCase):
         self.db.close()
         self.tmpdir.cleanup()
 
-    def test_noticia_local_de_libertador_queda_preparada_y_urgente(self):
+    def test_noticia_local_de_libertador_queda_preparada_y_compite_en_franja(self):
+        # Scoring editorial único (2/10/2026): ser local ya no alcanza para
+        # salir de inmediato; esta nota sin urgencia real compite en franja.
         resultados = ejecutar_pipeline(self.db, ColectorRSSDePrueba(self.contenido), self.redactor)
         noticia_hospital, resultado = next(
             (n, r) for n, r in resultados if n.titulo_original == TITULO_HOSPITAL
         )
         self.assertEqual(resultado, "preparada")
         self.assertEqual(noticia_hospital.territorio, "local")
-        self.assertTrue(noticia_hospital.urgente)
+        self.assertFalse(noticia_hospital.urgente)
 
     def test_noticia_provincial_ajena_queda_preparada_sin_relevancia_local_ni_urgente(self):
         resultados = ejecutar_pipeline(self.db, ColectorRSSDePrueba(self.contenido), self.redactor)

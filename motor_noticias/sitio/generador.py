@@ -20,6 +20,7 @@ from ..db import Database
 from ..entretenimiento import es_entretenimiento_o_curiosidad
 from ..meta.imagen import COLOR_FONDO, COLOR_MARCA, COLOR_MARCA_TEXTO, COLOR_FOOTER_TEXTO
 from ..motor_editorial import ZONA_JUJUY
+from ..scoring_editorial import urgente_confirmado
 from . import plantillas
 
 RAIZ_PROYECTO = Path(__file__).resolve().parent.parent.parent
@@ -210,7 +211,9 @@ def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
         # sitio HTML no necesita exponer aparte porque ya vienen resueltos
         # en seccion_slug/seccion_etiqueta.
         "territorio": noticia.get("territorio"),
-        "urgente": bool(noticia.get("urgente")),
+        # Misma clasificación única que el circuito urgente (scoring
+        # editorial): el flag histórico solo no alcanza.
+        "urgente": urgente_confirmado(noticia),
         "categoria_tematica": noticia.get("categoria_tematica"),
         "localidad": noticia.get("localidad"),
     }

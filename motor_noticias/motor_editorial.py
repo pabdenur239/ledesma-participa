@@ -43,10 +43,11 @@ HORA_RESUMEN_DEL_DIA = "22:30"
 # importa este módulo, así que la hora no se importa acá para no crear un
 # ciclo): debe coincidir exactamente con `institucional.HORA_INSTITUCIONAL`.
 HORA_INSTITUCIONAL_RESERVADA = "20:30"
-HORARIOS_DEFAULT = (
-    "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00",
-    "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
-)
+# Prueba editorial 30/9/2026 al 6/10/2026: el feed normal baja a 6
+# publicaciones diarias (informe 07:30 + estas 4 franjas de cascada +
+# institucional 20:30). Urgentes locales, alertas y Stories no cuentan en
+# ese límite (circuito propio, `publicar_urgentes_meta.py`).
+HORARIOS_DEFAULT = ("09:00", "12:00", "16:00", "19:00")
 ANTIGUEDAD_MAXIMA_HORAS = 48
 # Línea editorial (prioridad acumulativa, no cuota rígida diaria): Libertador
 # General San Martín primero, Departamento Ledesma segundo, la provincia de
@@ -56,14 +57,17 @@ ANTIGUEDAD_MAXIMA_HORAS = 48
 # nivel inferior si existe uno superior apto).
 ORDEN_CASCADA = ("local", "departamental", "provincial", "nacional")
 
-# Regla de mezcla editorial (agregada 28/8/2026): en las franjas normales se
-# apunta a que al menos esta proporción sea contenido propio de Ledesma
-# Participa, sustituyendo publicaciones externas cuando hay una nota propia
-# `preparada` válida disponible. Es un objetivo flexible, no una cuota
-# rígida: si no hay material propio de calidad para una franja, se mantiene
-# la externa. Configurable en `config/agenda.json`.
+# Regla de mezcla editorial (agregada 28/8/2026, subida a 70% el 17/9/2026
+# para bajar el contenido externo directo a un máximo de 30%): en las
+# franjas normales se apunta a que al menos esta proporción sea contenido
+# propio de Ledesma Participa, sustituyendo publicaciones externas cuando
+# hay una nota propia `preparada` válida disponible. Es un objetivo
+# flexible, no una cuota rígida: si no hay material propio de calidad para
+# una franja, se mantiene la externa (nunca se degrada calidad ni se
+# inventa contenido para cumplir el porcentaje). Configurable en
+# `config/agenda.json`.
 CONFIG_AGENDA_PATH = Path(__file__).resolve().parent.parent / "config" / "agenda.json"
-PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT = 0.5
+PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT = 0.7
 
 # La regla de mezcla NUNCA desplaza una publicación externa de estos
 # territorios: son las noticias que deben salir primero y sin demora. El
@@ -84,6 +88,18 @@ def _proporcion_minima_contenido_propio(path: Optional[Path] = None) -> float:
         return valor if 0.0 <= valor <= 1.0 else PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
+
+
+def _solo_territorios_prioritarios(path: Optional[Path] = None) -> bool:
+    """Lee `config/agenda.json` → "solo_territorios_prioritarios" (default
+    False). Si es True, la cascada se corta en provincial: sin nacional,
+    temáticas ni entretenimiento de relleno (una franja puede quedar vacía).
+    Activado para la prueba editorial 30/9/2026 al 6/10/2026."""
+    try:
+        with open(path or CONFIG_AGENDA_PATH, encoding="utf-8") as f:
+            return bool(json.load(f).get("solo_territorios_prioritarios", False))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
 
 
 def _es_mismo_hecho(titulo_a: str, titulo_b: str) -> bool:
@@ -198,10 +214,15 @@ def _buscar_candidato_cascada(
     mejor noticia `sin_clasificar` genérica, pero solo si es contenido de
     entretenimiento/curiosidades/tendencia viral verificable (nunca una
     noticia sin_clasificar cualquiera)."""
+    solo_prioritarios = _solo_territorios_prioritarios()
     for territorio in ORDEN_CASCADA:
+        if solo_prioritarios and territorio == "nacional":
+            break
         candidato = db.candidato_editorial(territorio, usados, fecha_limite)
         if candidato:
             return candidato
+    if solo_prioritarios:
+        return None
 
     conteo_categorias = conteo_categorias if conteo_categorias is not None else {}
     candidato_tematico = _buscar_candidato_tematico(db, usados, fecha_limite, conteo_categorias)

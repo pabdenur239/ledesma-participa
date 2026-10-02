@@ -7,6 +7,7 @@ from pathlib import Path
 
 from motor_noticias.db import Database
 from motor_noticias.models import Estado, Noticia
+from motor_noticias.motor_editorial import _solo_territorios_prioritarios as _solo_territorios_prioritarios_real
 from motor_noticias.motor_editorial import (
     ANTIGUEDAD_MAXIMA_HORAS,
     HORARIOS_DEFAULT,
@@ -619,7 +620,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         self._crear_propias()
         entradas = [e for e in self._agenda() if e.tipo == "normal"]
         self.assertEqual(len(entradas), len(HORARIOS_DEFAULT))  # total preservado
-        objetivo = math.ceil(0.5 * len(HORARIOS_DEFAULT))
+        objetivo = math.ceil(0.7 * len(HORARIOS_DEFAULT))
         self.assertEqual(len(self._propias_en(entradas)), objetivo)
 
     def test_nunca_desplaza_una_externa_local_ni_departamental(self):
@@ -651,7 +652,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         entradas = self._agenda()
         self.assertEqual(len([e for e in entradas if e.tipo == "urgente"]), 1)
         normales = [e for e in entradas if e.tipo == "normal"]
-        self.assertEqual(len(self._propias_en(normales)), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
+        self.assertEqual(len(self._propias_en(normales)), math.ceil(0.7 * len(HORARIOS_DEFAULT)))
 
     def test_sustituye_una_externa_aprobada_solo_por_elegibilidad_automatica(self):
         # Primera pasada: sin material propio -> la grilla se llena de
@@ -672,7 +673,7 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         self._crear_propias()
         entradas = [e for e in self._agenda() if e.tipo == "normal"]
         self.assertEqual(
-            len(self._propias_en(entradas)), math.ceil(0.5 * len(HORARIOS_DEFAULT))
+            len(self._propias_en(entradas)), math.ceil(0.7 * len(HORARIOS_DEFAULT))
         )
 
     def test_no_sustituye_una_externa_aprobada_por_un_humano(self):
@@ -697,8 +698,58 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         ids_1 = {e.noticia_id for e in self._propias_en(self._agenda())}
         ids_2 = {e.noticia_id for e in self._propias_en(self._agenda())}
         self.assertEqual(ids_1, ids_2)
-        self.assertEqual(len(ids_1), math.ceil(0.5 * len(HORARIOS_DEFAULT)))
+        self.assertEqual(len(ids_1), math.ceil(0.7 * len(HORARIOS_DEFAULT)))
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# La cascada completa (nacional/temáticas/entretenimiento) se prueba sin
+# depender de "solo_territorios_prioritarios" en config/agenda.json.
+from unittest import mock as _mock  # noqa: E402
+
+_patch_solo_prioritarios = _mock.patch(
+    "motor_noticias.motor_editorial._solo_territorios_prioritarios", return_value=False
+)
+
+
+def setUpModule():
+    _patch_solo_prioritarios.start()
+
+
+def tearDownModule():
+    _patch_solo_prioritarios.stop()
+
+
+class TestSoloTerritoriosPrioritarios(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.tmp.name) / "test.db")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+
+    def test_lee_la_config(self):
+        p = Path(self.tmp.name) / "agenda.json"
+        p.write_text('{"solo_territorios_prioritarios": true}', encoding="utf-8")
+        self.assertTrue(_solo_territorios_prioritarios_real(p))
+        p.write_text("{}", encoding="utf-8")
+        self.assertFalse(_solo_territorios_prioritarios_real(p))
+
+    def test_activada_no_rellena_con_nacional(self):
+        _crear_noticia(self.db, "nacional")
+        with _mock.patch(
+            "motor_noticias.motor_editorial._solo_territorios_prioritarios", return_value=True
+        ):
+            entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        self.assertEqual(entradas[0].estado, "sin_candidato")
+
+    def test_activada_mantiene_provincial(self):
+        provincial = _crear_noticia(self.db, "provincial")
+        with _mock.patch(
+            "motor_noticias.motor_editorial._solo_territorios_prioritarios", return_value=True
+        ):
+            entradas = generar_agenda(self.db, fecha="2026-08-12", horarios=("08:00",), ahora=AHORA)
+        self.assertEqual(entradas[0].noticia_id, provincial.id)

@@ -278,3 +278,20 @@ class TestClasificacionNacionalMejorada(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# La cascada completa (nacional/temáticas/entretenimiento) se prueba sin
+# depender de "solo_territorios_prioritarios" en config/agenda.json.
+from unittest import mock as _mock  # noqa: E402
+
+_patch_solo_prioritarios = _mock.patch(
+    "motor_noticias.motor_editorial._solo_territorios_prioritarios", return_value=False
+)
+
+
+def setUpModule():
+    _patch_solo_prioritarios.start()
+
+
+def tearDownModule():
+    _patch_solo_prioritarios.stop()

@@ -42,6 +42,7 @@
 <a href="../categoria/educacion/">Educación</a>
 <a href="../categoria/cultura/">Cultura</a>
 <a href="../categoria/espectaculos/">Espectáculos</a>
+<a href="../radios/" class="activa" aria-current="page">Radios en vivo</a>
 <a href="../multimedia/">Multimedia</a>
 <a href="../guia-comercial/">Guía Comercial</a>
     </div>
@@ -51,8 +52,40 @@
 <main class="ancho">
   <p class="migas"><a href="../multimedia/">Multimedia</a></p>
   <h1 class="titulo-seccion">Radios en vivo</h1>
-  
-  <p class="vacio">Estamos sumando las radios de la zona. Solo incluimos emisoras con transmisión oficial.</p>
+  <div class="radios-filtros" role="group" aria-label="Filtrar por zona"><button type="button" class="chip-zona" data-zona="" aria-pressed="true">Todas</button><button type="button" class="chip-zona" data-zona="libertador" aria-pressed="false">Libertador</button><button type="button" class="chip-zona" data-zona="jujuy" aria-pressed="false">Jujuy</button></div>
+  <label class="radios-buscar"><span class="solo-lectores">Buscar radio</span>
+    <input type="search" id="radios-buscar" placeholder="Buscar por nombre, dial o localidad" autocomplete="off"></label>
+  <div class="grilla-radios" id="radios-lista"><article class="tarjeta-radio" data-zona="libertador" data-buscable="radio city ledesma libertador general san martín libertador">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">RC</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">Radio City Ledesma</h2>
+    
+    <p class="radio-localidad">Libertador General San Martín</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="radio-city-ledesma" data-stream="https://5cd577a3dd8ec.streamlock.net/cityledesma/live_1/playlist.m3u8" data-tipo="hls" data-nombre="Radio City Ledesma" data-dial="" aria-label="Escuchar en vivo Radio City Ledesma">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.radiocityfm.com/" target="_blank" rel="noopener">Sitio web</a> · <a href="https://www.facebook.com/radiocityfmjujuy" target="_blank" rel="noopener">Facebook</a> · <a href="https://instagram.com/radiocityfm/" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.radiocityfm.com/player?radio=LD" target="_blank" rel="noopener">Reproductor oficial</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="radio nacional jujuy (lra 22) am 790 san salvador de jujuy jujuy">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">RN</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">Radio Nacional Jujuy (LRA 22)</h2>
+    <p class="radio-dial">AM 790</p>
+    <p class="radio-localidad">San Salvador de Jujuy</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="radio-nacional-jujuy" data-stream="https://sa.mp3.icecast.magma.edge-access.net/sc_rad22" data-tipo="mp3" data-nombre="Radio Nacional Jujuy (LRA 22)" data-dial="AM 790" aria-label="Escuchar en vivo Radio Nacional Jujuy (LRA 22) AM 790">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.radionacional.com.ar/" target="_blank" rel="noopener">Sitio web</a> · <a href="https://www.radionacional.com.ar/reproductor/reproductor_lra22_n.php" target="_blank" rel="noopener">Reproductor oficial</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="radio city jujuy 107.1 fm san salvador de jujuy jujuy">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">RC</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">Radio City Jujuy</h2>
+    <p class="radio-dial">107.1 FM</p>
+    <p class="radio-localidad">San Salvador de Jujuy</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="radio-city-jujuy" data-stream="https://5cd577a3dd8ec.streamlock.net/radiocity/live_1/playlist.m3u8" data-tipo="hls" data-nombre="Radio City Jujuy" data-dial="107.1 FM" aria-label="Escuchar en vivo Radio City Jujuy 107.1 FM">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.radiocityfm.com/" target="_blank" rel="noopener">Sitio web</a> · <a href="https://www.facebook.com/radiocityfmjujuy" target="_blank" rel="noopener">Facebook</a> · <a href="https://instagram.com/radiocityfm/" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.radiocityfm.com/player?radio=SS" target="_blank" rel="noopener">Reproductor oficial</a></p>
+  </div>
+</article></div><p class="vacio" id="radios-sin-resultados" hidden>No hay radios para ese filtro.</p>
   <p class="radios-nota">Cada radio se escucha desde su transmisión oficial. Ledesma Participa no graba ni retransmite señales.</p>
 </main>
 

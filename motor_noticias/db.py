@@ -351,6 +351,25 @@ class Database:
         )
         self.conn.commit()
 
+    def actualizar_redaccion(
+        self,
+        id_noticia: int,
+        titulo_preparado: str,
+        texto_preparado: str,
+        requiere_revision_especial: bool,
+        categoria_riesgo: Optional[str],
+        motivo_revision_especial: Optional[str],
+    ) -> None:
+        """Reintento de redacción (`pipeline.reintentar_redaccion`): nuevo
+        texto preparado y riesgo editorial reevaluado sobre ese texto."""
+        self.conn.execute(
+            "UPDATE noticias SET titulo_preparado = ?, texto_preparado = ?, requiere_revision_especial = ?, "
+            "categoria_riesgo = ?, motivo_revision_especial = ? WHERE id = ?",
+            (titulo_preparado, texto_preparado, int(requiere_revision_especial), categoria_riesgo,
+             motivo_revision_especial, id_noticia),
+        )
+        self.conn.commit()
+
     def id_noticia_por_url(self, url_normalizada: str) -> Optional[int]:
         cur = self.conn.execute(
             "SELECT id FROM noticias WHERE url_normalizada = ? ORDER BY id LIMIT 1", (url_normalizada,)

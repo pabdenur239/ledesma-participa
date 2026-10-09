@@ -25,6 +25,7 @@ from ..ingreso_manual import (
 from ..meta.imagen import DIRECTORIO_PLACAS_DEFAULT
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, OrigenIngreso, RevisionEstado
+from ..pipeline import CATEGORIA_SIN_REDACCION_PROPIA, reintentar_redaccion
 from ..motor_editorial import HORARIOS_DEFAULT, ZONA_JUJUY
 from ..redaccion import crear_redactor
 from ..redaccion import _cargar_config_redaccion
@@ -225,8 +226,15 @@ def _lista_html(db: Database, filtro: str) -> str:
 
 def _detalle_html(noticia: dict, mensaje: Optional[str] = None) -> str:
     aviso = f"<p><em>{_e(mensaje)}</em></p>" if mensaje else ""
+    sin_redaccion = noticia.get("categoria_riesgo") == CATEGORIA_SIN_REDACCION_PROPIA
     valor_titulo = noticia["titulo_revisado"] or noticia["titulo_preparado"] or ""
-    valor_texto = noticia["texto_revisado"] or noticia["texto_preparado"] or ""
+    # Sin redacción propia, el "preparado" es el texto de la fuente: no se
+    # precarga como texto revisado (evita aprobar una copia literal).
+    valor_texto = noticia["texto_revisado"] or ("" if sin_redaccion else noticia["texto_preparado"] or "")
+    boton_reintentar = (
+        '<button type="submit" name="accion" value="reintentar_redaccion">Reintentar redacción</button>'
+        if sin_redaccion else ""
+    )
     cuerpo = f"""
 {aviso}
 {_advertencia_riesgo(noticia)}
@@ -253,6 +261,7 @@ def _detalle_html(noticia: dict, mensaje: Optional[str] = None) -> str:
 <button type="submit" name="accion" value="guardar">Guardar cambios</button>
 <button type="submit" name="accion" value="aprobar">Aprobar</button>
 <button type="submit" name="accion" value="rechazar">Rechazar</button>
+{boton_reintentar}
 </form>
 {_enlace_facebook(noticia)}
 """
@@ -953,6 +962,11 @@ class PanelHandler(BaseHTTPRequestHandler):
                 self._responder_html(
                     _pagina("Error", "<p>Noticia no encontrada.</p>"), status=404
                 )
+                return
+
+            if accion == "reintentar_redaccion":
+                _, mensaje = reintentar_redaccion(db, id_noticia, self.redactor)
+                self._responder_html(_detalle_html(db.obtener(id_noticia), mensaje))
                 return
 
             if accion == "aprobar":

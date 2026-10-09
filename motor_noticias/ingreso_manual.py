@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -177,7 +178,9 @@ def cargar_noticia_manual(
     noticia.observacion_interna = observacion_interna
     noticia.urgente = urgente
 
-    _, resultado_pipeline = procesar_noticia(db, noticia, redactor, categoria=None)
+    _, resultado_pipeline = procesar_noticia(
+        db, noticia, redactor, categoria=None, tolerar_fallo_redaccion=True
+    )
     duplicado = resultado_pipeline == "duplicado"
 
     agenda_actualizada: Optional[bool] = None
@@ -227,6 +230,9 @@ PADRON_FUENTES_PATH = Path(__file__).resolve().parent.parent / "config" / "fuent
 # Ventana de comparación del "mismo hecho": igual que la recuperación local
 # del portal (`portal.HORAS_RECUPERACION_LOCAL`).
 HORAS_VENTANA_MISMO_HECHO = 48
+# Menciones ambiguas (prócer, departamentos homónimos de otras provincias):
+# sin contexto que confirme Jujuy, piden el territorio al operador.
+_RE_MENCION_AMBIGUA = re.compile(r"\b(libertador|ledesma)\b")
 
 
 @dataclass
@@ -382,10 +388,19 @@ def cargar_noticia_local(
 
     # 3) Territorio informado: solo respaldo cuando el contenido por sí solo
     #    no ubica el hecho en Libertador/Ledesma (lo que dice el texto manda).
+    #    Si el texto nombra Libertador/Ledesma sin contexto que confirme que
+    #    es la localidad jujeña (fuente fuera del padrón, sin Jujuy/Ramal…),
+    #    no se adivina: se pide el territorio al operador.
+    ubicada = _contenido_ubica_en_ledesma(titulo_final, texto, fuente, url)
+    if not ubicada and not territorio_informado and _RE_MENCION_AMBIGUA.search(_sin_acentos(f"{titulo_final} {texto}")):
+        db.registrar_ingreso_rapido(**traza, resultado="territorio_ambiguo")
+        raise ErrorIngresoManual(
+            "El texto menciona Libertador/Ledesma pero no alcanza para confirmar dónde ocurrió: "
+            "completá el campo Territorio."
+        )
     localidad_respaldo = None
-    if territorio_informado and _territorio_de_localidad(territorio_informado):
-        if not _contenido_ubica_en_ledesma(titulo_final, texto, fuente, url):
-            localidad_respaldo = territorio_informado
+    if territorio_informado and not ubicada and _territorio_de_localidad(territorio_informado):
+        localidad_respaldo = territorio_informado
 
     notas = [f"Canal rápido ({canal}): texto {'leído de la URL' if origen_texto == 'url' else 'pegado por el operador'}."]
     if es_video:

@@ -23,6 +23,7 @@ from motor_noticias.lectura_url import (
 )
 from motor_noticias.models import Estado
 from motor_noticias.panel.server import HOST, PanelHandler
+from motor_noticias.pipeline import CATEGORIA_SIN_REDACCION_PROPIA, es_copia_literal_extensa, reintentar_redaccion
 from motor_noticias.redaccion.mock import RedactorMock
 
 TEXTO_LIBERTADOR = (
@@ -347,15 +348,157 @@ class TestPanelCargaLocalHTTP(unittest.TestCase):
         self.assertIn("forzar_no_duplicado", cuerpo)
         self.assertEqual(len(self._noticias()), 1)
 
-    def test_redaccion_caida_no_guarda_ni_copia(self):
+    def test_redaccion_caida_queda_en_revision_sin_copiar(self):
         with patch.object(PanelHandler, "redactor", RedactorCaido()):
             status, cuerpo = self._pedir(
                 "POST", "/cargar-noticia-local", {"fuente": "Ledesma Soy", "url": URL_FB, "texto": TEXTO_LIBERTADOR}
             )
-        self.assertEqual(status, 503)
-        self.assertIn("no se guardó", cuerpo)
-        self.assertEqual(self._noticias(), [])
+        self.assertEqual(status, 200)
+        self.assertIn("Sin redacción propia", cuerpo)
+        noticia = self._noticias()[0]
+        self.assertEqual(noticia["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
 
+    def test_boton_reintentar_redaccion(self):
+        with patch.object(PanelHandler, "redactor", RedactorCaido()):
+            self._pedir("POST", "/cargar-noticia-local", {"fuente": "Ledesma Soy", "url": URL_FB, "texto": TEXTO_LARGO})
+        id_noticia = self._noticias()[0]["id"]
+        status, cuerpo = self._pedir("GET", f"/noticia?id={id_noticia}")
+        self.assertIn('value="reintentar_redaccion"', cuerpo)
+        self.assertNotIn(f"<textarea name=\"texto_revisado\">{TEXTO_LARGO[:40]}", cuerpo)
+        status, cuerpo = self._pedir("POST", f"/noticia?id={id_noticia}", {"accion": "reintentar_redaccion"})
+        self.assertEqual(status, 200)
+        self.assertIn("vuelve al circuito normal", cuerpo)
+        self.assertIsNone(self._noticias()[0]["categoria_riesgo"])
+
+
+TEXTO_LARGO = (
+    "Vecinos de Libertador General San Martín contaron que durante toda la semana se realizarán "
+    "trabajos de bacheo en las avenidas principales de la ciudad, por lo que habrá desvíos de tránsito "
+    "en distintos horarios. Se recomienda a los conductores circular con precaución, respetar la "
+    "señalización y prever demoras en los traslados hacia el centro y los barrios de la zona norte."
+)
+
+
+class RedactorCopia:
+    """Simula el fallback seguro del redactor: devuelve el texto de la fuente."""
+
+    def redactar(self, noticia):
+        return noticia.titulo_original, noticia.texto_original
+
+
+class TestSinRedaccionPropia(BaseCanalRapido):
+    def test_fallo_de_redaccion_queda_en_revision_y_fuera_de_todo_circuito(self):
+        r = cargar_noticia_local(self.db, RedactorCaido(), fuente="Ledesma Soy", url=URL_FB, texto=TEXTO_LARGO, urgente=True)
+        noticia = self.db.obtener(r.manual.noticia_id)
+        self.assertEqual(noticia["estado"], Estado.PREPARADA.value)
+        self.assertTrue(noticia["requiere_revision_especial"])
+        self.assertEqual(noticia["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
+        self.assertEqual(noticia["texto_original"], TEXTO_LARGO)  # referencia interna
+        self.assertEqual(self.db.candidatas_portal("2000-01-01"), [])
+        self.assertNotIn(noticia["id"], [n["id"] for n in self.db.candidatos_editoriales(set(), "2000-01-01")])
+
+    def test_copia_literal_extensa_queda_en_revision(self):
+        r = cargar_noticia_local(self.db, RedactorCopia(), fuente="Ledesma Soy", url=URL_FB, texto=TEXTO_LARGO)
+        noticia = self.db.obtener(r.manual.noticia_id)
+        self.assertEqual(noticia["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
+        self.assertEqual(self.db.candidatas_portal("2000-01-01"), [])
+
+    def test_cita_breve_no_se_retiene(self):
+        self.assertFalse(es_copia_literal_extensa(TEXTO_LIBERTADOR, TEXTO_LIBERTADOR))
+        self.assertTrue(es_copia_literal_extensa(TEXTO_LARGO, TEXTO_LARGO))
+        self.assertTrue(es_copia_literal_extensa(TEXTO_LARGO + " Más datos al final.", TEXTO_LARGO))
+        self.assertFalse(es_copia_literal_extensa(TEXTO_LARGO, "Texto propio. " + TEXTO_LARGO[::-1]))
+
+    def test_collector_con_ollama_caido_tambien_queda_en_revision(self):
+        from motor_noticias.pipeline import normalizar_noticia, procesar_noticia
+        noticia = normalizar_noticia({"titulo": "Bacheo en Libertador General San Martín", "texto": TEXTO_LARGO,
+                                      "url": "https://medio.test/bacheo", "fuente": "InfoYungas"})
+        noticia, resultado = procesar_noticia(self.db, noticia, RedactorCaido(), tolerar_fallo_redaccion=True)
+        self.assertEqual(resultado, "preparada")
+        self.assertEqual(self.db.obtener(noticia.id)["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
+
+    def test_reintento_libera_solo_con_redaccion_propia(self):
+        r = cargar_noticia_local(self.db, RedactorCaido(), fuente="Ledesma Soy", url=URL_FB, texto=TEXTO_LARGO)
+        id_noticia = r.manual.noticia_id
+        liberada, _ = reintentar_redaccion(self.db, id_noticia, RedactorCaido())
+        self.assertFalse(liberada)
+        liberada, _ = reintentar_redaccion(self.db, id_noticia, RedactorCopia())
+        self.assertFalse(liberada)
+        self.assertEqual(self.db.obtener(id_noticia)["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
+        liberada, _ = reintentar_redaccion(self.db, id_noticia, RedactorMock())
+        self.assertTrue(liberada)
+        noticia = self.db.obtener(id_noticia)
+        self.assertFalse(noticia["requiere_revision_especial"])
+        self.assertNotEqual(noticia["texto_preparado"], TEXTO_LARGO)
+        self.assertEqual(len(self.db.candidatas_portal("2000-01-01")), 1)
+
+    def test_reintento_no_aplica_a_otras_retenidas(self):
+        r = self.cargar(fuente="Ledesma Soy", url=URL_FB, texto=TEXTO_SENSIBLE)
+        liberada, mensaje = reintentar_redaccion(self.db, r.manual.noticia_id, RedactorMock())
+        self.assertFalse(liberada)
+        self.assertTrue(self.db.obtener(r.manual.noticia_id)["requiere_revision_especial"])
+
+
+class TestTerritorioLocal(BaseCanalRapido):
+    TEXTO_SOLO_LIBERTADOR = (
+        "Corte de agua en barrio Jardín de Libertador por la rotura de un caño. Las cuadrillas "
+        "trabajan para restablecer el servicio durante la tarde."
+    )
+
+    def test_libertador_desde_fuente_local_del_padron(self):
+        r = self.cargar(fuente="Ledesma Soy", texto=self.TEXTO_SOLO_LIBERTADOR)
+        self.assertEqual(r.manual.territorio, "local")
+        self.assertFalse(r.territorio_respaldo_usado)
+
+    def test_lgsm_y_nombre_completo(self):
+        r = self.cargar(fuente="Página Vecinal X", texto="Corte de luz programado en LGSM para el jueves por obras de la distribuidora eléctrica.")
+        self.assertEqual(r.manual.territorio, "local")
+        r = self.cargar(fuente="Página Vecinal X", texto=TEXTO_LIBERTADOR)
+        self.assertEqual(r.manual.territorio, "local")
+
+    def test_libertador_ambiguo_pide_territorio(self):
+        with self.assertRaises(ErrorIngresoManual) as ctx:
+            self.cargar(fuente="Página Vecinal X", texto=self.TEXTO_SOLO_LIBERTADOR)
+        self.assertIn("Territorio", str(ctx.exception))
+        self.assertEqual(self.db.listar(), [])
+        self.assertEqual(self.trazas()[-1]["resultado"], "territorio_ambiguo")
+        r = self.cargar(
+            fuente="Página Vecinal X", texto=self.TEXTO_SOLO_LIBERTADOR,
+            territorio_informado="Libertador General San Martín",
+        )
+        self.assertEqual(r.manual.territorio, "local")
+        self.assertTrue(r.territorio_respaldo_usado)
+
+    def test_libertador_con_contexto_jujeno(self):
+        r = self.cargar(fuente="Página Vecinal X", texto=self.TEXTO_SOLO_LIBERTADOR + " Hay demoras sobre la Ruta 34.")
+        self.assertEqual(r.manual.territorio, "local")
+
+    def test_padron_local_sincronizado_con_medios_locales(self):
+        import json
+        raiz = Path(__file__).resolve().parent.parent
+        padron = json.load(open(raiz / "config" / "fuentes_locales.json", encoding="utf-8"))
+        locales = json.load(open(raiz / "config" / "localidades.json", encoding="utf-8"))["medios_locales"]["terminos"]
+        nombres = [f["nombre"] for f in padron["fuentes"] if not f["localidad"].startswith("Provincial")]
+        nombres += [f["nombre"] for f in padron["pendientes_de_confirmar"]]
+        self.assertEqual([n for n in nombres if n not in locales], [])
+
+
+class TestHechosDistintosParecidos(BaseCanalRapido):
+    def test_mismo_aviso_en_localidades_distintas_no_se_consolida(self):
+        a = self.cargar(fuente="Frecuencia Calilegua FM (106.7)", url="https://www.facebook.com/fcal/posts/1",
+                        texto="Corte de energía en Calilegua por tareas de mantenimiento de la red el martes por la mañana.")
+        b = self.cargar(fuente="YUTO INFORMA", url="https://www.facebook.com/YutoInforma/posts/2",
+                        texto="Corte de energía en Yuto por tareas de mantenimiento de la red el martes por la mañana.")
+        self.assertEqual(a.resultado, "preparada")
+        self.assertEqual(b.resultado, "preparada")
+
+    def test_mismo_aviso_en_fechas_distintas_no_se_consolida(self):
+        a = self.cargar(fuente="Ledesma Soy", url="https://www.facebook.com/ls/posts/1",
+                        texto="Corte de agua en Libertador General San Martín el 12/10 por obras en la red de distribución.")
+        b = self.cargar(fuente="Ledesma Soy", url="https://www.facebook.com/ls/posts/2",
+                        texto="Corte de agua en Libertador General San Martín el 19/10 por obras en la red de distribución.")
+        self.assertEqual(a.resultado, "preparada")
+        self.assertEqual(b.resultado, "preparada")
 
 if __name__ == "__main__":
     unittest.main()

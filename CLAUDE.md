@@ -155,8 +155,19 @@ cambios: no todo lo que entra a web/app se publica en redes.
   InfoYungas, Jujuy al Momento y El Tribuno se leen por RSS oficial con el
   listado HTML como respaldo (`collectors/rss_regionales.py`). Alertas de
   fuentes (vacías, sin texto, HTTP, certificado, parser) en el panel
-  (/estado) y en el informe interno de crecimiento. Si Ollama falla, la
-  noticia sigue con el texto original (`sin_redaccion_automatica`).
+  (/estado) y en el informe interno de crecimiento. Si Ollama falla, o el
+  texto preparado es copia literal de más de 300 caracteres de la fuente
+  (fallback seguro del redactor, control de calidad), la noticia queda en
+  REVISIÓN con riesgo `sin_redaccion_propia` (no revisable: no va a ningún
+  circuito automático ni al portal); el original queda solo como referencia
+  interna y se libera con "Reintentar redacción" en el panel (9/10/2026).
+- **Canal rápido local** (9/10/2026, panel → "Cargar noticia local",
+  `ingreso_manual.cargar_noticia_local`): URL + fuente; texto leído solo de
+  sitios web abiertos (nunca redes sociales); misma publicación y mismo
+  hecho (48 h) se consolidan salvo "es un hecho distinto"; el territorio
+  informado es solo respaldo y se pide si el texto nombra Libertador/Ledesma
+  sin contexto. Las fuentes locales del padrón están en `medios_locales`
+  (`config/localidades.json`): mantener ambas listas sincronizadas.
 - **Web mobile-first** (`sitio/plantillas.py`, `assets_fuente/site.css`):
   portada Urgente → Clima + Dólar → principal (prioriza Libertador /
   Ledesma / Jujuy) → Libertador → Ledesma → Jujuy → Policiales → Salud →

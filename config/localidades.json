@@ -424,7 +424,7 @@
     ]
   },
   "medios_locales": {
-    "_descripcion": "Fuentes locales/regionales del Ramal: una mención de Libertador o Ledesma en sus notas se toma como la localidad jujeña.",
+    "_descripcion": "Fuentes locales/regionales del Ramal: una mención de Libertador o Ledesma en sus notas se toma como la localidad jujeña. Incluye las fuentes locales del padrón (config/fuentes_locales.json, canal rápido 9/10/2026): mantener ambas listas sincronizadas (lo verifica tests/test_canal_rapido_local.py).",
     "terminos": [
       "InfoYungas",
       "Canal 6 Libertador",
@@ -432,7 +432,31 @@
       "Municipalidad de Libertador General San Martín",
       "municipio_libertador",
       "Ledesma Participa",
-      "Ledesma Participa (contenido propio)"
+      "Ledesma Participa (contenido propio)",
+      "Municipalidad de Fraile Pintado (Prensa Municipal)",
+      "Municipalidad de Caimancito (Prensa Municipal oficial)",
+      "Municipalidad de Yuto (Gestión Abraham)",
+      "Municipalidad de Calilegua",
+      "Bomberos Voluntarios LGSM",
+      "Hospital Dr. Oscar Orías (Ledesma)",
+      "Liga Regional Jujeña de Fútbol",
+      "Atlético Ledesma 1928",
+      "Club Unión Calilegua",
+      "Cámara de Comercio, Industria y Servicios LGSM",
+      "Ledesma Soy",
+      "Ledesma Jujuy Info",
+      "INFO Yungas (Facebook)",
+      "Punto Digital LGSM Jujuy",
+      "Portal Nativa Fraile Pintado Jujuy",
+      "FM Radio Speed 96.7",
+      "YUTO INFORMA",
+      "Frecuencia Calilegua FM (106.7)",
+      "101.9 FM Ciudad Libertador",
+      "La Guía Fraile Pintado",
+      "Canal 5 Cooperlib",
+      "FM Imagen 92.5",
+      "FM Bajando Caña",
+      "FM Orión"
     ]
   },
   "prefijos_toponimo": {

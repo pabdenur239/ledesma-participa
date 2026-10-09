@@ -1,6 +1,7 @@
 import html
 import logging
-from dataclasses import asdict
+import re
+from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
@@ -21,6 +22,17 @@ logger = logging.getLogger("motor_noticias.pipeline")
 # Marca en `observacion_interna` (privada) cuando la redacción automática
 # falló y se conservó el texto original de la fuente.
 MARCA_SIN_REDACCION = "sin_redaccion_automatica"
+
+# Sin redacción propia (cierre del canal rápido, 9/10/2026): si la redacción
+# automática falla, o el texto preparado termina siendo una copia literal
+# extensa del texto de la fuente (fallback seguro del redactor o control de
+# calidad que vuelve al original), la noticia NO sigue a ningún circuito
+# automático: queda en revisión con esta categoría de riesgo (que no es
+# revisable para el portal), el original se conserva solo como referencia
+# interna y la redacción se puede reintentar desde el panel. Hasta este largo
+# una coincidencia literal se considera cita breve (siempre atribuida).
+CATEGORIA_SIN_REDACCION_PROPIA = "sin_redaccion_propia"
+LONGITUD_MAXIMA_CITA_LITERAL = 300
 
 # Internacional para web/app (cobertura 9/10/2026): una internacional que
 # no es entretenimiento ya no se descarta si pasa el gate mínimo de calidad
@@ -50,6 +62,36 @@ def _aplicar_riesgo_editorial(noticia: Noticia) -> None:
     noticia.requiere_revision_especial = resultado["requiere_revision_especial"]
     noticia.categoria_riesgo = resultado["categoria_riesgo"]
     noticia.motivo_revision_especial = resultado["motivo"]
+
+
+def _normalizar_espacios(texto: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (texto or "").strip().lower())
+
+
+def es_copia_literal_extensa(texto_original: Optional[str], texto_preparado: Optional[str]) -> bool:
+    """True si el texto preparado es (o está contenido literalmente en) el
+    texto de la fuente y supera el largo de una cita breve."""
+    original = _normalizar_espacios(texto_original)
+    preparado = _normalizar_espacios(texto_preparado)
+    if len(preparado) <= LONGITUD_MAXIMA_CITA_LITERAL:
+        return False
+    return preparado == original or preparado in original
+
+
+def _marcar_sin_redaccion_propia(noticia: Noticia, motivo: str) -> None:
+    detalle = (
+        f"Sin redacción propia ({motivo}): queda en revisión; el texto de la fuente se "
+        "conserva solo como referencia interna. Reintentar la redacción desde el panel."
+    )
+    if noticia.requiere_revision_especial and noticia.categoria_riesgo != CATEGORIA_SIN_REDACCION_PROPIA:
+        # Ya retenida por otro riesgo: esta categoría manda igual (no es
+        # revisable, así una aprobación humana del otro riesgo nunca lleva la
+        # copia al portal) y se conserva el motivo anterior. Al reintentar la
+        # redacción, el riesgo editorial se reevalúa desde cero.
+        detalle = f"{detalle} | Riesgo previo: {noticia.categoria_riesgo} — {noticia.motivo_revision_especial or ''}"
+    noticia.requiere_revision_especial = True
+    noticia.categoria_riesgo = CATEGORIA_SIN_REDACCION_PROPIA
+    noticia.motivo_revision_especial = detalle
 
 
 def normalizar_noticia(cruda: dict) -> Noticia:
@@ -204,11 +246,13 @@ def procesar_noticia(
         )
         return noticia, "descartada"
 
+    fallo_redaccion = None
     try:
         titulo_preparado, texto_preparado = redactor.redactar(noticia)
     except Exception as error:  # Ollama caído o lento: no debe tumbar la fuente entera
         if not tolerar_fallo_redaccion:
             raise
+        fallo_redaccion = str(error)[:200]
         # Se conserva el texto original (mismo criterio que el fallback
         # seguro del redactor) y se deja constancia interna de que no hubo
         # redacción automática; la noticia sigue el circuito normal.
@@ -217,6 +261,8 @@ def procesar_noticia(
         texto_preparado = noticia.texto_original or noticia.titulo_original
         if not noticia.observacion_interna:
             noticia.observacion_interna = f"{MARCA_SIN_REDACCION}: {str(error)[:200]}"
+        else:
+            noticia.observacion_interna = f"{MARCA_SIN_REDACCION}: {str(error)[:200]} | {noticia.observacion_interna}"
     noticia.titulo_preparado = titulo_preparado
     noticia.texto_preparado = texto_preparado
     # Control de calidad (calidad_editorial): si la redacción automática
@@ -250,8 +296,43 @@ def procesar_noticia(
         noticia.requiere_revision_especial = True
         noticia.categoria_riesgo = "calidad_editorial"
         noticia.motivo_revision_especial = "Control de calidad: " + "; ".join(calidad.problemas)
+    if fallo_redaccion is not None:
+        _marcar_sin_redaccion_propia(noticia, f"falló la redacción automática: {fallo_redaccion}")
+    elif es_copia_literal_extensa(noticia.texto_original, noticia.texto_preparado):
+        _marcar_sin_redaccion_propia(noticia, "el texto preparado repite literalmente el de la fuente")
     db.guardar(noticia)
     return noticia, "preparada"
+
+
+def reintentar_redaccion(db: Database, id_noticia: int, redactor: Redactor) -> Tuple[bool, str]:
+    """Reintento manual (panel) de una noticia retenida sin redacción
+    propia. Solo libera la noticia si ahora hay redacción propia que pase el
+    control de calidad; el riesgo editorial se reevalúa sobre el texto nuevo.
+    Devuelve (liberada, mensaje para el operador)."""
+    fila = db.obtener(id_noticia)
+    if not fila or fila.get("categoria_riesgo") != CATEGORIA_SIN_REDACCION_PROPIA:
+        return False, "La noticia no está retenida por falta de redacción propia."
+    campos = {f.name for f in fields(Noticia)}
+    noticia = Noticia(**{k: v for k, v in fila.items() if k in campos})
+    try:
+        titulo_preparado, texto_preparado = redactor.redactar(noticia)
+    except Exception as error:
+        return False, f"La redacción automática sigue sin responder ({str(error)[:120]}). Reintentá más tarde."
+    noticia.titulo_preparado, noticia.texto_preparado = titulo_preparado, texto_preparado
+    calidad = evaluar_calidad(asdict(noticia))
+    if calidad.accion != "publicar" or es_copia_literal_extensa(noticia.texto_original, texto_preparado):
+        return False, "La nueva redacción no es propia o no pasó el control de calidad: sigue en revisión."
+    noticia.requiere_revision_especial = False
+    noticia.categoria_riesgo = None
+    noticia.motivo_revision_especial = None
+    _aplicar_riesgo_editorial(noticia)
+    db.actualizar_redaccion(
+        id_noticia, titulo_preparado, texto_preparado,
+        bool(noticia.requiere_revision_especial), noticia.categoria_riesgo, noticia.motivo_revision_especial,
+    )
+    if noticia.requiere_revision_especial:
+        return True, "Redacción propia generada; sigue en revisión por riesgo editorial."
+    return True, "Redacción propia generada: la noticia vuelve al circuito normal."
 
 
 def _es_internacional(noticia: Noticia) -> bool:

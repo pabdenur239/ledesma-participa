@@ -195,6 +195,21 @@ cambios: no todo lo que entra a web/app se publica en redes.
   DE VERIFICACIÓN VISUAL; no se usa como verdad operativa ni para cambiar
   reglas.
 
+### Cierre de Etapa 1 (9/10/2026): riesgos aceptados
+- 57 tests de la suite ya fallaban antes de la Etapa 1 (tests
+  desincronizados con código de producción no commiteado:
+  `test_meta_publicador`, `test_motor_editorial`, `test_territorio`…).
+  Comparados contra la línea base: ninguno es regresión de la Etapa 1. No
+  se corrigieron; cubren menos de lo que parece.
+- Enlace propio en el copy: si la página de la nota todavía no existe
+  (sitio cada 15 min), el post usa "Nota original:" + URL externa. Afecta
+  sobre todo a URGENTES (se publican apenas se confirman). Hacer esperar al
+  post cambiaría la inmediatez de urgentes/horarios: queda para decisión
+  posterior, sin cambios.
+- Videos vacío hasta tener URLs reales de YouTube (no se inventan).
+- App: código verificado; release a Google Play pendiente (prueba cerrada
+  sin tocar).
+
 ### Etapa 2 (siguiente, NO implementada todavía): RADIOS EN VIVO
 Libertador, Departamento Ledesma, Jujuy y Argentina; solo streams
 oficiales; reproductor persistente que siga sonando mientras se navega;

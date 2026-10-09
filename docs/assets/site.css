@@ -245,3 +245,48 @@ main, .grilla > *, .lista-compacta > *, .carril > *, .cd-cuerpo > *, .seccion-po
 .tarjeta-compacta .tarjeta-enlace { grid-template-columns: 112px minmax(0, 1fr); }
 .tarjeta-titulo, .bloque-urgente a, .placa-titulo { overflow-wrap: anywhere; }
 body { overflow-x: hidden; }
+
+/* Etapa 2 — Multimedia y Radios en vivo. Negro/dorado; el estado nunca
+   depende solo del color (siempre hay texto). */
+.lista-multimedia { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
+.multimedia-item { display: flex; flex-direction: column; gap: 2px; background: var(--blanco); border-radius: var(--radio); box-shadow: var(--sombra); padding: 14px 16px; min-height: 44px; color: var(--texto); text-decoration: none; border-left: 4px solid var(--dorado); }
+.multimedia-item span { color: var(--texto-suave); font-size: .9rem; }
+.multimedia-proximamente { opacity: .75; border-left-color: var(--borde); }
+.radios-filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.chip-zona { min-height: 44px; padding: 8px 16px; border-radius: 999px; border: 2px solid var(--carbon); background: var(--blanco); color: var(--carbon); font-weight: 700; font-size: .92rem; cursor: pointer; }
+.chip-zona[aria-pressed="true"] { background: var(--carbon); color: var(--dorado); }
+.chip-zona[aria-pressed="true"]::before { content: "✓ "; }
+.radios-buscar input { width: 100%; min-height: 44px; padding: 10px 14px; border: 1px solid var(--borde); border-radius: var(--radio); font-size: 1rem; margin-bottom: 12px; }
+.grilla-radios { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 720px) { .grilla-radios { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .grilla-radios { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tarjeta-radio { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 14px; background: var(--blanco); border-radius: var(--radio); box-shadow: var(--sombra); padding: 14px; }
+.tarjeta-radio[hidden] { display: none; }
+.radio-logo { width: 72px; height: 72px; border-radius: var(--radio); object-fit: cover; background: var(--carbon); }
+.radio-logo-placa { display: flex; align-items: center; justify-content: center; color: var(--dorado); font-weight: 900; font-size: 1.4rem; }
+.radio-nombre { margin: 0; font-size: 1.05rem; text-transform: uppercase; overflow-wrap: anywhere; }
+.radio-dial { margin: 2px 0 0; font-weight: 800; color: var(--texto); }
+.radio-localidad { margin: 2px 0 0; color: var(--texto-suave); font-size: .9rem; }
+.radio-estado { display: inline-block; margin: 8px 0 0; font-size: .8rem; font-weight: 800; }
+.radio-estado-vivo { color: var(--carbon); background: var(--dorado); padding: 2px 8px; border-radius: 4px; letter-spacing: .05em; }
+.radio-estado-vivo::before { content: "● "; }
+.radio-estado-caido, .radio-estado-sin { color: var(--texto-suave); }
+.boton-escuchar { display: block; margin-top: 10px; border: 0; cursor: pointer; font-size: .95rem; text-align: center; }
+.boton-escuchar.escuchando { background: var(--dorado); color: var(--carbon); }
+.radio-enlaces { margin: 8px 0 0; font-size: .85rem; }
+.radio-enlaces a { color: var(--carbon); font-weight: 700; }
+.radios-nota { color: var(--texto-suave); font-size: .85rem; margin-top: 18px; }
+.boton:focus-visible, .chip-zona:focus-visible, .mini-reproductor button:focus-visible { outline: 3px solid var(--dorado); outline-offset: 2px; }
+
+.mini-reproductor { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--carbon); color: var(--blanco); border-top: 2px solid var(--dorado); }
+.mini-reproductor[hidden] { display: none; }
+.mini-reproductor button { min-width: 44px; min-height: 44px; border: 0; border-radius: 999px; cursor: pointer; font-weight: 800; }
+.mr-play { background: var(--dorado); color: var(--carbon); padding: 0 14px; white-space: nowrap; }
+.mr-cerrar { background: transparent; color: var(--blanco); font-size: 1.1rem; }
+.mr-info { flex: 1; min-width: 0; line-height: 1.25; }
+.mr-nombre { display: inline; overflow-wrap: anywhere; }
+.mr-dial { color: var(--dorado); font-weight: 700; font-size: .9rem; }
+.mr-estado { display: block; color: #d6d1c6; font-size: .8rem; }
+.mr-volumen input { width: 90px; accent-color: var(--dorado); }
+@media (max-width: 520px) { .mr-volumen { display: none; } }
+body.con-reproductor { padding-bottom: 76px; }

@@ -96,16 +96,20 @@ class _Contenido extends StatelessWidget {
                   )
                 else
                   Text(noticia.bajada, style: const TextStyle(fontSize: 16, height: 1.5)),
-                if ((noticia.fuenteNombre ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('Fuente: ${noticia.fuenteNombre}', style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic)),
-                ],
-                if ((noticia.fuenteUrl ?? '').isNotEmpty) ...[
+                // Fuente siempre visible (requisito Google Play "News and
+                // Magazines"). El contenido producido por el propio medio
+                // se rotula como tal.
+                const SizedBox(height: 8),
+                Text(
+                  'Fuente: ${(noticia.fuenteNombre != null && noticia.fuenteNombre!.isNotEmpty) ? noticia.fuenteNombre : 'Ledesma Participa'}',
+                  style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+                ),
+                if (noticia.fuenteUrl != null && noticia.fuenteUrl!.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   InkWell(
                     onTap: () => launchUrl(Uri.parse(noticia.fuenteUrl!), mode: LaunchMode.externalApplication),
                     child: const Text(
-                      'Ver nota original',
+                      'Ver fuente original',
                       style: TextStyle(fontSize: 14, color: MarcaColores.marcaOro, decoration: TextDecoration.underline),
                     ),
                   ),

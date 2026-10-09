@@ -367,3 +367,51 @@ redes sin cambios.
   con Facebook e Instagram (`instagram_url` = @ledesmaparticipa, verificado
   por API); "También puede interesarte" (misma localidad > territorio >
   categoría > recientes, máx. 4); acceso a Radios en portada.
+
+## Etapa 4 — CONSOLIDACIÓN Y RELEASE CANDIDATE (9/10/2026, rama `etapa4-release-candidate`)
+
+Estado: ETAPA 1 = TERMINADA · ETAPA 2 = TERMINADA · ETAPA 3 = TERMINADA ·
+ETAPA 4 = TERMINADA. Sin funcionalidades nuevas.
+
+- **Integración git**: las ramas de etapa son lineales (etapa1 ⊂ etapa2 ⊂
+  etapa3); `etapa4-release-candidate` parte de etapa3. El código de
+  `motor_noticias/` coincide con producción (Contabo).
+- **Regresión corregida (app)**: el commit snapshot del VPS (base de Etapa 1)
+  había revertido en `app/` la firma de release, el fix de apertura por
+  notificación y la corrección del rechazo de Google Play (pantalla
+  Contacto, fuente siempre visible, filtro de 90 días, versión 1.0.1+2):
+  el VPS tenía una copia vieja de `app/`. Restaurados y combinados con las
+  Etapas 1–3. La web nunca lo perdió.
+- **Regresión corregida (Meta)**: desde la Etapa 1 el título del informe
+  Clima + Dólar es fijo (sin fecha) y la deduplicación por huella de título
+  bloqueó el informe del 9/10 como duplicado del día anterior. Ahora el
+  informe diario se deduplica solo por su URL interna con fecha
+  (`meta/publicador._buscar_duplicado_ya_publicado`, test
+  `tests/test_etapa4_informe_dedup.py`). Desplegado 9/10 09:33.
+- **Release candidate Android**: `1.1.0+3`, package
+  `com.ledesmaparticipa.ledesma_participa_app`, firmado con el keystore de
+  release existente (SHA-1 D1:0A:…:6D:F8). Archivo local (no versionado):
+  `exports/android/ledesma-participa-1.1.0+3-release-candidate.aab`. NO
+  subido a Google Play.
+- **Google Play**: prueba cerrada con el requisito de 12 testers cumplido;
+  corre el período obligatorio de 14 días. El acceso a producción depende
+  del contador oficial de Play Console (sin fecha asumida). No se modificó
+  nada en Play Console.
+
+### Limitaciones aceptadas
+1. Audio Android minimizado sin servicio en primer plano (el sistema puede
+   congelar el proceso y cortar la radio).
+2. Métricas Meta limitadas por permisos actuales (solo seguidores y
+   likes/comentarios de IG; insights NO DISPONIBLE).
+3. 57 tests históricos desincronizados (sin corregir). Además
+   `test_estado_muestra_ollama_no_disponible_si_no_responde` falla si hay
+   un Ollama corriendo en la máquina que ejecuta los tests (ambiente).
+4. App pendiente de producción en Google Play.
+5. Videos solo cuando existan URLs reales.
+
+### Backlog futuro (NO implementar sin pedido explícito)
+- Servicio en primer plano para radios.
+- Entrevistas y Podcast.
+- Mayor producción de Reels.
+- Integración futura de UniFeed dentro de Ledesma Participa cuando UniFeed
+  esté terminado.

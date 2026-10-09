@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/noticia_card.dart';
 import 'busqueda_screen.dart';
 import 'categoria_screen.dart';
+import 'contacto_screen.dart';
 import 'guia_screen.dart';
 import 'radios_screen.dart';
 import 'videos_screen.dart';
@@ -90,6 +91,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.public),
             tooltip: 'Abrir ledesmaparticipa.com.ar',
             onPressed: () => launchUrl(Uri.parse(ApiService.baseSitio), mode: LaunchMode.externalApplication),
+          ),
+          IconButton(
+            icon: const Icon(Icons.mail_outline),
+            tooltip: 'Contacto',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ContactoScreen())),
           ),
         ],
         bottom: PreferredSize(

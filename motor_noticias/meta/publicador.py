@@ -20,6 +20,7 @@ from typing import NamedTuple, Optional
 from ..db import Database
 from ..dedupe import es_mismo_contenido, normalizar_url, palabras_clave, refieren_a_hecho_distinto
 from ..eventos import buscar_relacion, ventana_desde
+from ..informe_diario_datos import PREFIJO_URL as PREFIJO_URL_INFORME
 from ..models import Estado, OrigenIngreso, RevisionEstado
 from ..motor_editorial import HORA_INFORME_DIARIO, ZONA_JUJUY
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
@@ -301,6 +302,17 @@ def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datet
     """Gate único de deduplicación de publicación (franja fija, urgente,
     reintento → Facebook, Instagram y Story): misma nota por URL/huella de
     contenido, o mismo acontecimiento ya publicado."""
+    # Informe diario de Clima + Dólar: desde la Etapa 1 su título es fijo
+    # ("Clima + Dólar | Informe de la mañana", sin fecha), así que la huella
+    # de título lo emparejaba con el de ayer y lo bloqueaba (producción
+    # 9/10/2026). Su URL interna lleva la fecha: un informe por día, y solo
+    # se bloquea si ese mismo día ya salió publicado.
+    if (noticia.get("url_normalizada") or "").startswith(PREFIJO_URL_INFORME):
+        fecha_limite = (ahora_utc - timedelta(hours=VENTANA_DEDUPLICACION_HORAS)).isoformat()
+        for candidata in db.noticias_publicadas_recientes(fecha_limite, excluir_id=noticia["id"]):
+            if candidata.get("url_normalizada") == noticia["url_normalizada"]:
+                return candidata
+        return None
     duplicado = _duplicado_por_contenido(db, noticia, ahora_utc)
     if duplicado is not None:
         return duplicado

@@ -631,7 +631,8 @@ def tarjeta_radio(r: dict) -> str:
     if r.get("stream_url"):
         accion = (
             f'<button type="button" class="boton boton-escuchar" data-radio-id="{escapar(r["id"])}" '
-            f'data-stream="{escapar(r["stream_url"])}" data-nombre="{nombre}" data-dial="{dial}" '
+            f'data-stream="{escapar(r["stream_url"])}" data-tipo="{escapar(r.get("tipo_stream") or "")}" '
+            f'data-nombre="{nombre}" data-dial="{dial}" '
             f'aria-label="{etiqueta}">&#9654; Escuchar en vivo</button>'
         )
     elif r.get("player_url"):
@@ -646,6 +647,10 @@ def tarjeta_radio(r: dict) -> str:
         for clave, texto in (("sitio_web", "Sitio web"), ("facebook", "Facebook"), ("instagram", "Instagram"))
         if r.get(clave)
     )
+    if r.get("stream_url") and r.get("player_url"):
+        # Alternativa oficial si el navegador no reproduce el stream (p. ej. HLS).
+        oficial = f'<a href="{escapar(r["player_url"])}" target="_blank" rel="noopener">Reproductor oficial</a>'
+        enlaces = f"{enlaces} · {oficial}" if enlaces else oficial
     buscable = escapar(" ".join(filter(None, (r["nombre"], r.get("dial"), r.get("localidad"), r["zona"]))).lower())
     return f"""<article class="tarjeta-radio" data-zona="{escapar(r['zona_slug'])}" data-buscable="{buscable}">
   {logo}

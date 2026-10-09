@@ -13,6 +13,14 @@
   "use strict";
 
   var CLAVE = "lp-radio";
+  var HLS_NO_SOPORTADO = "Este navegador no reproduce esta transmisión (HLS). Probá desde el celular, Safari o el reproductor oficial.";
+
+  // HLS sin soporte nativo (p. ej. Firefox o Chrome de escritorio viejo):
+  // no se convierte ni se retransmite el stream; se avisa claramente.
+  function hlsIncompatible(radio, audio) {
+    if (radio.tipo !== "hls" || typeof audio.canPlayType !== "function") return false;
+    return !audio.canPlayType("application/vnd.apple.mpegurl");
+  }
 
   // Núcleo sin DOM (probado con Node en tests/test_radio_js.py).
   function crearControlador(opciones) {
@@ -49,7 +57,7 @@
     }
 
     function cargar(radio) {
-      estado.radio = { id: radio.id, nombre: radio.nombre, dial: radio.dial || "", stream: radio.stream };
+      estado.radio = { id: radio.id, nombre: radio.nombre, dial: radio.dial || "", stream: radio.stream, tipo: radio.tipo || "" };
       audio.src = radio.stream;
       audio.volume = estado.volumen;
     }
@@ -59,6 +67,12 @@
       reproducir: function (radio) {
         if (estado.radio && estado.radio.id === radio.id && estado.reproduciendo) return Promise.resolve();
         if (!estado.radio || estado.radio.id !== radio.id) cargar(radio);
+        if (hlsIncompatible(estado.radio, audio)) {
+          estado.reproduciendo = false;
+          estado.mensaje = HLS_NO_SOPORTADO;
+          notificar();
+          return Promise.resolve();
+        }
         return sonar();
       },
       pausar: function () {
@@ -71,6 +85,7 @@
         if (!estado.radio) return Promise.resolve();
         if (estado.reproduciendo) { this.pausar(); return Promise.resolve(); }
         // Transmisión en vivo: al reanudar se reconecta al momento actual.
+        if (hlsIncompatible(estado.radio, audio)) return this.reproducir(estado.radio);
         audio.src = estado.radio.stream;
         return sonar();
       },
@@ -180,7 +195,7 @@
       botones[i].addEventListener("click", function (evento) {
         var b = evento.currentTarget;
         // Un HLS en un navegador sin soporte nativo dispara "error" y se ve el aviso de no disponible.
-        var radio = { id: b.getAttribute("data-radio-id"), nombre: b.getAttribute("data-nombre"), dial: b.getAttribute("data-dial"), stream: b.getAttribute("data-stream") };
+        var radio = { id: b.getAttribute("data-radio-id"), nombre: b.getAttribute("data-nombre"), dial: b.getAttribute("data-dial"), stream: b.getAttribute("data-stream"), tipo: b.getAttribute("data-tipo") || "" };
         var e = control.estado();
         if (e.radio && e.radio.id === radio.id && e.reproduciendo) control.pausar();
         else control.reproducir(radio);

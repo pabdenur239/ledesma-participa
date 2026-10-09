@@ -1,5 +1,60 @@
 {
   "_descripcion": "RADIOS EN VIVO (Etapa 2, 9/10/2026). Lista de emisoras de la web (/radios/) y la app. SOLO fuentes autorizadas: stream oficial de la emisora, player oficial embebible, URL oficial publicada por la radio o integración autorizada. PROHIBIDO: capturar audio de Facebook, extraer audio de YouTube, retransmitir señales, hacer proxy de streams, descargar contenido de terceros o inventar URLs. Una radio sin stream ni player oficial se muestra como 'Sin transmisión online disponible'. Campos: id (slug a-z0-9-, único, no cambiar), nombre, dial ('95.5 FM'), localidad, zona (Libertador | Departamento Ledesma | Jujuy | Argentina), logo_url (https, opcional), stream_url (https, audio directo: mp3/aac/ogg/hls), player_url (https, player oficial de la radio, opcional), sitio_web, facebook, instagram (opcionales, solo enlaces), estado ('activa' | 'baja' = baja lógica, se conserva el registro), activa (true/false: mostrar u ocultar sin borrar), orden (número, menor primero), tipo_stream (mp3 | aac | ogg | hls), fuente_autorizacion (de dónde sale la URL oficial: obligatorio si hay stream_url o player_url), ultima_verificacion (la completa el sistema, no editar). Nunca cargar registros con demo=true acá: los datos demo viven en config/radios_demo.json y solo se usan con LEDESMA_RADIOS_DEMO=1 en local.",
   "verificacion_minutos": 60,
-  "radios": []
+  "radios": [
+    {
+      "id": "radio-city-ledesma",
+      "nombre": "Radio City Ledesma",
+      "dial": null,
+      "localidad": "Libertador General San Martín",
+      "zona": "Libertador",
+      "logo_url": null,
+      "stream_url": "https://5cd577a3dd8ec.streamlock.net/cityledesma/live_1/playlist.m3u8",
+      "player_url": "https://www.radiocityfm.com/player?radio=LD",
+      "tipo_stream": "hls",
+      "sitio_web": "https://www.radiocityfm.com/",
+      "facebook": "https://www.facebook.com/radiocityfmjujuy",
+      "instagram": "https://instagram.com/radiocityfm/",
+      "fuente_autorizacion": "Reproductor oficial de radiocityfm.com (selector de estación 'Ledesma', alias LD) — verificado 9/10/2026. Dial local no publicado en fuente oficial: queda sin dial.",
+      "estado": "activa",
+      "activa": true,
+      "orden": 1
+    },
+    {
+      "id": "radio-nacional-jujuy",
+      "nombre": "Radio Nacional Jujuy (LRA 22)",
+      "dial": "AM 790",
+      "localidad": "San Salvador de Jujuy",
+      "zona": "Jujuy",
+      "logo_url": null,
+      "stream_url": "https://sa.mp3.icecast.magma.edge-access.net/sc_rad22",
+      "player_url": "https://www.radionacional.com.ar/reproductor/reproductor_lra22_n.php",
+      "tipo_stream": "mp3",
+      "sitio_web": "https://www.radionacional.com.ar/",
+      "facebook": null,
+      "instagram": null,
+      "fuente_autorizacion": "Reproductor oficial de radionacional.com.ar (reproductor_lra22_n.php, <audio> con este stream; icy-name 'LRA22 AM') — verificado 9/10/2026.",
+      "estado": "activa",
+      "activa": true,
+      "orden": 1
+    },
+    {
+      "id": "radio-city-jujuy",
+      "nombre": "Radio City Jujuy",
+      "dial": "107.1 FM",
+      "localidad": "San Salvador de Jujuy",
+      "zona": "Jujuy",
+      "logo_url": null,
+      "stream_url": "https://5cd577a3dd8ec.streamlock.net/radiocity/live_1/playlist.m3u8",
+      "player_url": "https://www.radiocityfm.com/player?radio=SS",
+      "tipo_stream": "hls",
+      "sitio_web": "https://www.radiocityfm.com/",
+      "facebook": "https://www.facebook.com/radiocityfmjujuy",
+      "instagram": "https://instagram.com/radiocityfm/",
+      "fuente_autorizacion": "Reproductor oficial de radiocityfm.com (estación 'San Salvador', alias SS; sitio 'Radio City FM 107.1 Jujuy') — verificado 9/10/2026.",
+      "estado": "activa",
+      "activa": true,
+      "orden": 2
+    }
+  ]
 }

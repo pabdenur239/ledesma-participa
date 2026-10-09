@@ -212,6 +212,12 @@ class TestPlantillasRadios(unittest.TestCase):
         self.assertIn("Sin transmisión online disponible", html)
         self.assertNotIn("boton-escuchar", html)
 
+    def test_hls_con_tipo_y_reproductor_oficial_alternativo(self):
+        html = self._html(stream_url="https://stream.test/live/playlist.m3u8", tipo_stream="hls",
+                          player_url="https://radio.test/player")
+        self.assertIn('data-tipo="hls"', html)
+        self.assertIn("Reproductor oficial", html)
+
     def test_solo_player_oficial_abre_enlace(self):
         html = self._html(stream_url=None, player_url="https://radio.test/player")
         self.assertIn('href="https://radio.test/player"', html)
@@ -336,6 +342,15 @@ const radio = { id: "r1", nombre: "Radio Test", dial: "95.5 FM", stream: "https:
   const c4 = crearControlador({ storage: storage(), audio: audio("NotSupportedError") });
   await c4.reproducir(radio);
   assert.strictEqual(c4.estado().mensaje, "Transmisión no disponible temporalmente");
+  // HLS en navegador sin soporte nativo: aviso claro, no se intenta ni se convierte.
+  const aHls = Object.assign(audio("ok"), { canPlayType: () => "" });
+  const cHls = crearControlador({ storage: storage(), audio: aHls });
+  await cHls.reproducir(Object.assign({}, radio, { tipo: "hls" }));
+  assert.strictEqual(cHls.estado().reproduciendo, false);
+  assert.match(cHls.estado().mensaje, /HLS/);
+  const cHlsOk = crearControlador({ storage: storage(), audio: Object.assign(audio("ok"), { canPlayType: () => "maybe" }) });
+  await cHlsOk.reproducir(Object.assign({}, radio, { tipo: "hls" }));
+  assert.strictEqual(cHlsOk.estado().reproduciendo, true);
   // Cerrar: limpia el estado guardado.
   c2.cerrar();
   assert.strictEqual(s.getItem(CLAVE), null);

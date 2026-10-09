@@ -25,6 +25,7 @@ La selección se guarda en `portal_seleccion` para que el histórico quede
 estable: cada corrida solo completa hoy y ayer.
 """
 import logging
+import math
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -41,7 +42,8 @@ logger = logging.getLogger("motor_noticias.portal")
 
 MAXIMO_POR_DIA = 25
 OBJETIVO_MINIMO_POR_DIA = 15  # referencia editorial: nunca se rellena para llegar
-DIAS_A_COMPLETAR = 2  # hoy y ayer: lo anterior ya quedó fijo
+DIAS_A_COMPLETAR = 2
+HORAS_GRACIA_CUPO = 2  # a las 00:00 ya hay cupo para ~2 h de noticias  # hoy y ayer: lo anterior ya quedó fijo
 DIAS_HISTORICO_PORTAL = 90
 
 # Topes diarios por territorio para lo que entra SOLO al portal (lo
@@ -144,6 +146,18 @@ def completar_seleccion(db: Database, ahora: Optional[datetime] = None) -> dict:
             ya_seleccionadas.setdefault(fecha_local(n.get("fecha_recoleccion")) or fechas[0], []).append(n["id"])
             del por_id[n["id"]]
     for fecha in fechas:
+        # El cupo del día se libera en proporción a las horas transcurridas:
+        # sin esto, lo que llega de madrugada (mayormente nacional) llenaría
+        # el día y no dejaría lugar a notas mejores de la tarde.
+        if fecha == fechas[0]:
+            horas = ahora_local.hour + ahora_local.minute / 60
+            fraccion = min(1.0, (horas + HORAS_GRACIA_CUPO) / 24)
+        else:
+            fraccion = 1.0
+
+        def cupo(tope: int) -> int:
+            return max(1, math.ceil(tope * fraccion))
+
         elegidas = [n for n in publicadas if fecha_local(n.get("fecha_recoleccion")) == fecha]
         seleccionadas_ids = ya_seleccionadas.get(fecha, [])
         elegidas += [n for n in (db.obtener(i) for i in seleccionadas_ids) if n]
@@ -172,12 +186,12 @@ def completar_seleccion(db: Database, ahora: Optional[datetime] = None) -> dict:
         for puntaje, urgente, territorio, n in del_dia:
             categoria = clasificar_categoria(n)["valor"]
             if not urgente:
-                if ocupados >= MAXIMO_POR_DIA:
+                if ocupados >= cupo(MAXIMO_POR_DIA):
                     continue
                 tope = TOPES_POR_TERRITORIO.get(territorio)
-                if tope is not None and conteo_territorio.get(territorio, 0) >= tope:
+                if tope is not None and conteo_territorio.get(territorio, 0) >= cupo(tope):
                     continue
-                if categoria and conteo_categoria.get(categoria, 0) >= TOPE_POR_CATEGORIA:
+                if categoria and conteo_categoria.get(categoria, 0) >= cupo(TOPE_POR_CATEGORIA):
                     continue
             if _repetida(n, elegidas):
                 continue

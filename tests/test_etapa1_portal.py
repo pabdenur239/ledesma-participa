@@ -220,3 +220,20 @@ class TestReelPorCuadros(unittest.TestCase):
         args = ffmpeg.call_args[0][0]
         self.assertEqual(args.count("-loop"), len(cuadros))
         self.assertEqual((resultado.ancho, resultado.alto), (1080, 1920))
+
+
+class TestCupoProporcional(unittest.TestCase):
+    def test_de_madrugada_no_se_llena_el_dia(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "t.db")
+            madrugada = datetime(2026, 10, 9, 1, 30, tzinfo=ZONA_JUJUY)
+            temas = ["inflación", "jubilaciones", "rutas", "escuelas", "hospitales", "elecciones", "lluvias", "precios"]
+            for i, tema in enumerate(temas):
+                momento = (madrugada - timedelta(minutes=10 + i)).astimezone(timezone.utc).isoformat()
+                _guardar(db, i, f"Cambios en {tema} en Argentina", fecha_recoleccion=momento)
+            portal.completar_seleccion(db, madrugada)
+            fecha = madrugada.date().isoformat()
+            seleccion = db.portal_seleccion_por_fecha([fecha]).get(fecha, [])
+            db.close()
+        # 01:30 + 2 h de gracia = 3,5/24 del día: a lo sumo ceil(8*0.146)=2 nacionales.
+        self.assertLessEqual(len(seleccion), 2)

@@ -8,9 +8,14 @@ Etapa 1 (9/10/2026): rediseño mobile-first con la identidad Versión C
 para servicios). Portada: urgente, clima + dólar, noticia principal,
 Libertador, Departamento Ledesma, Jujuy, Policiales, Salud, Deportes,
 Servicios, Videos, Guía Comercial y redes. Nunca se muestra una sección
-vacía."""
+vacía.
+
+Etapa 2 (9/10/2026): Multimedia y Radios en vivo (`pagina_multimedia`,
+`pagina_radios`); el mini reproductor persistente vive en assets/radio.js."""
 import html
 from typing import Iterable, List, Optional, Sequence, Tuple
+
+from ..radios import ZONAS as ZONAS_RADIO
 
 COLOR_FONDO_MARCA = "#111111"
 COLOR_ORO = "#d4af37"
@@ -92,6 +97,7 @@ PIE_HTML_PLANTILLA = """
     <p class="pie-nota">Cada nota indica su fuente original y enlaza a ella. Contacto: {email}</p>
   </div>
 </footer>
+<script src="{ruta_raiz}assets/radio.js" defer></script>
 </body>
 </html>
 """
@@ -595,6 +601,122 @@ def pagina_video(*, v: dict, ruta_raiz: str, config_sitio: dict, url_base: str, 
   {reproductor_youtube(v)}
   {('<p>' + escapar(v['descripcion']) + '</p>') if v.get('descripcion') else ''}
   {fuente}
+</main>""",
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+    ]
+    return "\n".join(partes)
+
+
+ESTADOS_RADIO = {
+    # estado_transmision → (texto visible, clase). Solo se muestra lo verificado.
+    "en_vivo": ("EN VIVO", "radio-estado-vivo"),
+    "no_disponible": ("Transmisión no disponible temporalmente", "radio-estado-caido"),
+    "sin_transmision": ("Sin transmisión online disponible", "radio-estado-sin"),
+}
+
+
+def tarjeta_radio(r: dict) -> str:
+    """[LOGO] NOMBRE / dial / localidad / [ESCUCHAR EN VIVO]. El botón usa
+    solo la URL oficial; sin stream ni player oficial no hay botón."""
+    nombre = escapar(r["nombre"])
+    dial = escapar(r.get("dial") or "")
+    texto_estado, clase_estado = ESTADOS_RADIO.get(r.get("estado_transmision"), ("", ""))
+    estado = f'<p class="radio-estado {clase_estado}">{escapar(texto_estado)}</p>' if texto_estado else ""
+    if r.get("logo_url"):
+        logo = f'<img class="radio-logo" src="{escapar(r["logo_url"])}" alt="" loading="lazy" referrerpolicy="no-referrer">'
+    else:
+        iniciales = escapar("".join(p[0] for p in r["nombre"].split()[:2]).upper())
+        logo = f'<div class="radio-logo radio-logo-placa" aria-hidden="true">{iniciales}</div>'
+    etiqueta = escapar(f"Escuchar en vivo {r['nombre']} {r.get('dial') or ''}".strip())
+    if r.get("stream_url"):
+        accion = (
+            f'<button type="button" class="boton boton-escuchar" data-radio-id="{escapar(r["id"])}" '
+            f'data-stream="{escapar(r["stream_url"])}" data-nombre="{nombre}" data-dial="{dial}" '
+            f'aria-label="{etiqueta}">&#9654; Escuchar en vivo</button>'
+        )
+    elif r.get("player_url"):
+        accion = (
+            f'<a class="boton boton-escuchar" href="{escapar(r["player_url"])}" target="_blank" rel="noopener" '
+            f'aria-label="{etiqueta} (abre el reproductor oficial de la radio)">&#9654; Escuchar en vivo</a>'
+        )
+    else:
+        accion = ""
+    enlaces = " · ".join(
+        f'<a href="{escapar(r[clave])}" target="_blank" rel="noopener">{texto}</a>'
+        for clave, texto in (("sitio_web", "Sitio web"), ("facebook", "Facebook"), ("instagram", "Instagram"))
+        if r.get(clave)
+    )
+    buscable = escapar(" ".join(filter(None, (r["nombre"], r.get("dial"), r.get("localidad"), r["zona"]))).lower())
+    return f"""<article class="tarjeta-radio" data-zona="{escapar(r['zona_slug'])}" data-buscable="{buscable}">
+  {logo}
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">{nombre}</h2>
+    {f'<p class="radio-dial">{dial}</p>' if dial else ''}
+    {f'<p class="radio-localidad">{escapar(r["localidad"])}</p>' if r.get('localidad') else ''}
+    {estado}
+    {accion}
+    {f'<p class="radio-enlaces">{enlaces}</p>' if enlaces else ''}
+  </div>
+</article>"""
+
+
+def pagina_radios(*, radios: List[dict], ruta_raiz: str, config_sitio: dict, url_base: str, nav=None, extras_nav=()) -> str:
+    zonas_con_radios = [(e, s) for e, s in ZONAS_RADIO if any(r["zona_slug"] == s for r in radios)]
+    filtros = ""
+    if radios:
+        chips = ['<button type="button" class="chip-zona" data-zona="" aria-pressed="true">Todas</button>']
+        chips += [f'<button type="button" class="chip-zona" data-zona="{s}" aria-pressed="false">{escapar(e)}</button>'
+                  for e, s in zonas_con_radios]
+        filtros = f"""<div class="radios-filtros" role="group" aria-label="Filtrar por zona">{''.join(chips)}</div>
+  <label class="radios-buscar"><span class="solo-lectores">Buscar radio</span>
+    <input type="search" id="radios-buscar" placeholder="Buscar por nombre, dial o localidad" autocomplete="off"></label>"""
+    cuerpo = (
+        f'<div class="grilla-radios" id="radios-lista">{"".join(tarjeta_radio(r) for r in radios)}</div>'
+        '<p class="vacio" id="radios-sin-resultados" hidden>No hay radios para ese filtro.</p>'
+        if radios else
+        '<p class="vacio">Estamos sumando las radios de la zona. Solo incluimos emisoras con transmisión oficial.</p>'
+    )
+    partes = [
+        cabecera_html(titulo_pagina="Radios en vivo — Ledesma Participa",
+                      descripcion="Radios de Libertador, el Departamento Ledesma, Jujuy y Argentina en vivo.",
+                      url_canonica=url_base, ruta_raiz=ruta_raiz),
+        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="radios", nav=nav, extras=extras_nav),
+        f"""<main class="ancho">
+  <p class="migas"><a href="{ruta_raiz}multimedia/">Multimedia</a></p>
+  <h1 class="titulo-seccion">Radios en vivo</h1>
+  {filtros}
+  {cuerpo}
+  <p class="radios-nota">Cada radio se escucha desde su transmisión oficial. Ledesma Participa no graba ni retransmite señales.</p>
+</main>""",
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+    ]
+    return "\n".join(partes)
+
+
+def pagina_multimedia(*, hay_videos: bool, cantidad_radios: int, ruta_raiz: str, config_sitio: dict, url_base: str,
+                      nav=None, extras_nav=()) -> str:
+    """Multimedia: Videos, Radios en vivo y, como próximamente (sin
+    enlace), Entrevistas y Podcast."""
+    def item(titulo: str, detalle: str, ruta: Optional[str]) -> str:
+        if ruta:
+            return (f'<li><a class="multimedia-item" href="{ruta_raiz}{ruta}"><strong>{titulo}</strong>'
+                    f'<span>{detalle}</span></a></li>')
+        return (f'<li><div class="multimedia-item multimedia-proximamente" aria-disabled="true"><strong>{titulo}</strong>'
+                f'<span>{detalle}</span></div></li>')
+    radios_detalle = (f"{cantidad_radios} emisora{'s' if cantidad_radios != 1 else ''} con transmisión oficial"
+                      if cantidad_radios else "Libertador, Departamento Ledesma, Jujuy y Argentina")
+    partes = [
+        cabecera_html(titulo_pagina="Multimedia — Ledesma Participa", descripcion="Videos y radios en vivo en Ledesma Participa.",
+                      url_canonica=url_base, ruta_raiz=ruta_raiz),
+        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="multimedia", nav=nav, extras=extras_nav),
+        f"""<main class="ancho">
+  <h1 class="titulo-seccion">Multimedia</h1>
+  <ul class="lista-multimedia">
+    {item("Videos", "Reproductor oficial de YouTube" if hay_videos else "Todavía no hay videos", "videos/")}
+    {item("Radios en vivo", radios_detalle, "radios/")}
+    {item("Entrevistas", "Próximamente", None)}
+    {item("Podcast", "Próximamente", None)}
+  </ul>
 </main>""",
         cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
     ]

@@ -21,6 +21,9 @@ def _aislar(test, tmpdir):
         patch.object(generador_mod, "ValidadorImagenes",
                      lambda: ValidadorImagenes(cache_path=tmp / "imagenes.json", consultar=lambda url: True)),
         patch("motor_noticias.informe_diario_datos.DIRECTORIO_DEFAULT", tmp / "informe_diario"),
+        # Radios (Etapa 2): nunca la caché real ni streams por red.
+        patch("motor_noticias.radios.ESTADO_PATH_DEFAULT", tmp / "radios_estado.json"),
+        patch("motor_noticias.radios.verificar_stream", lambda url, **kw: {"ok": False, "error": "test"}),
     ]
     for parche in parches:
         parche.start()

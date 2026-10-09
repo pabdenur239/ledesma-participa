@@ -210,8 +210,66 @@ cambios: no todo lo que entra a web/app se publica en redes.
 - App: código verificado; release a Google Play pendiente (prueba cerrada
   sin tocar).
 
-### Etapa 2 (siguiente, NO implementada todavía): RADIOS EN VIVO
-Libertador, Departamento Ledesma, Jujuy y Argentina; solo streams
-oficiales; reproductor persistente que siga sonando mientras se navega;
-favoritos si es viable. El acceso "Multimedia" de la app es su lugar
-natural.
+## Etapa 2 — RADIOS EN VIVO (implementada 9/10/2026, rama `etapa2-radios-en-vivo`)
+
+- **Datos** (`config/radios.json`, `motor_noticias/radios.py`): una entrada
+  por emisora con id, nombre, dial, localidad, zona, logo_url, stream_url,
+  player_url, sitio_web, facebook, instagram, estado (`activa` | `baja` =
+  baja lógica), activa (mostrar/ocultar), orden, tipo_stream (mp3 | aac |
+  ogg | hls), `fuente_autorizacion` (obligatoria si hay stream/player) y
+  ultima_verificacion (la completa el sistema). Zonas: Libertador,
+  Departamento Ledesma, Jujuy, Argentina. Arranca VACÍO: no se inventan
+  emisoras ni URLs.
+- **Cómo cargar una radio real**: editar `config/radios.json` (alta, baja
+  lógica, cambio de URL/zona/orden, activar/desactivar) con la URL que la
+  propia radio publica, anotando de dónde sale en `fuente_autorizacion`;
+  copiar el archivo al VPS. El sitio (timer `ledesma-sitio-web`) la publica
+  en la siguiente corrida. Sin panel nuevo.
+- **Fuentes autorizadas, regla legal**: solo stream oficial, player oficial
+  embebible, URL oficial publicada por la radio o integración autorizada.
+  Prohibido capturar audio de Facebook, extraer de YouTube, retransmitir,
+  hacer proxy, descargar o inventar URLs. El código descarta streams que no
+  sean https o que apunten a Facebook/Instagram/YouTube/TikTok, y los que no
+  tienen `fuente_autorizacion`. Sin stream ni player: ficha con "Sin
+  transmisión online disponible", sin botón.
+- **Demo**: `config/radios_demo.json` (FM DEMO 95.5, Radio Demo Jujuy, Radio
+  Demo Argentina, `demo: true`, URLs `.invalid`) solo con
+  `LEDESMA_RADIOS_DEMO=1` en local. Un `demo: true` en `config/radios.json`
+  se descarta siempre. Nunca se despliega `radios_demo.json` al VPS.
+- **Verificación de stream**: un GET por radio (timeout 8 s, se cierra al
+  recibir encabezados, sin descargar audio), solo al generar el sitio y
+  como máximo cada `verificacion_minutos` (60) o al cambiar la URL; caché en
+  `data/radios_estado.json`. EN VIVO solo con verificación reciente OK;
+  fallo → "Transmisión no disponible temporalmente". Solo-player → sin
+  indicador (no es verificable).
+- **API** (JSON estático de GitHub Pages, sin servidor nuevo; no admite
+  query strings): `GET /api/radios` → `api/radios.json`; `?zona=X` →
+  `api/radios/zona/<libertador|ledesma|jujuy|argentina>.json`;
+  `/api/radios/:id` → `api/radios/<id>.json`; status →
+  `api/radios/<id>/status.json`. Solo radios activas; una baja borra su JSON.
+- **Web**: `/multimedia/` (Videos, Radios en vivo, Entrevistas y Podcast
+  "Próximamente", sin enlace) y `/radios/` (filtro por zona, buscador,
+  tarjetas). Menú: "Multimedia" siempre; "Radios en vivo" solo si hay
+  radios. Mini reproductor (`assets_fuente/radio.js`) en todas las páginas:
+  nombre + dial, Play/Pausa, volumen (oculto en pantallas chicas), cerrar.
+  **Limitación**: el sitio es HTML estático con recarga completa; al cambiar
+  de página el audio se corta un instante y se retoma solo (estado en
+  sessionStorage). Si el navegador bloquea la reproducción automática,
+  queda en pausa con "Tocá Reproducir para seguir escuchando". Persistencia
+  sin corte exigiría convertir el sitio en SPA: no se hizo.
+- **App** (`app/lib/screens/radios_screen.dart`, `services/reproductor_radio.dart`,
+  `widgets/mini_reproductor.dart`, `just_audio`): acceso en Inicio (tarjeta
+  RADIOS EN VIVO), en Multimedia y en el menú de accesos; listado con filtro
+  por zona y Favoritas, ficha de emisora y mini reproductor global
+  (`MaterialApp.builder`, fuera del Navigator: el audio sigue al cambiar de
+  pantalla). Favoritos solo locales (SharedPreferences). Sin grabación ni
+  descarga.
+- **Segundo plano (app)**: sin `audio_service`/servicio en primer plano
+  (requeriría cambiar MainActivity, el manifest y declarar el permiso de
+  foreground service en Play Console: invasivo, no se hizo). Con
+  just_audio el audio sigue al bloquear la pantalla o minimizar mientras
+  Android no cierre el proceso, pero no hay controles en la pantalla de
+  bloqueo ni garantía de que el sistema no lo corte. No verificado en
+  dispositivo físico.
+- **Futuro**: Entrevistas y Podcast quedan como "Próximamente" en Multimedia,
+  sin producción activa.

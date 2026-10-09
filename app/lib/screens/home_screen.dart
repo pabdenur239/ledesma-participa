@@ -8,11 +8,12 @@ import '../widgets/noticia_card.dart';
 import 'busqueda_screen.dart';
 import 'categoria_screen.dart';
 import 'guia_screen.dart';
+import 'radios_screen.dart';
 import 'videos_screen.dart';
 
 /// Accesos de Inicio (Etapa 1). Territorio y categoría son listados
 /// distintos; Videos, Guía Comercial y Multimedia tienen pantalla propia.
-/// (Radios en vivo: Etapa 2, todavía no implementado.)
+/// Radios en vivo: Etapa 2.
 const accesosInicio = <(String, String)>[
   ('ultimas', 'Últimas'),
   ('libertador', 'Libertador'),
@@ -23,6 +24,7 @@ const accesosInicio = <(String, String)>[
   ('deportes', 'Deportes'),
   ('servicios', 'Servicios'),
   ('videos', 'Videos'),
+  ('radios', 'Radios en vivo'),
   ('guia', 'Guía Comercial'),
   ('multimedia', 'Multimedia'),
 ];
@@ -36,6 +38,8 @@ void abrirAcceso(BuildContext context, String slug, String etiqueta) {
       pantalla = const GuiaScreen();
     case 'multimedia':
       pantalla = const MultimediaScreen();
+    case 'radios':
+      pantalla = const RadiosScreen();
     default:
       pantalla = CategoriaScreen(slug: slug, titulo: etiqueta);
   }
@@ -160,6 +164,7 @@ class _Portada extends StatelessWidget {
           ),
         ),
       ],
+      const _AccesoRadios(),
       if (portada.guiaComercial.isNotEmpty) ...[
         _TituloSeccion(etiqueta: 'Guía Comercial', onVerMas: () => abrirAcceso(context, 'guia', 'Guía Comercial')),
         const Padding(
@@ -188,6 +193,26 @@ class _Portada extends StatelessWidget {
       hijos.insert(0, const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('No hay noticias todavía.'))));
     }
     return ListView(padding: const EdgeInsets.only(top: 6, bottom: 16), children: hijos);
+  }
+}
+
+/// Acceso a RADIOS EN VIVO en Inicio (Etapa 2).
+class _AccesoRadios extends StatelessWidget {
+  const _AccesoRadios();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+      child: ListTile(
+        minVerticalPadding: 12,
+        leading: const Icon(Icons.radio, color: MarcaColores.marcaOro, size: 32),
+        title: const Text('RADIOS EN VIVO', style: TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: const Text('Libertador, Departamento Ledesma, Jujuy y Argentina'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => abrirAcceso(context, 'radios', 'Radios en vivo'),
+      ),
+    );
   }
 }
 

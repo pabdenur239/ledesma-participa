@@ -1,0 +1,8 @@
+{
+  "_descripcion": "SOLO PRUEBAS LOCALES (Etapa 2). Emisoras ficticias para ver la UI de /radios sin datos reales. Se cargan únicamente con la variable de entorno LEDESMA_RADIOS_DEMO=1 y nunca en producción. Ninguna URL apunta a una radio real (dominio reservado .invalid).",
+  "radios": [
+    {"id": "fm-demo-955", "nombre": "FM DEMO 95.5", "dial": "95.5 FM", "localidad": "Libertador General San Martín", "zona": "Libertador", "stream_url": "https://demo.invalid/stream.mp3", "tipo_stream": "mp3", "fuente_autorizacion": "demo", "estado": "activa", "activa": true, "orden": 1, "demo": true},
+    {"id": "radio-demo-jujuy", "nombre": "Radio Demo Jujuy", "dial": "100.1 FM", "localidad": "San Salvador de Jujuy", "zona": "Jujuy", "player_url": "https://demo.invalid/player/", "fuente_autorizacion": "demo", "estado": "activa", "activa": true, "orden": 2, "demo": true},
+    {"id": "radio-demo-argentina", "nombre": "Radio Demo Argentina", "dial": "AM 870", "localidad": "Buenos Aires", "zona": "Argentina", "estado": "activa", "activa": true, "orden": 3, "demo": true}
+  ]
+}

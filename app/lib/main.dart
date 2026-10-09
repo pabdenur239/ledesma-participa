@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'theme.dart';
+import 'widgets/mini_reproductor.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -28,6 +29,14 @@ class LedesmaParticipaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: construirTema(),
       home: const HomeScreen(),
+      // Radios en vivo (Etapa 2): el mini reproductor vive por encima del
+      // Navigator, así el audio sigue mientras se navega por la app.
+      builder: (context, child) => Column(
+        children: [
+          Expanded(child: child ?? const SizedBox.shrink()),
+          MiniReproductor(),
+        ],
+      ),
     );
   }
 }

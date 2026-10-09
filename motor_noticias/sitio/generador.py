@@ -13,6 +13,10 @@ principal, Libertador, Departamento Ledesma, Jujuy, Policiales, Salud,
 Deportes, Servicios, Videos, Guía Comercial, redes), Guía Comercial,
 Videos y API ampliada (portada.json, clima_dolar.json, guia_comercial.json,
 videos.json) manteniendo los endpoints anteriores para la app publicada.
+
+Etapa 2 (9/10/2026): Multimedia (/multimedia/) y Radios en vivo (/radios/,
+API radios.json, radios/<id>.json, radios/<id>/status.json,
+radios/zona/<zona>.json) desde `config/radios.json` (`motor_noticias.radios`).
 """
 import html
 import json
@@ -38,6 +42,7 @@ from ..portal import completar_seleccion, es_informe_diario, noticias_del_portal
 from ..regla_imagenes import evaluar_imagen
 from ..scoring_editorial import evaluar_noticia, urgente_confirmado
 from ..videos import cargar_videos
+from .. import radios as modulo_radios
 from . import plantillas
 from .imagenes_web import ValidadorImagenes
 from .urls import RAIZ_PROYECTO, SALIDA_DEFAULT, slugify, titulo_de  # noqa: F401 (slugify: API pública)
@@ -632,6 +637,38 @@ def _datos_api_video(v: dict, base_url: str) -> dict:
     return datos
 
 
+def _escribir_api_radios(salida_dir: Path, radios: List[dict]) -> None:
+    """API estática de radios (GitHub Pages no admite query strings):
+    GET /api/radios → radios.json; ?zona=X → radios/zona/<slug>.json;
+    /api/radios/:id → radios/<id>.json; status → radios/<id>/status.json.
+    Solo radios activas (las inactivas/baja/demo ya no llegan acá)."""
+    api = salida_dir / "api"
+    destino = api / "radios"
+    if destino.exists():
+        shutil.rmtree(destino)  # una radio dada de baja no deja su JSON viejo publicado
+    lista = [modulo_radios.datos_api(r) for r in radios]
+    _escribir(api / "radios.json", json.dumps(lista, ensure_ascii=False))
+    for etiqueta, slug in modulo_radios.ZONAS:
+        _escribir(destino / "zona" / f"{slug}.json",
+                  json.dumps([d for d in lista if d["zona"] == etiqueta], ensure_ascii=False))
+    for d in lista:
+        _escribir(destino / f"{d['id']}.json", json.dumps(d, ensure_ascii=False))
+        _escribir(destino / d["id"] / "status.json", json.dumps({
+            "id": d["id"], "estado_transmision": d["estado_transmision"],
+            "ultima_verificacion": d["ultima_verificacion"],
+        }, ensure_ascii=False))
+
+
+def _cargar_radios_seguro(ahora: datetime) -> List[dict]:
+    """Radios activas con su estado verificado. Un problema con radios
+    nunca impide generar el resto del sitio."""
+    try:
+        return modulo_radios.actualizar_estados(modulo_radios.cargar_radios(), ahora=ahora)
+    except Exception:
+        logger.exception("No se pudieron cargar las radios; la sección queda vacía")
+        return []
+
+
 def _escribir_api_json(
     salida_dir: Path, noticias: List[dict], base_url: str, portada: Optional[dict] = None,
     comercios: Optional[List[dict]] = None, videos: Optional[List[dict]] = None, clima_dolar: Optional[dict] = None,
@@ -732,6 +769,7 @@ def generar_sitio(
     comercios = cargar_comercios()
     _copiar_imagenes_guia(salida_dir, comercios)
     videos = cargar_videos()
+    radios = _cargar_radios_seguro(ahora)
     clima_dolar, fecha_informe = _clima_dolar_vigente(ahora)
     url_informe = next(
         (n["url_relativa"] for n in noticias if n["es_informe"] and fecha_informe and n["url_relativa"]
@@ -752,6 +790,9 @@ def generar_sitio(
     extras_nav = []
     if videos:
         extras_nav.append(("videos", "Videos", "videos/"))
+    if radios:
+        extras_nav.append(("radios", "Radios en vivo", "radios/"))
+    extras_nav.append(("multimedia", "Multimedia", "multimedia/"))
     if comercios:
         extras_nav.append(("guia-comercial", "Guía Comercial", "guia-comercial/"))
     kw_nav = {"nav": nav, "extras_nav": extras_nav}
@@ -826,6 +867,19 @@ def generar_sitio(
     if videos:
         urls_sitemap.append(base_url + "videos/")
 
+    # Multimedia y Radios en vivo (Etapa 2).
+    _escribir(
+        salida_dir / "multimedia" / "index.html",
+        plantillas.pagina_multimedia(hay_videos=bool(videos), cantidad_radios=len(radios), ruta_raiz="../",
+                                     config_sitio=config_sitio, url_base=base_url + "multimedia/", **kw_nav),
+    )
+    _escribir(
+        salida_dir / "radios" / "index.html",
+        plantillas.pagina_radios(radios=radios, ruta_raiz="../", config_sitio=config_sitio,
+                                 url_base=base_url + "radios/", **kw_nav),
+    )
+    urls_sitemap += [base_url + "multimedia/", base_url + "radios/"]
+
     _escribir(
         salida_dir / "buscar" / "index.html",
         plantillas.pagina_buscar(ruta_raiz="../", config_sitio=config_sitio, url_base=base_url + "buscar/", **kw_nav),
@@ -842,6 +896,7 @@ def generar_sitio(
     urls_sitemap.append(base_url + "contacto/")
 
     _escribir_api_json(salida_dir, noticias, base_url, portada, comercios, videos, clima_dolar)
+    _escribir_api_radios(salida_dir, radios)
 
     _escribir(salida_dir / "sitemap.xml", _sitemap_xml(urls_sitemap))
     _escribir(salida_dir / "robots.txt", f"User-agent: *\nAllow: /\nSitemap: {base_url}sitemap.xml\n")

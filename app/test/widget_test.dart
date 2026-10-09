@@ -24,7 +24,7 @@ void main() {
     final etiquetas = accesosInicio.map((a) => a.$2).toList();
     expect(etiquetas, [
       'Últimas', 'Libertador', 'Departamento Ledesma', 'Jujuy', 'Policiales', 'Salud', 'Deportes', 'Servicios',
-      'Videos', 'Guía Comercial', 'Multimedia',
+      'Videos', 'Radios en vivo', 'Guía Comercial', 'Multimedia',
     ]);
   });
 

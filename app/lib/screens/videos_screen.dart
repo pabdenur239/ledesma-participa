@@ -6,6 +6,7 @@ import '../models/noticia.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 import 'categoria_screen.dart';
+import 'radios_screen.dart';
 
 /// Abre la página del video en ledesmaparticipa.com.ar, que embebe el
 /// reproductor oficial de YouTube, dentro de la app (navegador integrado).
@@ -124,6 +125,25 @@ class MultimediaScreen extends StatelessWidget {
             subtitle: const Text('Videos de YouTube con su reproductor oficial'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VideosScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.radio, color: MarcaColores.marcaOro),
+            title: const Text('Radios en vivo'),
+            subtitle: const Text('Libertador, Departamento Ledesma, Jujuy y Argentina'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RadiosScreen())),
+          ),
+          const ListTile(
+            enabled: false,
+            leading: Icon(Icons.mic_none),
+            title: Text('Entrevistas'),
+            subtitle: Text('Próximamente'),
+          ),
+          const ListTile(
+            enabled: false,
+            leading: Icon(Icons.podcasts),
+            title: Text('Podcast'),
+            subtitle: Text('Próximamente'),
           ),
         ],
       ),

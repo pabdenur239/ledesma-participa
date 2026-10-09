@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/noticia.dart';
+import '../models/radio.dart';
 import 'cache_service.dart';
 
 /// Cliente de la API pública de solo lectura de Ledesma Participa.
@@ -71,6 +72,14 @@ class ApiService {
   Future<List<Video>> obtenerVideos() async {
     final datos = jsonDecode(await _obtener('videos.json', claveCache: 'videos')) as List;
     return datos.map((e) => Video.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// Radios en vivo (Etapa 2). Sin zona: todas las activas
+  /// (api/radios.json); con zona: api/radios/zona/<slug>.json.
+  Future<List<Emisora>> obtenerRadios({String? zona}) async {
+    final ruta = zona == null ? 'radios.json' : 'radios/zona/$zona.json';
+    final datos = jsonDecode(await _obtener(ruta, claveCache: zona == null ? 'radios' : 'radios_$zona')) as List;
+    return datos.map((e) => Emisora.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<Noticia> obtenerDetalle(int id) async {

@@ -1,12 +1,13 @@
 import hashlib
 import io
 import logging
+import re
 import textwrap
 from pathlib import Path
 from typing import List, Optional
 from xml.sax.saxutils import escape as _escapar_xml
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 logger = logging.getLogger("motor_noticias.meta.imagen")
 
@@ -57,7 +58,13 @@ DIRECTORIO_PLACAS_DEFAULT = Path(__file__).resolve().parent.parent.parent / "dat
 # para Instagram (evita recortes automáticos distintos por plataforma).
 ANCHO_PLACA = 1080
 ALTO_PLACA = 1080
-MARGEN_X = 80
+# SAFE AREA (2/10/2026): la grilla del perfil de Instagram muestra cada post
+# recortado a 3:4 vertical — de un cuadrado de 1080 solo se ven los 810 px
+# centrales (x de 135 a 945). Con el margen anterior (80 px) se cortaban el
+# titular y hasta "LEDESMA PARTICIPA" en la miniatura. Todo texto crítico
+# (marca, titular, "URGENTE") queda dentro de la zona segura central.
+MARGEN_RECORTE_GRILLA = (ANCHO_PLACA - ANCHO_PLACA * 3 // 4) // 2  # 135 px por lado
+MARGEN_X = MARGEN_RECORTE_GRILLA + 35
 ALTO_BANDA_SUPERIOR = 160
 ALTO_BANDA_FOOTER = 140
 
@@ -185,23 +192,27 @@ def generar_svg_placa(titulo: str, resumen: str, fuente: str = "", localidad: st
 """
 
 
+def _texto_centrado(dibujo, texto: str, fuente, y: int, color, ancho_lienzo: int = ANCHO_PLACA) -> None:
+    ancho = dibujo.textlength(texto, font=fuente)
+    dibujo.text(((ancho_lienzo - ancho) / 2, y), texto, font=fuente, fill=color)
+
+
 def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", localidad: str = "") -> bytes:
-    """Dibuja la placa directamente como PNG (1200x1200) con Pillow: mismo
-    branding, título, bajada, fuente y localidad que la versión SVG, listo
-    para una futura subida por la Graph API (que no acepta SVG)."""
+    """Placa 1080x1080 con la identidad negro/dorado de siempre. Todo el
+    texto crítico (marca, titular, bajada, fuente) va dentro de la zona
+    segura central que Instagram conserva en la miniatura de la grilla."""
     imagen = Image.new("RGB", (ANCHO_PLACA, ALTO_PLACA), COLOR_FONDO)
     dibujo = ImageDraw.Draw(imagen)
     ancho_maximo_px = ANCHO_PLACA - 2 * MARGEN_X
 
     dibujo.rectangle([(0, 0), (ANCHO_PLACA, ALTO_BANDA_SUPERIOR)], fill=COLOR_MARCA)
-    fuente_marca = _cargar_fuente(44)
-    dibujo.text((MARGEN_X, 55), "LEDESMA PARTICIPA", font=fuente_marca, fill=COLOR_MARCA_TEXTO)
+    _texto_centrado(dibujo, "LEDESMA PARTICIPA", _cargar_fuente(46), 55, COLOR_MARCA_TEXTO)
 
     fuente_titulo = _cargar_fuente(52)
     lineas_titulo = _envolver_texto_pixeles(
-        dibujo, titulo, fuente_titulo, ancho_maximo_px, MAXIMO_LINEAS_TITULO
+        dibujo, titulo, fuente_titulo, ancho_maximo_px, MAXIMO_LINEAS_TITULO + 1
     )
-    y = 380
+    y = 300
     for linea in lineas_titulo:
         dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_TITULO)
         y += 64
@@ -212,6 +223,8 @@ def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", locali
     )
     y += 30
     for linea in lineas_resumen:
+        if y > ALTO_PLACA - ALTO_BANDA_FOOTER - 50:
+            break
         dibujo.text((MARGEN_X, y), linea, font=fuente_resumen, fill=COLOR_RESUMEN)
         y += 42
 
@@ -219,16 +232,12 @@ def generar_imagen_placa_png(titulo: str, resumen: str, fuente: str = "", locali
     dibujo.rectangle([(0, y_footer), (ANCHO_PLACA, ALTO_PLACA)], fill=COLOR_FOOTER_FONDO)
     fuente_footer = _cargar_fuente(26)
     if fuente:
-        dibujo.text(
-            (MARGEN_X, y_footer + 35), f"Fuente: {fuente}", font=fuente_footer, fill=COLOR_FOOTER_TEXTO
-        )
+        texto_fuente = f"Fuente: {fuente}"
+        while dibujo.textlength(texto_fuente, font=fuente_footer) > ancho_maximo_px and len(texto_fuente) > 12:
+            texto_fuente = texto_fuente[:-2].rstrip() + "…"
+        _texto_centrado(dibujo, texto_fuente, fuente_footer, y_footer + 35, COLOR_FOOTER_TEXTO)
     if localidad:
-        dibujo.text(
-            (MARGEN_X, y_footer + 80),
-            f"Localidad: {localidad}",
-            font=fuente_footer,
-            fill=COLOR_FOOTER_TEXTO,
-        )
+        _texto_centrado(dibujo, f"Localidad: {localidad}", fuente_footer, y_footer + 80, COLOR_FOOTER_TEXTO)
 
     buffer = io.BytesIO()
     imagen.save(buffer, format="PNG")
@@ -334,3 +343,204 @@ def generar_story(
         ruta.write_bytes(datos_png)
 
     return ruta
+
+
+# --- Identidad visual URGENTE (agregada 2/10/2026) -----------------------
+# LEDESMA PARTICIPA + ROJO = INFORMACIÓN URGENTE. El rojo queda reservado
+# EXCLUSIVAMENTE a las publicaciones del circuito urgente (clave
+# "urgente-<id>" en `meta/publicador.py`): ni las placas normales ni las
+# noticias simplemente "importantes" lo usan, para no desgastar la señal.
+COLOR_URGENTE = "#d00000"
+COLOR_URGENTE_OSCURO = "#7a0000"
+COLOR_URGENTE_TEXTO = "#ffffff"
+ALTO_BANDA_URGENTE = 250
+ALTO_BANDA_TITULO_URGENTE = 330
+MAXIMO_LINEAS_TITULO_URGENTE = 5
+TIMEOUT_DESCARGA_IMAGEN = 15
+MAX_BYTES_IMAGEN = 15 * 1024 * 1024
+
+
+def _encabezado_urgente(dibujo: ImageDraw.ImageDraw) -> None:
+    """Banda roja superior: "URGENTE" grande + identificación de la marca,
+    centrados dentro de la zona segura de la grilla de Instagram."""
+    dibujo.rectangle([(0, 0), (ANCHO_PLACA, ALTO_BANDA_URGENTE)], fill=COLOR_URGENTE)
+    _texto_centrado(dibujo, "LEDESMA PARTICIPA", _cargar_fuente(40), 40, COLOR_URGENTE_TEXTO)
+    _texto_centrado(dibujo, "URGENTE", _cargar_fuente(130), 95, COLOR_URGENTE_TEXTO)
+
+
+def _recortar_cuadrado(imagen: Image.Image) -> Image.Image:
+    """Escala y recorta al centro a 1080x1080 (sin deformar la foto)."""
+    imagen = imagen.convert("RGB")
+    escala = max(ANCHO_PLACA / imagen.width, ALTO_PLACA / imagen.height)
+    nueva = imagen.resize((max(1, round(imagen.width * escala)), max(1, round(imagen.height * escala))))
+    x = (nueva.width - ANCHO_PLACA) // 2
+    y = (nueva.height - ALTO_PLACA) // 2
+    return nueva.crop((x, y, x + ANCHO_PLACA, y + ALTO_PLACA))
+
+
+def generar_imagen_urgente_sin_foto_png(titulo: str, fuente: str = "") -> bytes:
+    """Placa URGENTE para una noticia sin imagen: fondo rojo dominante,
+    "URGENTE" grande, titular debajo en blanco (alto contraste) y la marca
+    Ledesma Participa claramente presente arriba y en el pie."""
+    imagen = Image.new("RGB", (ANCHO_PLACA, ALTO_PLACA), COLOR_URGENTE)
+    dibujo = ImageDraw.Draw(imagen)
+    _encabezado_urgente(dibujo)
+    dibujo.rectangle([(MARGEN_X, ALTO_BANDA_URGENTE + 10), (ANCHO_PLACA - MARGEN_X, ALTO_BANDA_URGENTE + 18)],
+                     fill=COLOR_URGENTE_TEXTO)
+
+    fuente_titulo = _cargar_fuente(64)
+    lineas = _envolver_texto_pixeles(
+        dibujo, titulo, fuente_titulo, ANCHO_PLACA - 2 * MARGEN_X, MAXIMO_LINEAS_TITULO_URGENTE
+    )
+    y = ALTO_BANDA_URGENTE + 80
+    for linea in lineas:
+        dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_URGENTE_TEXTO)
+        y += 80
+
+    y_footer = ALTO_PLACA - ALTO_BANDA_FOOTER
+    dibujo.rectangle([(0, y_footer), (ANCHO_PLACA, ALTO_PLACA)], fill=COLOR_URGENTE_OSCURO)
+    fuente_footer = _cargar_fuente(30)
+    _texto_centrado(dibujo, "LEDESMA PARTICIPA · Información urgente", fuente_footer, y_footer + 30, COLOR_URGENTE_TEXTO)
+    if fuente:
+        _texto_centrado(dibujo, f"Fuente: {fuente}", _cargar_fuente(26), y_footer + 78, COLOR_URGENTE_TEXTO)
+
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def generar_imagen_urgente_con_foto_png(foto: bytes, titulo: str) -> bytes:
+    """Conserva la foto válida de la noticia (recortada a 1080x1080) y le
+    agrega la banda roja "URGENTE" arriba y el titular legible sobre una
+    franja inferior oscura con filete rojo. Lanza `OSError`/`ValueError`
+    si los bytes no son una imagen válida."""
+    imagen = _recortar_cuadrado(Image.open(io.BytesIO(foto)))
+    dibujo = ImageDraw.Draw(imagen)
+    _encabezado_urgente(dibujo)
+
+    y_titulo = ALTO_PLACA - ALTO_BANDA_TITULO_URGENTE
+    capa = Image.new("RGBA", (ANCHO_PLACA, ALTO_BANDA_TITULO_URGENTE), (0, 0, 0, 200))
+    imagen.paste(capa, (0, y_titulo), capa)
+    dibujo = ImageDraw.Draw(imagen)
+    dibujo.rectangle([(0, y_titulo), (ANCHO_PLACA, y_titulo + 12)], fill=COLOR_URGENTE)
+    fuente_titulo = _cargar_fuente(52)
+    lineas = _envolver_texto_pixeles(dibujo, titulo, fuente_titulo, ANCHO_PLACA - 2 * MARGEN_X, 4)
+    y = y_titulo + 40
+    for linea in lineas:
+        dibujo.text((MARGEN_X, y), linea, font=fuente_titulo, fill=COLOR_URGENTE_TEXTO)
+        y += 64
+
+    buffer = io.BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _descargar_imagen(url: str) -> bytes:
+    import urllib.request
+
+    peticion = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (LedesmaParticipa)"})
+    with urllib.request.urlopen(peticion, timeout=TIMEOUT_DESCARGA_IMAGEN) as respuesta:
+        return respuesta.read(MAX_BYTES_IMAGEN)
+
+
+def generar_placa_urgente(
+    titulo: str,
+    fuente: Optional[str] = None,
+    imagen_original: Optional[str] = None,
+    directorio_salida: Optional[Path] = None,
+    descargar=_descargar_imagen,
+) -> Path:
+    """Genera (o reutiliza, mismo criterio determinístico que
+    `generar_placa`) la imagen URGENTE de una publicación. Si hay
+    `imagen_original` (URL remota o ruta local) válida, la conserva con la
+    banda roja; si no hay, o no se puede obtener/abrir, genera la placa roja
+    sin foto — una urgente nunca queda sin imagen por esto."""
+    directorio_salida = Path(directorio_salida or DIRECTORIO_PLACAS_DEFAULT)
+    directorio_salida.mkdir(parents=True, exist_ok=True)
+    identificador = _hash_contenido_placa(titulo, "", fuente or "", imagen_original or "")
+    ruta = directorio_salida / f"urgente_{identificador}.png"
+    if ruta.exists():
+        return ruta
+
+    datos_png = None
+    if imagen_original:
+        try:
+            if imagen_original.startswith(("http://", "https://")):
+                foto = descargar(imagen_original)
+            else:
+                foto = Path(imagen_original).read_bytes()
+            datos_png = generar_imagen_urgente_con_foto_png(foto, titulo)
+        except Exception as error:  # foto inválida o inaccesible: placa roja sin foto
+            logger.warning("No se pudo usar la imagen original para la urgente (%s): %s", imagen_original, error)
+    if datos_png is None:
+        datos_png = generar_imagen_urgente_sin_foto_png(titulo, fuente or "")
+    ruta.write_bytes(datos_png)
+    return ruta
+
+
+# --- Fotos externas listas para publicar (agregado 2/10/2026) -------------
+# Causa real de publicaciones que llegaron a Facebook pero no a Instagram:
+# las fotos de InfoYungas (wixstatic) vienen recortadas a 940x411 (2,29:1) y
+# Instagram rechaza relaciones de aspecto fuera de 4:5 a 1,91:1 ("The aspect
+# ratio is not supported"). Facebook las aceptaba y la publicación quedaba a
+# medias. Ahora cada foto externa se descarga, se valida (que realmente sea
+# una imagen) y se lleva a un formato que ambas redes aceptan; si algo
+# falla, se usa la placa propia (nunca una imagen rota).
+RELACION_MINIMA_IG = 4 / 5
+RELACION_MAXIMA_IG = 1.91
+LADO_MAXIMO_FOTO = 1440
+LADO_MINIMO_FOTO = 200
+
+_RE_WIX_ORIGINAL = re.compile(r"^(https?://static\.wixstatic\.com/media/[^/]+?~mv2\.(?:jpe?g|png|webp))", re.IGNORECASE)
+
+
+def normalizar_url_imagen(url: str) -> str:
+    """Las URLs de wixstatic traen una transformación (recorte 940x411,
+    formato AVIF/WebP); la imagen original completa está en el prefijo
+    ".../media/<id>~mv2.<ext>"."""
+    coincidencia = _RE_WIX_ORIGINAL.match(url or "")
+    return coincidencia.group(1) if coincidencia else url
+
+
+def _ajustar_relacion_aspecto(foto: Image.Image) -> Image.Image:
+    foto = foto.convert("RGB")
+    relacion = foto.width / foto.height
+    if RELACION_MINIMA_IG <= relacion <= RELACION_MAXIMA_IG:
+        escala = min(1.0, LADO_MAXIMO_FOTO / max(foto.width, foto.height))
+        if escala < 1.0:
+            foto = foto.resize((round(foto.width * escala), round(foto.height * escala)))
+        return foto
+    # Fuera de rango: la foto completa (sin recortar información) centrada
+    # sobre un lienzo cuadrado con la misma foto desenfocada de fondo.
+    fondo = _recortar_cuadrado(foto).filter(ImageFilter.GaussianBlur(28))
+    escala = min(ANCHO_PLACA / foto.width, ALTO_PLACA / foto.height)
+    ajustada = foto.resize((max(1, round(foto.width * escala)), max(1, round(foto.height * escala))))
+    fondo.paste(ajustada, ((ANCHO_PLACA - ajustada.width) // 2, (ALTO_PLACA - ajustada.height) // 2))
+    return fondo
+
+
+def preparar_foto_publicable(
+    url: str, directorio_salida: Optional[Path] = None, descargar=None
+) -> Optional[Path]:
+    """Descarga y deja lista una foto externa (JPEG, relación de aspecto
+    aceptada por Facebook e Instagram). Devuelve la ruta local, o None si la
+    URL no responde o no es una imagen válida (el llamador usa la placa)."""
+    descargar = descargar or _descargar_imagen
+    directorio_salida = Path(directorio_salida or DIRECTORIO_PLACAS_DEFAULT)
+    directorio_salida.mkdir(parents=True, exist_ok=True)
+    ruta = directorio_salida / f"foto_{hashlib.sha1(url.encode('utf-8')).hexdigest()[:16]}.jpg"
+    if ruta.exists():
+        return ruta
+    for candidata in dict.fromkeys((normalizar_url_imagen(url), url)):
+        try:
+            foto = Image.open(io.BytesIO(descargar(candidata)))
+            foto.load()
+        except Exception as error:
+            logger.warning("Imagen externa no utilizable (%s): %s", candidata, error)
+            continue
+        if min(foto.width, foto.height) < LADO_MINIMO_FOTO:
+            logger.warning("Imagen externa demasiado chica (%sx%s): %s", foto.width, foto.height, candidata)
+            continue
+        _ajustar_relacion_aspecto(foto).save(ruta, format="JPEG", quality=88)
+        return ruta
+    return None

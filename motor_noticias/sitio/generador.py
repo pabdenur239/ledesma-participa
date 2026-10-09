@@ -20,7 +20,12 @@ from ..db import Database
 from ..entretenimiento import es_entretenimiento_o_curiosidad
 from ..meta.imagen import COLOR_FONDO, COLOR_MARCA, COLOR_MARCA_TEXTO, COLOR_FOOTER_TEXTO
 from ..motor_editorial import ZONA_JUJUY
+from ..atribucion import atribucion, titulo_publico
+from ..categorias import ETIQUETAS_TEMATICAS, SECCION_TERRITORIAL, TEMATICAS, tematicas, territorio_vigente
+from ..fechas import fecha_legible, parsear_fecha
+from ..scoring_editorial import urgente_confirmado
 from . import plantillas
+from .imagenes_web import ValidadorImagenes
 
 RAIZ_PROYECTO = Path(__file__).resolve().parent.parent.parent
 CONFIG_SITIO_PATH_DEFAULT = RAIZ_PROYECTO / "config" / "sitio.json"
@@ -143,13 +148,35 @@ def _fecha_legible(dt: Optional[datetime]) -> str:
     return f"{local.day} de {MESES[local.month - 1]} de {local.year}, {local.hour:02d}:{local.minute:02d} hs"
 
 
-def seccion_de(noticia: dict, titulo: str, texto: str) -> tuple:
-    territorio = noticia.get("territorio")
-    if territorio in SECCION_POR_TERRITORIO:
-        return SECCION_POR_TERRITORIO[territorio]
+def seccion_de(noticia: dict, titulo: str, texto: str, territorio: Optional[str] = None) -> tuple:
+    territorio = territorio if territorio is not None else noticia.get("territorio")
+    if territorio in SECCION_TERRITORIAL:
+        return SECCION_TERRITORIAL[territorio]
     if es_entretenimiento_o_curiosidad(titulo, texto):
         return ("entretenimiento", "Entretenimiento")
     return ("otras", "Otras noticias")
+
+
+def _resolver_imagen_web(
+    noticia: dict, titulo: str, texto: str, salida_dir: Path, base_url: str, validador: Optional[ValidadorImagenes]
+) -> tuple:
+    """Imagen para la web con fallback: si la imagen externa no responde
+    (validada sin Referer, como la pide el navegador con
+    referrerpolicy=no-referrer), se usa la placa propia de la noticia."""
+    ruta = noticia.get("imagen_publicacion_ruta")
+    externa = bool(ruta) and (ruta.startswith("http://") or ruta.startswith("https://"))
+    if externa and validador is not None and not validador.es_valida(ruta):
+        ruta = None
+    if ruta and not externa and not Path(ruta).is_file():
+        ruta = None
+    if not ruta:
+        try:
+            from ..meta.imagen import generar_placa
+
+            ruta = str(generar_placa(titulo, texto, fuente=atribucion(noticia).fuente, localidad=None))
+        except Exception:  # sin Pillow/fuentes: sin imagen, nunca rota
+            return None, None
+    return _resolver_imagen(ruta, salida_dir, base_url)
 
 
 def _resolver_imagen(ruta_original: Optional[str], salida_dir: Path, base_url: str) -> tuple:
@@ -176,12 +203,40 @@ def _resolver_imagen(ruta_original: Optional[str], salida_dir: Path, base_url: s
     return relativa, base_url.rstrip("/") + "/" + relativa
 
 
-def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
+def _momento_publico(noticia: dict, publicada_en: Optional[str]) -> tuple:
+    """(momento, hora_conocida, momento_fuente, hora_fuente_conocida).
+    Se muestra la hora real de publicación en Ledesma Participa cuando
+    existe; si no, la de la fuente, y solo con hora si la hora es conocida
+    (nunca un "00:00" inventado)."""
+    fuente = parsear_fecha(noticia.get("fecha_fuente"))
+    publicada = parsear_fecha(publicada_en)
+    if publicada.momento is not None:
+        return publicada.momento, True, fuente.momento, fuente.hora_conocida
+    if fuente.momento is not None:
+        return fuente.momento, fuente.hora_conocida, fuente.momento, fuente.hora_conocida
+    ingreso = parsear_fecha(noticia.get("fecha_recoleccion"))
+    return ingreso.momento, ingreso.hora_conocida, None, False
+
+
+def _enriquecer(
+    noticia: dict,
+    salida_dir: Path,
+    base_url: str,
+    publicada_en: Optional[str] = None,
+    validador: Optional[ValidadorImagenes] = None,
+) -> dict:
     titulo, texto = _titulo_y_texto(noticia)
-    seccion_slug, seccion_etiqueta = seccion_de(noticia, titulo, texto)
+    titulo = titulo_publico(noticia, titulo)
+    territorio = territorio_vigente(noticia)
+    seccion_slug, seccion_etiqueta = seccion_de(noticia, titulo, texto, territorio)
+    temas = sorted(tematicas(noticia))
     slug = slugify(titulo)
-    imagen_web, imagen_og = _resolver_imagen(noticia.get("imagen_publicacion_ruta"), salida_dir, base_url)
-    fecha_dt = _fecha_dt(noticia)
+    imagen_web, imagen_og = _resolver_imagen_web(noticia, titulo, texto, salida_dir, base_url, validador)
+    fecha_dt, hora_conocida, fuente_dt, hora_fuente_conocida = _momento_publico(noticia, publicada_en)
+    autoria = atribucion(noticia)
+    fecha_fuente_legible = ""
+    if fuente_dt is not None and fecha_dt is not None and abs((fecha_dt - fuente_dt).total_seconds()) > 3600:
+        fecha_fuente_legible = fecha_legible(fuente_dt, hora_fuente_conocida)
 
     return {
         "id": noticia["id"],
@@ -192,14 +247,17 @@ def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
         "seccion_etiqueta": seccion_etiqueta,
         "slug": slug,
         "url_relativa": f"noticias/{noticia['id']}-{slug}/",
-        "fecha_legible": _fecha_legible(fecha_dt),
+        "fecha_legible": fecha_legible(fecha_dt, hora_conocida),
         "fecha_orden": _fecha_orden(fecha_dt),
+        "fecha_fuente_legible": fecha_fuente_legible,
         # Toda noticia debe mostrar su fuente (requisito Google Play "News
         # and Magazines"). Los collectors siempre guardan `nombre_fuente`;
         # el único caso sin fuente externa es contenido producido por el
         # propio medio, que se rotula como tal.
-        "nombre_fuente": (noticia.get("nombre_fuente") or "").strip() or "Ledesma Participa",
-        "url_fuente": (noticia.get("url_fuente") or "").strip(),
+        # Fuente real (nunca "Ledesma Participa (contenido propio)" para una
+        # nota que viene de un medio, ver motor_noticias.atribucion).
+        "nombre_fuente": autoria.etiqueta,
+        "url_fuente": autoria.url or "",
         "imagen_web": imagen_web,
         "imagen_og": imagen_og,
         # Campos adicionales, sin uso en el HTML (que sigue leyendo solo las
@@ -209,21 +267,31 @@ def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
         # ordenar por prioridad editorial y armar categorías, cosa que el
         # sitio HTML no necesita exponer aparte porque ya vienen resueltos
         # en seccion_slug/seccion_etiqueta.
-        "territorio": noticia.get("territorio"),
-        "urgente": bool(noticia.get("urgente")),
+        "territorio": territorio,
+        "tematicas": temas,
+        # Misma clasificación única que el circuito urgente (scoring
+        # editorial): el flag histórico solo no alcanza.
+        "urgente": urgente_confirmado(noticia),
         "categoria_tematica": noticia.get("categoria_tematica"),
         "localidad": noticia.get("localidad"),
     }
 
 
-def _preparar_noticias(db: Database, salida_dir: Path, base_url: str) -> List[dict]:
+def _preparar_noticias(
+    db: Database, salida_dir: Path, base_url: str, validador: Optional[ValidadorImagenes] = None
+) -> List[dict]:
     crudas = db.listar_publicadas()
-    enriquecidas = [_enriquecer(n, salida_dir, base_url) for n in crudas]
+    publicadas_en = db.fechas_publicacion()
+    enriquecidas = [
+        _enriquecer(n, salida_dir, base_url, publicadas_en.get(n["id"]), validador) for n in crudas
+    ]
     enriquecidas.sort(key=lambda n: (n["fecha_orden"], n["id"]), reverse=True)
     return enriquecidas
 
 
-PRIORIDAD_SECCION = {"libertador": 0, "ledesma": 1, "jujuy": 2, "nacionales": 3, "entretenimiento": 4, "otras": 5}
+PRIORIDAD_SECCION = {
+    "libertador": 0, "ledesma": 1, "jujuy": 2, "nacionales": 3, "internacionales": 4, "entretenimiento": 5, "otras": 6,
+}
 
 
 def _elegir_destacadas(noticias: List[dict], cantidad: int = 3) -> List[dict]:
@@ -309,16 +377,24 @@ def _construir_indice_busqueda(noticias: List[dict]) -> list:
 # clasificación real en la base: quedan como categorías vacías a propósito
 # (mejor una lista vacía que inventar un clasificador paralelo fuera del
 # Motor Editorial).
+#
+# Actualizado 2/10/2026: taxonomía única web/app (motor_noticias.categorias).
+# Territorio y temática son dimensiones separadas: una nota deportiva de
+# Libertador está en "locales" Y en "deportes". El territorio es el vigente
+# (recalculado), no el guardado por versiones anteriores.
 CATEGORIAS_API = (
     ("locales", "Locales", lambda n: n["territorio"] in ("local", "departamental")),
     ("provinciales", "Provinciales", lambda n: n["territorio"] == "provincial"),
     ("nacionales", "Nacionales", lambda n: n["territorio"] == "nacional"),
-    ("internacionales", "Internacionales", lambda n: n["categoria_tematica"] == "internacional"),
-    ("policiales", "Policiales", lambda n: False),
-    ("espectaculos", "Espectáculos", lambda n: n["categoria_tematica"] == "espectaculos"),
-    ("salud", "Salud", lambda n: n["categoria_tematica"] == "salud"),
-    ("gastronomia", "Gastronomía", lambda n: n["categoria_tematica"] == "gastronomia"),
-    ("deportes", "Deportes", lambda n: False),
+    (
+        "internacionales", "Internacionales",
+        lambda n: n["territorio"] == "internacional" or n["categoria_tematica"] == "internacional",
+    ),
+    ("policiales", "Policiales", lambda n: "policiales" in n["tematicas"]),
+    ("espectaculos", "Espectáculos", lambda n: "espectaculos" in n["tematicas"]),
+    ("salud", "Salud", lambda n: "salud" in n["tematicas"]),
+    ("gastronomia", "Gastronomía", lambda n: "gastronomia" in n["tematicas"]),
+    ("deportes", "Deportes", lambda n: "deportes" in n["tematicas"]),
 )
 MAXIMO_FEED_API = 100
 MAXIMO_URGENTES_API = 20
@@ -364,6 +440,8 @@ def _datos_api_resumen(n: dict, base_url: str) -> dict:
         "categoria_slug": n["seccion_slug"],
         "categoria_etiqueta": n["seccion_etiqueta"],
         "localidad": n["localidad"],
+        "territorio": n["territorio"],
+        "tematicas": n["tematicas"],
         "urgente": n["urgente"],
         "url": base_url + n["url_relativa"],
         # Fuente visible también en las tarjetas de lista, no solo en el
@@ -437,10 +515,12 @@ def generar_sitio(
     base_url = (base_url or config_sitio.get("base_url_produccion") or "").rstrip("/") + "/"
 
     db = Database(db_path)
+    validador = ValidadorImagenes()
     try:
-        noticias = _preparar_noticias(db, salida_dir, base_url)
+        noticias = _preparar_noticias(db, salida_dir, base_url, validador)
     finally:
         db.close()
+        validador.guardar()
 
     _copiar_assets_estaticos(salida_dir)
     imagen_og_default_rel = _generar_imagen_og_default(salida_dir)
@@ -466,13 +546,28 @@ def generar_sitio(
     por_seccion: dict = {}
     for n in noticias:
         por_seccion.setdefault(n["seccion_slug"], []).append(n)
+        # Páginas temáticas (misma taxonomía que la app): una nota aparece en
+        # su sección territorial y en cada temática que le corresponda.
+        for tema in n["tematicas"]:
+            por_seccion.setdefault(tema, []).append(n)
+    # Compatibilidad: /categoria/entretenimiento/ (URL ya publicada) muestra
+    # lo mismo que Espectáculos más el entretenimiento sin clasificar.
+    vistos = {n["id"] for n in por_seccion.get("entretenimiento", [])}
+    por_seccion.setdefault("entretenimiento", []).extend(
+        n for n in por_seccion.get("espectaculos", []) if n["id"] not in vistos
+    )
+    por_seccion["entretenimiento"].sort(key=lambda n: (n["fecha_orden"], n["id"]), reverse=True)
 
     slugs_a_generar = list(SECCIONES_NAV_SLUGS)
     if por_seccion.get("otras"):
         slugs_a_generar.append("otras")
 
     etiquetas = dict(plantillas.SECCIONES_NAV)
+    etiquetas.update(ETIQUETAS_TEMATICAS)
+    etiquetas["entretenimiento"] = "Entretenimiento"
     etiquetas["otras"] = "Otras noticias"
+    if "entretenimiento" not in slugs_a_generar:
+        slugs_a_generar.append("entretenimiento")
 
     for slug in slugs_a_generar:
         items = por_seccion.get(slug, [])[:MAXIMO_POR_CATEGORIA]
@@ -534,6 +629,6 @@ def generar_sitio(
 
     return {
         "noticias": len(noticias),
-        "secciones": {slug: len(items) for slug, items in por_seccion.items()},
+        "secciones": {slug: len(items) for slug, items in por_seccion.items() if items},
         "salida_dir": str(salida_dir),
     }

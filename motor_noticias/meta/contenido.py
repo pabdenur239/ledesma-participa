@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+from ..atribucion import etiqueta_fuente, titulo_publico
 from ..relevancia import cargar_config as cargar_config_localidades
 
 CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent.parent / "config" / "meta.json"
@@ -68,7 +69,7 @@ def _resena_breve(texto: str, longitud_maxima: int) -> str:
 def _titulo_y_texto_finales(noticia: dict):
     titulo = noticia.get("titulo_revisado") or noticia.get("titulo_preparado") or ""
     texto = noticia.get("texto_revisado") or noticia.get("texto_preparado") or ""
-    return titulo, texto
+    return titulo_publico(noticia, titulo), texto
 
 
 def generar_contenido_facebook(
@@ -104,7 +105,7 @@ def generar_contenido_facebook(
     hashtags = generar_hashtags(noticia.get("localidad"), config)
 
     partes_comentario = [texto]
-    fuente = (noticia.get("nombre_fuente") or "").strip()
+    fuente = etiqueta_fuente(noticia)
     if fuente:
         partes_comentario.append(f"Fuente: {fuente}")
     if menciones_activas:
@@ -132,7 +133,7 @@ def generar_caption_instagram(noticia: dict, config: Optional[dict] = None) -> s
     hashtags = generar_hashtags(noticia.get("localidad"), config)
 
     partes = [titulo, reseña]
-    fuente = (noticia.get("nombre_fuente") or "").strip()
+    fuente = etiqueta_fuente(noticia)
     if fuente:
         partes.append(f"Fuente: {fuente}")
     partes.append(" ".join(hashtags))

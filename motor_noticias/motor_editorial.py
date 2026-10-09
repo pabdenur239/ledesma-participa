@@ -8,6 +8,10 @@ from .db import Database
 from .dedupe import es_mismo_contenido, normalizar_url, palabras_clave, refieren_a_hecho_distinto
 from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Estado, OrigenIngreso, RevisionEstado
+from .calidad_editorial import evaluar_calidad
+from .eventos import relacion_editorial, ventana_desde
+from .fechas import momento_vigencia
+from .scoring_editorial import CLASIFICACION_URGENTE, cargar_config as _cargar_config_scoring, evaluar_noticia
 
 # Estados de la propia noticia que congelan su espacio en la agenda: una vez
 # que un humano decidió (aprobó/rechazó) o la noticia ya se publicó, el
@@ -43,10 +47,11 @@ HORA_RESUMEN_DEL_DIA = "22:30"
 # importa este módulo, así que la hora no se importa acá para no crear un
 # ciclo): debe coincidir exactamente con `institucional.HORA_INSTITUCIONAL`.
 HORA_INSTITUCIONAL_RESERVADA = "20:30"
-HORARIOS_DEFAULT = (
-    "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00",
-    "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
-)
+# Prueba editorial 30/9/2026 al 6/10/2026: el feed normal baja a 6
+# publicaciones diarias (informe 07:30 + estas 4 franjas de cascada +
+# institucional 20:30). Urgentes locales, alertas y Stories no cuentan en
+# ese límite (circuito propio, `publicar_urgentes_meta.py`).
+HORARIOS_DEFAULT = ("09:00", "12:00", "16:00", "19:00")
 ANTIGUEDAD_MAXIMA_HORAS = 48
 # Línea editorial (prioridad acumulativa, no cuota rígida diaria): Libertador
 # General San Martín primero, Departamento Ledesma segundo, la provincia de
@@ -87,6 +92,18 @@ def _proporcion_minima_contenido_propio(path: Optional[Path] = None) -> float:
         return valor if 0.0 <= valor <= 1.0 else PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT
+
+
+def _solo_territorios_prioritarios(path: Optional[Path] = None) -> bool:
+    """Lee `config/agenda.json` → "solo_territorios_prioritarios" (default
+    False). Si es True, la cascada se corta en provincial: sin nacional,
+    temáticas ni entretenimiento de relleno (una franja puede quedar vacía).
+    Activado para la prueba editorial 30/9/2026 al 6/10/2026."""
+    try:
+        with open(path or CONFIG_AGENDA_PATH, encoding="utf-8") as f:
+            return bool(json.load(f).get("solo_territorios_prioritarios", False))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
 
 
 def _es_mismo_hecho(titulo_a: str, titulo_b: str) -> bool:
@@ -131,6 +148,11 @@ def _mezcla_propio_para_franja(
         return None
     if candidato_externo.get("territorio") in TERRITORIOS_PROTEGIDOS_MEZCLA:
         return None
+    # Scoring editorial único: una externa "importante" (o más) ganó su
+    # franja por relevancia real; la mezcla no la reemplaza por una nota
+    # propia de menor relevancia.
+    if evaluar_noticia(candidato_externo)["base"] >= _cargar_config_scoring()["umbrales"]["importante"]:
+        return None
     propio = db.candidato_contenido_propio(excluidos_ids, fecha_limite)
     if propio is None:
         return None
@@ -170,56 +192,136 @@ def _es_franja_pasada(fecha: str, hora: str, ahora: datetime) -> bool:
 CATEGORIAS_TEMATICAS_DIVERSIFICACION = ("internacional", "salud", "gastronomia", "espectaculos")
 
 
-def _buscar_candidato_tematico(
-    db: Database, usados: set, fecha_limite: str, conteo_categorias: dict
-) -> Optional[dict]:
-    """Entre las categorías temáticas disponibles, prueba primero la que
-    menos se usó en lo que va de esta corrida (evita monotonía sin imponer
-    una cuota rígida por franja: "no forzar porcentajes rígidos"). Devuelve
-    el candidato encontrado y dejar que el llamador registre en
-    `conteo_categorias` cuál categoría ganó."""
-    orden = sorted(CATEGORIAS_TEMATICAS_DIVERSIFICACION, key=lambda c: conteo_categorias.get(c, 0))
-    for categoria in orden:
-        candidato = db.candidato_tematico(categoria, usados, fecha_limite)
-        if candidato:
-            return candidato
+# Rango de desempate entre candidatas con el mismo puntaje total: mantiene
+# la prioridad editorial histórica (local > departamental > provincial >
+# nacional > temática > entretenimiento sin clasificar) solo como
+# desempate, nunca como prioridad absoluta.
+_RANGO_DESEMPATE = {"local": 0, "departamental": 1, "provincial": 2, "nacional": 3}
+_RANGO_TEMATICA = 4
+_RANGO_SIN_CLASIFICAR = 5
+
+
+def _rango_candidata(noticia: dict, solo_prioritarios: bool, base: int) -> Optional[int]:
+    """Rango de desempate si la noticia puede competir por una franja, o
+    `None` si no puede. Mismo universo de candidatas que la cascada
+    anterior (territorios de ORDEN_CASCADA, categorías temáticas dedicadas
+    y entretenimiento verificable sin clasificar), con dos reglas nuevas:
+
+    - "internacional" solo compite si es excepcionalmente relevante
+      (puntaje base >= umbral "importante").
+    - Con `solo_territorios_prioritarios` (prueba editorial 30/9–6/10/2026:
+      sin relleno nacional/temático/entretenimiento), nacional/temáticas
+      solo compiten si son importantes de verdad (base >= umbral
+      "importante"): una nacional trascendente igual puede ganarle a una
+      local menor, pero nunca entra una nacional común de relleno."""
+    importante = base >= _cargar_config_scoring()["umbrales"]["importante"]
+    territorio = noticia.get("territorio")
+    if territorio in ("local", "departamental", "provincial"):
+        return _RANGO_DESEMPATE[territorio]
+    if territorio == "nacional":
+        return _RANGO_DESEMPATE[territorio] if (importante or not solo_prioritarios) else None
+    if territorio == "internacional" and not es_entretenimiento_o_curiosidad(
+        noticia.get("titulo_original") or "", noticia.get("texto_original") or ""
+    ):
+        # Internacional (nivel territorial desde 2/10/2026): solo compite si
+        # es excepcionalmente relevante, igual que la categoría temática.
+        return _RANGO_TEMATICA if importante else None
+    if noticia.get("categoria_tematica") in CATEGORIAS_TEMATICAS_DIVERSIFICACION:
+        if noticia.get("categoria_tematica") == "internacional" and not importante:
+            return None
+        return _RANGO_TEMATICA if (importante or not solo_prioritarios) else None
+    if territorio in ("sin_clasificar", "internacional") and not solo_prioritarios and es_entretenimiento_o_curiosidad(
+        noticia.get("titulo_original") or "", noticia.get("texto_original") or ""
+    ):
+        return _RANGO_SIN_CLASIFICAR
     return None
+
+
+# El informe diario de clima/dólar tiene su propia franja fija (07:30, ver
+# `reservar_franja_informe_diario`): nunca compite en la cascada ni en el
+# circuito urgente (antes salía por el circuito urgente solo porque toda
+# noticia local se marcaba urgente).
+PREFIJO_URL_INFORME_DIARIO = "https://ledesma-participa.local/informe-diario/"
+
+
+def es_informe_diario(noticia: dict) -> bool:
+    return (noticia.get("url_normalizada") or "").startswith(PREFIJO_URL_INFORME_DIARIO)
+
+
+def _apta_para_circuito_automatico(
+    db: Database, noticia: dict, comprometidas: Optional[list], cache_eventos: Optional[dict], ahora_utc: datetime
+) -> bool:
+    """Filtros comunes a franjas y urgentes, además del scoring:
+    - vigencia medida desde la publicación en la FUENTE (no solo el ingreso):
+      una nota vieja recolectada o reelaborada hoy no ocupa espacio;
+    - control de calidad (`calidad_editorial`): lo que debe retenerse no sale;
+    - deduplicación por acontecimiento (`eventos`): si ya se publicó o agendó
+      el mismo hecho, no vuelve a salir; si es una ACTUALIZACIÓN real, sale
+      marcada como tal (`actualizacion_de`)."""
+    if es_informe_diario(noticia):
+        return False
+    vigencia = momento_vigencia(noticia)
+    if vigencia is not None and vigencia < ahora_utc - timedelta(hours=ANTIGUEDAD_MAXIMA_HORAS):
+        return False
+    if evaluar_calidad(noticia).accion == "retener":
+        return False
+    if comprometidas is not None:
+        relacion = relacion_editorial(noticia, comprometidas, cache=cache_eventos)
+        if relacion is not None:
+            if not relacion.es_actualizacion:
+                return False
+            if noticia.get("actualizacion_de") != relacion.relacionada["id"]:
+                db.marcar_actualizacion(noticia["id"], relacion.relacionada["id"])
+                noticia["actualizacion_de"] = relacion.relacionada["id"]
+    return True
 
 
 def _buscar_candidato_cascada(
-    db: Database, usados: set, fecha_limite: str, conteo_categorias: Optional[dict] = None
+    db: Database,
+    usados: set,
+    fecha_limite: str,
+    conteo_categorias: Optional[dict] = None,
+    ahora: Optional[datetime] = None,
+    comprometidas: Optional[list] = None,
+    cache_eventos: Optional[dict] = None,
 ) -> Optional[dict]:
-    """Recorre la cascada territorial obligatoria (local → departamental →
-    provincial → nacional) y devuelve el primer candidato apto que
-    encuentre. Nunca elige un nivel inferior si existe uno superior apto.
-
-    Si ningún nivel territorial tiene candidato, antes de recurrir al
-    fallback genérico se prueba con las categorías temáticas dedicadas
-    (internacional/salud/gastronomía/espectáculos: fuentes propias, no
-    substrings de "sin_clasificar" cualquiera) para diversificar sin bajar
-    el criterio editorial. Recién si tampoco hay nada ahí, se prueba con la
-    mejor noticia `sin_clasificar` genérica, pero solo si es contenido de
-    entretenimiento/curiosidades/tendencia viral verificable (nunca una
-    noticia sin_clasificar cualquiera)."""
-    for territorio in ORDEN_CASCADA:
-        candidato = db.candidato_editorial(territorio, usados, fecha_limite)
-        if candidato:
-            return candidato
-
+    """Selección por scoring editorial único (2/10/2026, reemplaza a la
+    cascada territorial rígida): reúne TODAS las candidatas aptas (ya sin
+    duplicadas/usadas/rechazadas/riesgo/vencidas, ver
+    `Database.candidatos_editoriales`), calcula el puntaje de cada una
+    (`scoring_editorial.evaluar_noticia`: base 0–100 + bonus territorial) y
+    devuelve la de mayor puntaje total. Ser local suma (relevancia + bonus)
+    pero no garantiza ganar: una nacional o provincial trascendente supera a
+    una local menor. Desempates: rango territorial histórico, categoría
+    temática menos usada en esta corrida (diversificación), más reciente."""
     conteo_categorias = conteo_categorias if conteo_categorias is not None else {}
-    candidato_tematico = _buscar_candidato_tematico(db, usados, fecha_limite, conteo_categorias)
-    if candidato_tematico:
-        categoria = candidato_tematico.get("categoria_tematica")
-        if categoria:
-            conteo_categorias[categoria] = conteo_categorias.get(categoria, 0) + 1
-        return candidato_tematico
-
-    candidato_sin_clasificar = db.candidato_editorial("sin_clasificar", usados, fecha_limite)
-    if candidato_sin_clasificar and es_entretenimiento_o_curiosidad(
-        candidato_sin_clasificar["titulo_original"], candidato_sin_clasificar["texto_original"]
-    ):
-        return candidato_sin_clasificar
-    return None
+    solo_prioritarios = _solo_territorios_prioritarios()
+    ahora_utc = (ahora or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    minimo = _cargar_config_scoring()["umbrales"].get("minimo_franja", 0)
+    ordenadas = []
+    for noticia in db.candidatos_editoriales(usados, fecha_limite):
+        evaluacion = evaluar_noticia(noticia, ahora)
+        rango = _rango_candidata(noticia, solo_prioritarios, evaluacion["base"])
+        if rango is None or evaluacion["base"] < minimo:
+            # Mejor una franja vacía que contenido sin valor informativo.
+            continue
+        clave = (
+            -evaluacion["total"],
+            rango,
+            conteo_categorias.get(noticia.get("categoria_tematica"), 0) if rango == _RANGO_TEMATICA else 0,
+            "".join(chr(0x10FFFF - ord(c)) for c in (noticia.get("fecha_recoleccion") or "")),
+        )
+        ordenadas.append((clave, noticia))
+    ordenadas.sort(key=lambda par: par[0])
+    mejor = None
+    for clave, noticia in ordenadas:
+        if _apta_para_circuito_automatico(db, noticia, comprometidas, cache_eventos, ahora_utc):
+            mejor = noticia
+            if clave[1] == _RANGO_TEMATICA:
+                categoria = noticia.get("categoria_tematica")
+                conteo_categorias[categoria] = conteo_categorias.get(categoria, 0) + 1
+            break
+    return mejor
 
 
 def reservar_franja_informe_diario(
@@ -277,7 +379,15 @@ def reservar_franja_informe_diario(
     return EntradaAgenda(fecha, hora, "normal", None, None, "sin_candidato")
 
 
-def resolver_urgentes(db: Database, fecha: str, usados: set, fecha_limite: str) -> List[EntradaAgenda]:
+def resolver_urgentes(
+    db: Database,
+    fecha: str,
+    usados: set,
+    fecha_limite: str,
+    ahora: Optional[datetime] = None,
+    comprometidas: Optional[list] = None,
+    cache_eventos: Optional[dict] = None,
+) -> List[EntradaAgenda]:
     """Resuelve las propuestas urgentes (local/departamental) y las reserva
     de inmediato — modifica `usados` en el lugar (agrega los ids recién
     reservados) para que cualquier selección posterior en el mismo ciclo
@@ -293,10 +403,28 @@ def resolver_urgentes(db: Database, fecha: str, usados: set, fecha_limite: str) 
     una urgente ya reservada en una llamada anterior queda en `usados` y
     `candidatos_urgentes` no la vuelve a proponer."""
     entradas = []
+    ahora_utc = (ahora or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if comprometidas is None:
+        comprometidas = db.noticias_comprometidas_desde(ventana_desde(ahora_utc))
     for urgente in db.candidatos_urgentes(usados, fecha_limite):
+        # Una sola clasificación: el flag `urgente` solo vale si el scoring
+        # editorial la sigue clasificando URGENTE ahora, o si un humano la
+        # tildó a mano al cargarla desde el panel (`origen_ingreso` manual).
+        # Así una local menor marcada urgente por la regla anterior (toda
+        # local = urgente) no sale de inmediato: compite en franja.
+        if (
+            urgente.get("origen_ingreso") != OrigenIngreso.MANUAL.value
+            and evaluar_noticia(urgente, ahora)["clasificacion"] != CLASIFICACION_URGENTE
+        ):
+            continue
+        # Mismo acontecimiento ya publicado/agendado (otro medio, otra etapa
+        # sin novedad sustancial) → no sale otra vez de inmediato.
+        if not _apta_para_circuito_automatico(db, urgente, comprometidas, cache_eventos, ahora_utc):
+            continue
         creada_en = datetime.now(timezone.utc).isoformat()
         db.guardar_agenda_item(fecha, None, "urgente", urgente["territorio"], urgente["id"], creada_en)
         usados.add(urgente["id"])
+        comprometidas.append(urgente)
         entradas.append(EntradaAgenda(fecha, None, "urgente", urgente["territorio"], urgente["id"], "creado"))
     return entradas
 
@@ -337,7 +465,14 @@ def generar_agenda(
     # competir en la cascada: publicar la externa original y su reelaboración
     # sería el mismo hecho dos veces.
     usados |= db.ids_fuente_reelaborados()
-    entradas: List[EntradaAgenda] = list(resolver_urgentes(db, fecha, usados, fecha_limite))
+    # Noticias ya publicadas o agendadas en la ventana de eventos: ninguna
+    # franja ni urgente puede repetir su acontecimiento (deduplicación
+    # global por hecho, `motor_noticias.eventos`).
+    comprometidas = db.noticias_comprometidas_desde(ventana_desde(ahora_utc))
+    cache_eventos: dict = {}
+    entradas: List[EntradaAgenda] = list(
+        resolver_urgentes(db, fecha, usados, fecha_limite, ahora_utc, comprometidas, cache_eventos)
+    )
     # Cuenta, dentro de esta corrida, cuántas veces se usó cada categoría
     # temática de diversificación: alimenta `_buscar_candidato_tematico`
     # para preferir la menos usada (evitar monotonía sin cuota rígida).
@@ -455,8 +590,12 @@ def generar_agenda(
         # siendo el mejor, la búsqueda lo vuelve a encontrar y no cambia nada.
         id_existente_noticia = noticia_existente["id"] if noticia_existente else None
         usados_para_busqueda = usados - {id_existente_noticia} if id_existente_noticia else usados
+        # El ocupante actual de esta franja no cuenta como "comprometido"
+        # contra sí mismo ni contra sus competidores directos.
+        comprometidas_franja = [n for n in comprometidas if n.get("id") != id_existente_noticia]
         candidato = _buscar_candidato_cascada(
-            db, usados_para_busqueda, fecha_limite, conteo_categorias_tematicas
+            db, usados_para_busqueda, fecha_limite, conteo_categorias_tematicas, ahora_utc,
+            comprometidas_franja, cache_eventos,
         )
 
         # Regla de mezcla editorial (>=50% contenido propio en franjas
@@ -491,6 +630,8 @@ def generar_agenda(
         if candidato:
             usados.add(candidato["id"])
             _registrar_normal(candidato)
+            if all(n.get("id") != candidato["id"] for n in comprometidas):
+                comprometidas.append(candidato)
             if candidato["id"] == id_existente_noticia:
                 # mismo candidato de antes: nada que actualizar en la base.
                 entradas.append(

@@ -20,10 +20,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+from ..calidad_editorial import evaluar_calidad
+from ..fechas import momento_vigencia
 from ..motor_editorial import ANTIGUEDAD_MAXIMA_HORAS
 from ..models import Estado, RevisionEstado
 
-TERRITORIOS_VALIDOS = ("local", "departamental", "provincial", "nacional", "sin_clasificar")
+TERRITORIOS_VALIDOS = ("local", "departamental", "provincial", "nacional", "internacional", "sin_clasificar")
 
 
 @dataclass
@@ -73,5 +75,17 @@ def evaluar_elegibilidad_publicacion_automatica(
                 motivos.append("Contenido vencido (supera la antigüedad máxima permitida).")
         except ValueError:
             motivos.append("Fecha de recolección inválida: no se puede verificar vigencia.")
+
+    # Vigencia también por la fecha de la FUENTE (no solo de recolección):
+    # una nota de hace dos días recolectada o reelaborada hoy no es nueva.
+    vigencia = momento_vigencia(noticia)
+    if vigencia is not None and vigencia < ahora - timedelta(hours=ANTIGUEDAD_MAXIMA_HORAS):
+        motivo_vencida = "Contenido vencido (la fuente lo publicó hace más de la antigüedad máxima)."
+        if motivo_vencida not in motivos:
+            motivos.append(motivo_vencida)
+
+    calidad = evaluar_calidad(noticia)
+    if calidad.accion == "retener":
+        motivos.append("Control de calidad: " + "; ".join(calidad.problemas))
 
     return ResultadoElegibilidadAutomatica(elegible=not motivos, motivos_bloqueo=motivos)

@@ -18,8 +18,10 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 
 from ..db import Database
-from ..dedupe import es_mismo_contenido, palabras_clave, refieren_a_hecho_distinto
+from ..dedupe import es_mismo_contenido, normalizar_url, palabras_clave, refieren_a_hecho_distinto
+from ..eventos import buscar_relacion, ventana_desde
 from ..models import Estado, OrigenIngreso, RevisionEstado
+from ..motor_editorial import HORA_INFORME_DIARIO, ZONA_JUJUY
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
 from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
@@ -296,6 +298,28 @@ def _urgente_sin_trabajo_pendiente(db: Database, fecha: str, clave: str) -> bool
 
 
 def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datetime) -> Optional[dict]:
+    """Gate único de deduplicación de publicación (franja fija, urgente,
+    reintento → Facebook, Instagram y Story): misma nota por URL/huella de
+    contenido, o mismo acontecimiento ya publicado."""
+    duplicado = _duplicado_por_contenido(db, noticia, ahora_utc)
+    if duplicado is not None:
+        return duplicado
+    # Mismo ACONTECIMIENTO contado por otro medio o en otra etapa sin
+    # novedad sustancial (motor_noticias.eventos): bloqueado. Una
+    # actualización real (apareció la persona, hubo una detención) pasa,
+    # marcada como tal para rotularla "ACTUALIZACIÓN".
+    anteriores = db.noticias_publicadas_recientes(ventana_desde(ahora_utc), excluir_id=noticia["id"])
+    relacion = buscar_relacion(noticia, anteriores)
+    if relacion is not None:
+        if not relacion.es_actualizacion:
+            return relacion.relacionada
+        if noticia.get("actualizacion_de") != relacion.relacionada["id"]:
+            db.marcar_actualizacion(noticia["id"], relacion.relacionada["id"])
+            noticia["actualizacion_de"] = relacion.relacionada["id"]
+    return None
+
+
+def _duplicado_por_contenido(db: Database, noticia: dict, ahora_utc: datetime) -> Optional[dict]:
     """Gate de deduplicación único y común a los tres circuitos de
     publicación (franja fija, urgente y reintento — los tres pasan por
     `_publicar_noticia_en_clave`). Busca, entre las noticias que ya
@@ -361,6 +385,7 @@ def _buscar_duplicado_ya_publicado(db: Database, noticia: dict, ahora_utc: datet
                 if refieren_a_hecho_distinto(titulo_propio, titulo_candidata):
                     continue
                 return candidata
+
     return None
 
 
@@ -487,7 +512,9 @@ def _publicar_noticia_en_clave(
             )
 
     try:
-        contenido = preparar_publicacion(noticia, dry_run=True, db=db)
+        contenido = preparar_publicacion(
+            noticia, dry_run=True, db=db, urgente=clave.startswith("urgente-")
+        )
     except ErrorPreparacionFacebook as error:
         logger.error("Franja %s %s bloqueada: %s", fecha, clave, error)
         return ResultadoFranja(fecha, clave, noticia["id"], "bloqueada_sin_imagen")
@@ -574,11 +601,46 @@ def publicar_franja(
     cliente_fb = cliente_fb or ClienteMetaGraphAPI()
     cliente_ig = cliente_ig or ClienteMetaGraphAPI()
 
+    if hora == HORA_INFORME_DIARIO:
+        asegurar_informe_diario_en_franja(db, fecha, ahora_utc)
+
     item = db.obtener_agenda_item(fecha, hora)
     if not item or not item.get("noticia_id"):
         return ResultadoFranja(fecha, hora, None, "sin_contenido")
 
     return _publicar_noticia_en_clave(db, fecha, hora, item["noticia_id"], cliente_fb, cliente_ig, ahora_utc)
+
+
+def asegurar_informe_diario_en_franja(db: Database, fecha: str, ahora_utc: datetime) -> Optional[int]:
+    """Bug real: la franja 07:30 se reservaba antes de que existiera el
+    informe del día (la agenda corre más temprano y el informe se genera a
+    las 07:30), así que quedaba vacía y el informe terminaba saliendo por el
+    circuito urgente (solo porque toda noticia local se marcaba urgente).
+    Al publicar la franja 07:30: si el informe de hoy no existe se genera
+    (idempotente, con reintentos) y, si la franja está vacía, se le asigna.
+    Nunca pisa una franja que ya tiene contenido."""
+    from ..informe_diario import generar_informe_diario, url_informe_del_dia
+
+    url = normalizar_url(url_informe_del_dia(fecha))
+    informe = db.obtener_por_url(url)
+    hoy = ahora_utc.astimezone(ZONA_JUJUY).strftime("%Y-%m-%d")
+    if informe is None and fecha == hoy:
+        generar_informe_diario(db, ahora=ahora_utc)
+        informe = db.obtener_por_url(url)
+    if informe is None or informe["estado"] not in (Estado.PREPARADA.value, Estado.PUBLICADA.value):
+        logger.warning("Franja %s %s: no hay informe diario apto para publicar.", fecha, HORA_INFORME_DIARIO)
+        return None
+    if informe["revision_estado"] == RevisionEstado.RECHAZADA.value:
+        return None
+    item = db.obtener_agenda_item(fecha, HORA_INFORME_DIARIO)
+    if item and item.get("noticia_id"):
+        return item["noticia_id"]
+    db.guardar_agenda_item(
+        fecha, HORA_INFORME_DIARIO, "normal", informe.get("territorio"), informe["id"],
+        datetime.now(timezone.utc).isoformat(), id_existente=item["id"] if item else None,
+    )
+    logger.info("Franja %s %s: informe diario #%s asignado.", fecha, HORA_INFORME_DIARIO, informe["id"])
+    return informe["id"]
 
 
 def publicar_urgentes(

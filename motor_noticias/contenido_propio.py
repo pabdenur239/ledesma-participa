@@ -33,7 +33,7 @@ from typing import List, Optional, Tuple
 from .db import Database
 from .dedupe import es_mismo_contenido, palabras_clave
 from .entretenimiento import es_entretenimiento_o_curiosidad
-from .models import Noticia, OrigenIngreso
+from .models import Estado, Noticia, OrigenIngreso
 from .motor_editorial import ZONA_JUJUY, _es_mismo_hecho
 from .pipeline import normalizar_noticia, procesar_noticia
 from .redaccion import crear_redactor
@@ -312,6 +312,12 @@ class NotaPropiaCandidata:
     # de origen (ya clasificada y vetada), para no reclasificar el texto
     # reescrito.
     territorio_origen: Optional[str] = None
+    # source_published_at de la nota de origen (fuente única): la nota propia
+    # hereda la fecha real de publicación de la información, no la hora a la
+    # que corrió el generador (bug real: notas propias fechadas siempre
+    # 08:30, la hora del job, y "vigentes" aunque la fuente fuera de dos
+    # días antes).
+    fecha_fuente_origen: Optional[str] = None
 
 
 def _fecha_legible(fecha_recoleccion_iso: str) -> str:
@@ -322,9 +328,20 @@ def _fecha_legible(fecha_recoleccion_iso: str) -> str:
     return momento.astimezone(ZONA_JUJUY).strftime("%d/%m/%Y")
 
 
+def _titulo_desde_fuente(etiqueta: str, noticia_fuente: dict) -> str:
+    """Titular legible a partir del titular real de la fuente oficial,
+    nunca metadata técnica (nombre del organismo + fecha entre paréntesis,
+    que el control de calidad retiene)."""
+    titulo_fuente = (noticia_fuente.get("titulo_original") or "").strip().rstrip(".")
+    if not titulo_fuente:
+        return etiqueta
+    if titulo_fuente.lower().startswith(etiqueta.lower().rstrip("?:").lower()):
+        return titulo_fuente
+    return f"{etiqueta}: {titulo_fuente}" if not etiqueta.endswith("?") else f"{etiqueta} {titulo_fuente}"
+
+
 def _componer_servicio(noticia_fuente: dict, datos: dict) -> NotaPropiaCandidata:
-    fecha = _fecha_legible(noticia_fuente["fecha_recoleccion"])
-    titulo = f"{datos['etiqueta']}: novedad de {noticia_fuente['nombre_fuente']} ({fecha})"
+    titulo = _titulo_desde_fuente(datos["etiqueta"], noticia_fuente)
     texto = (
         f"{noticia_fuente['nombre_fuente']} informó lo siguiente: “{datos['oracion']}”\n\n"
         f"Fuente: {noticia_fuente['nombre_fuente']} — {noticia_fuente['url_fuente']}\n"
@@ -335,6 +352,7 @@ def _componer_servicio(noticia_fuente: dict, datos: dict) -> NotaPropiaCandidata
         url_identidad=f"https://ledesma-participa.local/contenido-propio/servicio/{noticia_fuente['id']}",
         fuente_real_nombre=noticia_fuente["nombre_fuente"], fuente_real_url=noticia_fuente["url_fuente"],
         localidad=noticia_fuente.get("localidad"), ids_fuente=[noticia_fuente["id"]],
+        fecha_fuente_origen=noticia_fuente.get("fecha_fuente") or noticia_fuente.get("fecha_recoleccion"),
     )
 
 
@@ -358,8 +376,7 @@ def _componer_datos_contexto(noticia_fuente: dict, datos: dict) -> NotaPropiaCan
 
 
 def _componer_explicador(noticia_fuente: dict, datos: dict) -> NotaPropiaCandidata:
-    fecha = _fecha_legible(noticia_fuente["fecha_recoleccion"])
-    titulo = f"¿Desde cuándo rige? Novedad de {noticia_fuente['nombre_fuente']} ({fecha})"
+    titulo = _titulo_desde_fuente("¿Desde cuándo rige?", noticia_fuente)
     texto = (
         f"{noticia_fuente['nombre_fuente']} informó: “{noticia_fuente['titulo_original']}”. "
         f"Según la fuente, la medida {datos['frase']}.\n\n"
@@ -371,6 +388,7 @@ def _componer_explicador(noticia_fuente: dict, datos: dict) -> NotaPropiaCandida
         url_identidad=f"https://ledesma-participa.local/contenido-propio/explicador/{noticia_fuente['id']}",
         fuente_real_nombre=noticia_fuente["nombre_fuente"], fuente_real_url=noticia_fuente["url_fuente"],
         localidad=noticia_fuente.get("localidad"), ids_fuente=[noticia_fuente["id"]],
+        fecha_fuente_origen=noticia_fuente.get("fecha_fuente") or noticia_fuente.get("fecha_recoleccion"),
     )
 
 
@@ -565,6 +583,7 @@ def detectar_reelaboraciones(
                 localidad=None,
                 ids_fuente=[noticia["id"]],
                 territorio_origen=noticia["territorio"],
+                fecha_fuente_origen=noticia.get("fecha_fuente") or noticia.get("fecha_recoleccion"),
             )
         )
     return candidatas
@@ -625,7 +644,7 @@ def generar_contenido_propio(
             # dedup de ingreso va contra la URL de identidad sintética.
             "url": candidata.fuente_real_url if es_reelaboracion else candidata.url_identidad,
             "fuente": NOMBRE_FUENTE_PROPIA,
-            "fecha": ahora_local.isoformat(),
+            "fecha": candidata.fecha_fuente_origen or ahora_local.isoformat(),
             "localidad": candidata.localidad,
         }
         noticia = normalizar_noticia(cruda)
@@ -646,7 +665,19 @@ def generar_contenido_propio(
                     error, candidata.titulo,
                 )
                 continue
-            if resultado_pipeline == "preparada":
+            if resultado_pipeline == "preparada" and _es_reproduccion(noticia_procesada, candidata):
+                # La "reelaboración" quedó igual a la nota del medio (caso
+                # real: Manos Abiertas, idéntica a TodoJujuy): no es
+                # contenido propio y no se publica como tal. La nota original
+                # del medio sigue disponible con su propia atribución.
+                db.actualizar_estado_noticia(noticia_procesada.id, Estado.DESCARTADA.value)
+                db.registrar_descarte(
+                    titulo=candidata.titulo, motivo="otro", fuente=candidata.fuente_real_nombre,
+                    territorio=noticia_procesada.territorio, noticia_id=noticia_procesada.id,
+                    detalle="Reelaboración idéntica a la nota del medio: no es contenido propio.",
+                )
+                resultado_pipeline = "descartada"
+            elif resultado_pipeline == "preparada":
                 _fijar_atribucion_y_traza(
                     db, noticia_procesada, candidata.fuente_real_nombre, candidata.ids_fuente[0]
                 )
@@ -664,6 +695,22 @@ def generar_contenido_propio(
             )
         )
     return resultados
+
+
+def _es_reproduccion(noticia: Noticia, candidata: NotaPropiaCandidata) -> bool:
+    """True si el texto "reelaborado" reproduce la nota del medio (mismo
+    titular, o casi las mismas palabras en título y cuerpo)."""
+    def _norm(texto: str) -> str:
+        return " ".join(palabras_clave(texto or ""))
+
+    titulo_nuevo = noticia.titulo_preparado or ""
+    if _norm(titulo_nuevo) == _norm(candidata.titulo):
+        return True
+    nuevo = palabras_clave(f"{titulo_nuevo} {noticia.texto_preparado or ''}")
+    origen = palabras_clave(f"{candidata.titulo} {candidata.texto}")
+    if not nuevo or not origen:
+        return False
+    return len(nuevo & origen) / len(nuevo | origen) >= 0.8
 
 
 def _fijar_atribucion_y_traza(

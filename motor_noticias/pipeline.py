@@ -1,7 +1,9 @@
 import html
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
+from .calidad_editorial import evaluar_calidad
 from .collectors.base import Collector
 from .db import Database
 from .dedupe import hash_contenido, normalizar_url
@@ -10,6 +12,7 @@ from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Estado, Noticia, RevisionEstado
 from .redaccion.base import Redactor
 from .riesgo_editorial import evaluar_riesgo_editorial
+from .scoring_editorial import es_urgente
 from .territorio import clasificar_territorio
 
 # Territorios que hoy ya se preparan siempre (igual que el comportamiento
@@ -178,19 +181,37 @@ def procesar_noticia(
     titulo_preparado, texto_preparado = redactor.redactar(noticia)
     noticia.titulo_preparado = titulo_preparado
     noticia.texto_preparado = texto_preparado
+    # Control de calidad (calidad_editorial): si la redacción automática
+    # introdujo algo que la fuente no dice (número nuevo, nombre deformado,
+    # fecha imposible) y el texto de la fuente está bien, se usa el de la
+    # fuente. Nunca se inventa nada para "reparar" un texto.
+    calidad = evaluar_calidad(asdict(noticia))
+    if calidad.accion == "usar_original":
+        noticia.titulo_preparado = noticia.titulo_original
+        noticia.texto_preparado = noticia.texto_original
+        calidad = evaluar_calidad(asdict(noticia))
     noticia.estado = Estado.PREPARADA.value
     noticia.revision_estado = RevisionEstado.PENDIENTE.value
-    if noticia.territorio in TERRITORIOS_SIEMPRE_ELEGIBLES:
-        # Toda noticia local (Libertador) o departamental (Ledesma) que llega
-        # a "preparada" debe poder publicarse de inmediato, sin esperar la
-        # siguiente franja fija: se marca urgente automáticamente (nunca se
-        # desmarca una que ya lo era) y reutiliza el circuito existente de
-        # `candidatos_urgentes` / `publicar_urgentes`, que ya excluye por su
-        # cuenta cualquier noticia con riesgo editorial obligatorio o
-        # rechazada. No aplica a provincial/nacional/entretenimiento: esos
-        # siguen exclusivamente con el esquema de franjas programadas.
-        noticia.urgente = True
+    # Circuito inmediato (scoring editorial único, 2/10/2026): ya NO se
+    # marca urgente cualquier local/departamental por el solo hecho de ser
+    # local. Se marca solo si `scoring_editorial` la clasifica URGENTE
+    # (local con relevancia suficiente, o provincial/nacional
+    # extraordinaria). Nunca se desmarca una que ya venía tildada a mano
+    # desde el panel. El resto compite en las franjas programadas.
+    # `candidatos_urgentes` / `resolver_urgentes` / `publicar_urgentes`
+    # siguen excluyendo por su cuenta riesgo editorial obligatorio y
+    # rechazadas.
+    if not noticia.urgente:
+        noticia.urgente = es_urgente(asdict(noticia))
     _aplicar_riesgo_editorial(noticia)
+    if calidad.accion == "retener" and not noticia.requiere_revision_especial:
+        # No se puede corregir con seguridad (cuerpo vacío o que repite el
+        # título, titular-metadata, errata de la propia fuente): queda
+        # retenida para revisión humana, igual que el riesgo editorial, y no
+        # entra en ningún circuito automático.
+        noticia.requiere_revision_especial = True
+        noticia.categoria_riesgo = "calidad_editorial"
+        noticia.motivo_revision_especial = "Control de calidad: " + "; ".join(calidad.problemas)
     db.guardar(noticia)
     return noticia, "preparada"
 

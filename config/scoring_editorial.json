@@ -1,0 +1,761 @@
+{
+  "_descripcion": "Scoring editorial único (motor_noticias/scoring_editorial.py). Cada señal aporta valores por componente; cada componente toma el MÁXIMO de las señales detectadas (no la suma). Las señales detectadas en el TÍTULO cuentan completas y son las únicas que pueden volver URGENTE una noticia; las que aparecen solo en el cuerpo suman la mitad. Términos sin acentos, como palabra completa; un '*' final indica raíz (\"evacu*\" detecta \"evacuados\"). Ampliar acá cuando aparezca un caso real no cubierto.",
+  "umbrales": {
+    "urgente_local": 70,
+    "urgente_extraordinaria": 80,
+    "urgencia_minima_local": 14,
+    "urgencia_minima_extraordinaria": 16,
+    "importante": 55,
+    "relevancia_minima_extraordinaria": 10
+  },
+  "bonus_territorial": {
+    "local": 12,
+    "departamental": 9,
+    "provincial": 5,
+    "nacional": 0
+  },
+  "relevancia_audiencia": {
+    "local": 15,
+    "departamental": 12,
+    "provincial": 8,
+    "nacional": 4,
+    "internacional": 1,
+    "otro": 1
+  },
+  "senales": {
+    "catastrofe": {
+      "terminos": [
+        "terremoto",
+        "sismo",
+        "catastrofe",
+        "alud",
+        "aluvion",
+        "inundacion",
+        "inundaciones",
+        "evacu*",
+        "estado de emergencia",
+        "emergencia hidrica",
+        "emergencia sanitaria",
+        "emergencia nacional",
+        "zona de desastre",
+        "explosion",
+        "derrumbe"
+      ],
+      "impacto": 22,
+      "urgencia": 20,
+      "magnitud": 19,
+      "interes": 9
+    },
+    "conmocion": {
+      "terminos": [
+        "atentado",
+        "conmocion",
+        "sin precedentes",
+        "estado de sitio",
+        "toque de queda",
+        "masacre"
+      ],
+      "impacto": 22,
+      "urgencia": 18,
+      "magnitud": 20,
+      "interes": 10
+    },
+    "incendio": {
+      "terminos": [
+        "incendio",
+        "incendios",
+        "se incendio",
+        "fuego consumio",
+        "bomberos combaten"
+      ],
+      "impacto": 14,
+      "urgencia": 17,
+      "magnitud": 13,
+      "interes": 8
+    },
+    "corte_servicio": {
+      "terminos": [
+        "corte de luz",
+        "corte de energia",
+        "cortes de luz",
+        "sin luz",
+        "sin energia",
+        "corte de agua",
+        "cortes de agua",
+        "sin agua",
+        "falta de agua",
+        "baja presion de agua",
+        "corte programado",
+        "interrupcion del servicio",
+        "suministro electrico",
+        "suministro de agua",
+        "apagon",
+        "cortes de energia",
+        "cortes del servicio",
+        "cortes programados",
+        "sin servicio electrico",
+        "cortes de agua potable"
+      ],
+      "impacto": 19,
+      "urgencia": 18,
+      "magnitud": 11,
+      "interes": 8
+    },
+    "corte_ruta": {
+      "terminos": [
+        "corte de ruta",
+        "ruta cortada",
+        "corte total",
+        "corte parcial",
+        "transito interrumpido",
+        "transito cortado",
+        "desvio",
+        "piquete",
+        "puente cortado",
+        "intransitable"
+      ],
+      "impacto": 17,
+      "urgencia": 18,
+      "magnitud": 10,
+      "interes": 8
+    },
+    "alerta_meteorologica": {
+      "terminos": [
+        "alerta meteorologica",
+        "alerta amarilla",
+        "doble alerta",
+        "alerta por tormentas",
+        "alerta por vientos",
+        "alerta por calor",
+        "alerta por lluvias",
+        "ola de calor",
+        "heladas"
+      ],
+      "impacto": 16,
+      "urgencia": 15,
+      "magnitud": 10,
+      "interes": 8
+    },
+    "alerta_severa": {
+      "terminos": [
+        "alerta naranja",
+        "alerta roja",
+        "temporal",
+        "granizo",
+        "granizada",
+        "tormentas fuertes",
+        "tormenta fuerte",
+        "viento zonda",
+        "nevadas intensas",
+        "crecida",
+        "desborde"
+      ],
+      "impacto": 20,
+      "urgencia": 19,
+      "magnitud": 15,
+      "interes": 9
+    },
+    "busqueda_persona": {
+      "terminos": [
+        "busqueda de",
+        "se busca",
+        "buscan a",
+        "desaparecid*",
+        "paradero",
+        "alerta sofia",
+        "intensa busqueda",
+        "piden ayuda para encontrar"
+      ],
+      "impacto": 15,
+      "urgencia": 20,
+      "magnitud": 14,
+      "interes": 9
+    },
+    "accidente": {
+      "terminos": [
+        "accidente",
+        "choque",
+        "chocaron",
+        "vuelco",
+        "volco",
+        "colision",
+        "despisto",
+        "atropell*"
+      ],
+      "impacto": 8,
+      "urgencia": 12,
+      "magnitud": 9,
+      "interes": 7
+    },
+    "gravedad": {
+      "terminos": [
+        "grave",
+        "graves",
+        "gravemente",
+        "terapia intensiva",
+        "estado critico",
+        "multiple",
+        "varios vehiculos",
+        "multiples heridos",
+        "varios heridos"
+      ],
+      "impacto": 13,
+      "urgencia": 16,
+      "magnitud": 14,
+      "interes": 8
+    },
+    "heridos": {
+      "terminos": [
+        "heridos",
+        "herido",
+        "herida",
+        "hospitalizad*",
+        "internad*",
+        "lesionad*"
+      ],
+      "impacto": 10,
+      "urgencia": 14,
+      "magnitud": 11,
+      "interes": 8
+    },
+    "salud_publica": {
+      "terminos": [
+        "brote",
+        "epidemia",
+        "pandemia",
+        "dengue",
+        "alerta epidemiologica",
+        "alerta sanitaria",
+        "casos confirmados",
+        "intoxicacion",
+        "vacunacion",
+        "campana de vacunacion",
+        "sarampion",
+        "chikungunya",
+        "hantavirus"
+      ],
+      "impacto": 18,
+      "urgencia": 13,
+      "magnitud": 13,
+      "interes": 7
+    },
+    "educacion_impacto": {
+      "terminos": [
+        "suspension de clases",
+        "suspenden las clases",
+        "sin clases",
+        "clases suspendidas",
+        "paro docente",
+        "paro de docentes",
+        "no habra clases",
+        "asueto",
+        "adelantan las vacaciones",
+        "cierre de escuelas"
+      ],
+      "impacto": 19,
+      "urgencia": 17,
+      "magnitud": 11,
+      "interes": 8
+    },
+    "transporte": {
+      "terminos": [
+        "paro de colectivos",
+        "paro de transporte",
+        "sin colectivos",
+        "sin transporte",
+        "suspension del servicio de colectivos",
+        "suspenden el servicio de colectivos",
+        "vuelos cancelados",
+        "cancelaron los vuelos"
+      ],
+      "impacto": 17,
+      "urgencia": 17,
+      "magnitud": 10,
+      "interes": 7
+    },
+    "economia_inmediata": {
+      "terminos": [
+        "devaluacion",
+        "devalua*",
+        "cepo",
+        "corralito",
+        "feriado bancario",
+        "salto del dolar",
+        "dolar se disparo",
+        "aumento de combustible",
+        "aumento de la nafta",
+        "suba de la nafta",
+        "aumento de naftas",
+        "tarifazo"
+      ],
+      "impacto": 24,
+      "urgencia": 18,
+      "magnitud": 18,
+      "interes": 9
+    },
+    "economia_bolsillo": {
+      "terminos": [
+        "aumento",
+        "aumentos",
+        "tarifa",
+        "tarifas",
+        "inflacion",
+        "salario minimo",
+        "aguinaldo",
+        "bono",
+        "jubilaciones",
+        "jubilados",
+        "asignacion universal",
+        "auh",
+        "cronograma de pago",
+        "cronograma de pagos",
+        "precio de la nafta",
+        "combustibles",
+        "dolar",
+        "boleto",
+        "pasaje",
+        "suba del pasaje",
+        "subio el pasaje"
+      ],
+      "impacto": 16,
+      "urgencia": 9,
+      "magnitud": 10,
+      "interes": 8
+    },
+    "electoral": {
+      "terminos": [
+        "resultados electorales",
+        "escrutinio",
+        "boca de urna",
+        "gano las elecciones",
+        "ganador de las elecciones",
+        "balotaje",
+        "ballotage",
+        "segunda vuelta"
+      ],
+      "impacto": 24,
+      "urgencia": 18,
+      "magnitud": 20,
+      "interes": 10
+    },
+    "decision_gobierno": {
+      "terminos": [
+        "decreto",
+        "ordenanza",
+        "resolucion",
+        "dispuso",
+        "dispone",
+        "anuncio",
+        "anuncian",
+        "nueva medida",
+        "obligatori*",
+        "prohib*",
+        "emergencia"
+      ],
+      "impacto": 12,
+      "urgencia": 7,
+      "magnitud": 9,
+      "interes": 6
+    },
+    "seguridad": {
+      "terminos": [
+        "robo",
+        "robaron",
+        "asalto",
+        "asaltaron",
+        "operativo",
+        "allanamiento",
+        "secuestr*",
+        "balacera",
+        "disparos",
+        "tiroteo",
+        "inseguridad"
+      ],
+      "impacto": 9,
+      "urgencia": 10,
+      "magnitud": 9,
+      "interes": 8
+    },
+    "comunidad": {
+      "terminos": [
+        "obra",
+        "obras",
+        "pavimentacion",
+        "inauguracion",
+        "inauguro",
+        "hospital",
+        "centro de salud",
+        "escuela",
+        "programa",
+        "festival",
+        "fiesta",
+        "torneo",
+        "convocatoria",
+        "inscripciones",
+        "inscripcion",
+        "empleo",
+        "trabajo",
+        "servicio de colectivos",
+        "transporte"
+      ],
+      "impacto": 8,
+      "urgencia": 4,
+      "magnitud": 6,
+      "interes": 6
+    },
+    "entretenimiento": {
+      "terminos": [
+        "viral",
+        "redes sociales",
+        "espectaculos",
+        "famoso",
+        "famosa",
+        "show",
+        "concierto",
+        "pelicula",
+        "serie",
+        "curiosidad",
+        "tendencia"
+      ],
+      "impacto": 3,
+      "urgencia": 2,
+      "magnitud": 3,
+      "interes": 5
+    }
+  },
+  "rutina": {
+    "_descripcion": "Contenido institucional rutinario detectado en el título: si no hay señal fuerte, se topean impacto/urgencia/magnitud/interés; si la hay (p. ej. una reunión 'sobre vacunación'), las señales del título cuentan a la mitad y no puede ser URGENTE. Ser local no alcanza por sí solo.",
+    "terminos": [
+      "reunion",
+      "se reunio",
+      "se reunieron",
+      "protocolar",
+      "visita",
+      "visito",
+      "recibio a",
+      "saludo",
+      "salutacion",
+      "acto",
+      "homenaje",
+      "capacitacion",
+      "taller",
+      "charla",
+      "jornada",
+      "promocion",
+      "sorteo",
+      "descuento",
+      "felicito",
+      "convenio",
+      "entrega de certificados",
+      "entrego",
+      "acompano",
+      "participo",
+      "mesa de trabajo",
+      "agradecimiento",
+      "aniversario",
+      "efemeride",
+      "conmemor*",
+      "reina",
+      "rey",
+      "eligieron",
+      "coronacion",
+      "coronaron",
+      "fiesta",
+      "festejo",
+      "festejos",
+      "celebracion",
+      "celebro",
+      "agasajo"
+    ],
+    "tope_impacto": 6,
+    "tope_urgencia": 3,
+    "tope_magnitud": 4,
+    "tope_interes": 4
+  },
+  "senales_fuertes": [
+    "catastrofe",
+    "conmocion",
+    "incendio",
+    "corte_servicio",
+    "corte_ruta",
+    "alerta_meteorologica",
+    "busqueda_persona",
+    "gravedad",
+    "salud_publica",
+    "educacion_impacto",
+    "transporte",
+    "economia_inmediata",
+    "electoral",
+    "heridos",
+    "alerta_severa"
+  ],
+  "alcance_masivo": {
+    "_descripcion": "Términos que indican alcance a toda la población (suben impacto y relevancia de provincial/nacional para nuestra audiencia).",
+    "terminos": [
+      "todo el pais",
+      "todo el territorio",
+      "en todo jujuy",
+      "toda la provincia",
+      "a nivel nacional",
+      "millones de",
+      "todos los argentinos",
+      "todos los jujenos"
+    ],
+    "impacto_extra": 3,
+    "relevancia_extra": 5
+  },
+  "senales_que_requieren_contexto": {
+    "_descripcion": "Señales que solo cuentan si aparece alguna de las señales indicadas (p.ej. 'grave' solo suma en un accidente/incendio/hecho de seguridad, no en 'grave crisis').",
+    "gravedad": [
+      "accidente",
+      "incendio",
+      "seguridad",
+      "catastrofe"
+    ],
+    "heridos": [
+      "accidente",
+      "incendio",
+      "seguridad",
+      "catastrofe"
+    ]
+  },
+  "senales_alcance_audiencia": {
+    "_descripcion": "Si alguna de estas señales aparece en el título, la noticia afecta concretamente a vecinos de Libertador/Ledesma y suma relevancia_extra. Para nacional no cuentan catástrofes/conmoción (suelen ser de otro país o región) salvo alcance masivo. Un corte de luz/agua/ruta provincial afecta a otra localidad: no suma (si afecta a Libertador/Ledesma, la noticia ya es local/departamental).",
+    "provincial": [
+      "economia_inmediata",
+      "economia_bolsillo",
+      "electoral",
+      "educacion_impacto",
+      "transporte",
+      "salud_publica",
+      "alerta_meteorologica",
+      "catastrofe",
+      "conmocion",
+      "alerta_severa"
+    ],
+    "nacional": [
+      "economia_inmediata",
+      "economia_bolsillo",
+      "electoral",
+      "educacion_impacto",
+      "transporte",
+      "salud_publica"
+    ],
+    "relevancia_extra": 6
+  },
+  "negadores_urgencia": {
+    "_descripcion": "Notas explicativas/de servicio no urgentes: si alguno aparece en el título, la noticia no puede ser URGENTE y la urgencia se topea.",
+    "terminos": [
+      "se pueden",
+      "como prepararse",
+      "que hacer",
+      "claves",
+      "guia",
+      "consejos",
+      "recomendaciones para",
+      "todo lo que hay que saber",
+      "paso a paso"
+    ],
+    "tope_urgencia": 8
+  },
+  "exclusiones_por_senal": {
+    "_descripcion": "Si alguno de estos términos aparece en el título, esa señal no cuenta (falsos positivos reales).",
+    "alerta_meteorologica": [
+      "interpol"
+    ],
+    "alerta_severa": [
+      "interpol"
+    ]
+  },
+  "sin_alcance_audiencia": {
+    "_descripcion": "Nacional/internacional/otro sin ninguna señal de alcance a nuestra audiencia (ni alcance masivo): hechos de otro país o región. La magnitud objetiva se conserva, pero el impacto y la urgencia para vecinos de Libertador/Ledesma se topean.",
+    "tope_impacto": 12,
+    "tope_urgencia": 8
+  },
+  "no_evento": {
+    "_descripcion": "Si alguno aparece en el título, no es un acontecimiento real en curso (simulacro, predicción, efeméride, ficción): las señales del título no cuentan y no puede ser URGENTE.",
+    "terminos": [
+      "simulacro",
+      "predicciones",
+      "prediccion",
+      "profecia",
+      "aniversario",
+      "recuerdan",
+      "recordamos",
+      "documental",
+      "pelicula",
+      "serie",
+      "libro",
+      "hace * anos",
+      "dia mundial",
+      "dia internacional",
+      "dia nacional",
+      "prevencion",
+      "premi*",
+      "concientizacion",
+      "a * anos de",
+      "se cumplen * anos",
+      "efemeride",
+      "historia de",
+      "como era",
+      "recordando"
+    ]
+  },
+  "tematicas_no_urgentes": {
+    "_descripcion": "Clase temática de la noticia, detectada con toda la información disponible (sección de la URL, categoria_tematica, título y bajada). Una noticia deportiva, cultural/espectáculos, turística/promocional, institucional/protocolar o policial común NO puede ser URGENTE y su urgencia se topea, salvo que el título tenga una señal de emergencia real (excepciones). Detección: 1 término en el título, o 2 términos distintos en la bajada. 'politica_opinion' (2/10/2026): política ordinaria, declaraciones, entrevistas y columnas no son URGENTE (caso real: un resumen de frases de una entrevista con la palabra 'cepo' salía urgente); sí lo son un resultado electoral o una emergencia real.",
+    "clases": {
+      "deportes": [
+        "futbol",
+        "partido",
+        "partidos",
+        "torneo",
+        "campeonato",
+        "liga",
+        "copa",
+        "gol",
+        "goles",
+        "golazo",
+        "club",
+        "hinchas",
+        "entrenador",
+        "seleccion",
+        "boxeo",
+        "basquet",
+        "voley",
+        "hockey",
+        "rugby",
+        "atletismo",
+        "maraton",
+        "polideportivo",
+        "fixture",
+        "triunfo",
+        "derrota",
+        "empate",
+        "cuartos de final",
+        "semifinal",
+        "final"
+      ],
+      "cultura": [
+        "teatro",
+        "teatral",
+        "museo",
+        "muestra",
+        "exposicion",
+        "concierto",
+        "recital",
+        "festival",
+        "danza",
+        "ballet",
+        "cine",
+        "pelicula",
+        "serie",
+        "libro",
+        "feria del libro",
+        "artesanos",
+        "artesania",
+        "pena",
+        "folclore",
+        "cultural",
+        "centro cultural",
+        "espectaculo",
+        "show",
+        "cantante",
+        "banda",
+        "musica",
+        "musical"
+      ],
+      "turismo": [
+        "turismo",
+        "turistico",
+        "turistica",
+        "turistas",
+        "turistas",
+        "escapada",
+        "escapadas",
+        "destino",
+        "destinos",
+        "alojamiento",
+        "hotel",
+        "excursion",
+        "paseo",
+        "vacaciones",
+        "temporada alta",
+        "fin de semana largo",
+        "circuito turistico",
+        "promocion",
+        "promocionan",
+        "promociona",
+        "sorteo",
+        "descuento",
+        "oferta"
+      ],
+      "politica_opinion": [
+        "frases",
+        "principales frases",
+        "entrevista",
+        "columna",
+        "opinion",
+        "editorial",
+        "analisis",
+        "declaraciones",
+        "conferencia de prensa"
+      ]
+    },
+    "secciones_url": {
+      "deportes": [
+        "deportes",
+        "deporte",
+        "futbol",
+        "sports",
+        "polideportivo",
+        "hockey",
+        "basquetbol"
+      ],
+      "cultura": [
+        "espectaculos",
+        "teleshow",
+        "cultura",
+        "entretenimiento",
+        "show",
+        "musica",
+        "cine",
+        "gente",
+        "famosos"
+      ],
+      "turismo": [
+        "turismo",
+        "viajes",
+        "escapadas",
+        "gastronomia",
+        "lifestyle"
+      ],
+      "politica_opinion": [
+        "politica",
+        "opinion",
+        "editorial",
+        "columnistas",
+        "ideas",
+        "analisis",
+        "entrevista",
+        "entrevistas"
+      ]
+    },
+    "categorias_tematicas": {
+      "cultura": [
+        "espectaculos"
+      ],
+      "turismo": [
+        "gastronomia"
+      ]
+    },
+    "excepciones_senales": [
+      "catastrofe",
+      "conmocion",
+      "alerta_severa",
+      "busqueda_persona",
+      "electoral"
+    ],
+    "tope_urgencia": 6,
+    "tope_impacto": 10
+  }
+}

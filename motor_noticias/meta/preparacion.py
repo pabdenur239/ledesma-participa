@@ -1,42 +1,68 @@
 from typing import List, Optional, Tuple
 
+from pathlib import Path
+
+from ..atribucion import etiqueta_fuente
 from ..db import Database
 from ..models import RevisionEstado
 from .contenido import ContenidoFacebook, _titulo_y_texto_finales, generar_contenido_facebook
-from .imagen import generar_placa, generar_story
+from .imagen import generar_placa, generar_placa_urgente, generar_story, normalizar_url_imagen, preparar_foto_publicable
 
 
 class ErrorPreparacionFacebook(RuntimeError):
     """Error controlado al preparar una publicación de Facebook."""
 
 
-def _resolver_imagen(noticia: dict, db: Optional[Database]) -> Tuple[Optional[str], bool]:
-    """Devuelve (ruta_o_url_de_imagen, generada_automaticamente).
+def _es_url_remota(valor: str) -> bool:
+    return valor.startswith("http://") or valor.startswith("https://")
 
-    Reutiliza la imagen ya persistida (original o placa) si existe: no
-    regenera nada innecesariamente. Solo genera una placa nueva cuando la
-    noticia no tiene imagen original ni una placa previamente asociada."""
+
+def _placa(noticia: dict) -> str:
+    titulo, texto = _titulo_y_texto_finales(noticia)
+    return str(generar_placa(titulo, texto, fuente=etiqueta_fuente(noticia), localidad=noticia.get("localidad")))
+
+
+def _resolver_imagen(noticia: dict, db: Optional[Database]) -> Tuple[Optional[str], bool]:
+    """Devuelve (ruta_local_de_imagen, generada_automaticamente).
+
+    Pipeline robusto (2/10/2026): una foto externa se descarga, se valida y
+    se lleva a un formato que aceptan Facebook e Instagram
+    (`preparar_foto_publicable`); si la URL no responde o no es una imagen
+    válida, se usa la placa propia — nunca se publica una imagen rota ni una
+    que Instagram rechace por relación de aspecto (causa real de posts que
+    llegaron a Facebook y no a Instagram). La URL original queda guardada
+    tal cual en la noticia (no se pisa), y la foto preparada se reutiliza en
+    reintentos (nombre determinístico). Una placa nueva solo se persiste
+    cuando la noticia no tenía ninguna imagen."""
     ruta_actual = noticia.get("imagen_publicacion_ruta")
-    if ruta_actual:
+    if ruta_actual and _es_url_remota(ruta_actual):
+        foto = preparar_foto_publicable(ruta_actual)
+        if foto is not None:
+            return str(foto), False
+        return _placa(noticia), True
+    if ruta_actual and Path(ruta_actual).is_file():
         return ruta_actual, bool(noticia.get("imagen_generada_automaticamente"))
 
-    if noticia.get("tiene_imagen_original"):
-        return None, False
-
-    titulo, texto = _titulo_y_texto_finales(noticia)
-    ruta_placa = generar_placa(
-        titulo,
-        texto,
-        fuente=noticia.get("nombre_fuente"),
-        localidad=noticia.get("localidad"),
-    )
-    ruta_texto = str(ruta_placa)
-
+    ruta_texto = _placa(noticia)
     id_noticia = noticia.get("id")
-    if db is not None and id_noticia is not None:
+    if db is not None and id_noticia is not None and not ruta_actual:
         db.actualizar_imagen_publicacion(id_noticia, ruta_texto, True)
-
     return ruta_texto, True
+
+
+def _resolver_imagen_urgente(noticia: dict) -> str:
+    """Imagen con la identidad visual URGENTE (rojo): conserva la foto
+    original válida con la banda roja, o genera la placa roja si no hay
+    foto (una placa normal generada automáticamente no cuenta como foto).
+    No se persiste en `imagen_publicacion_ruta`: el archivo es
+    determinístico por contenido y se reutiliza en reintentos, y la imagen
+    original de la noticia queda intacta."""
+    ruta_actual = noticia.get("imagen_publicacion_ruta")
+    foto = None if noticia.get("imagen_generada_automaticamente") else ruta_actual
+    titulo, _ = _titulo_y_texto_finales(noticia)
+    if foto and _es_url_remota(foto):
+        foto = normalizar_url_imagen(foto)
+    return str(generar_placa_urgente(titulo, fuente=etiqueta_fuente(noticia), imagen_original=foto))
 
 
 def preparar_publicacion(
@@ -45,6 +71,7 @@ def preparar_publicacion(
     incluir_menciones: Optional[bool] = None,
     menciones: Optional[List[str]] = None,
     db: Optional[Database] = None,
+    urgente: bool = False,
 ) -> ContenidoFacebook:
     """Punto de entrada único para preparar una publicación de Facebook.
 
@@ -61,6 +88,9 @@ def preparar_publicacion(
     Si se pasa `db`, la elección de imagen (original o placa recién
     generada) queda persistida en la noticia para no regenerarse en
     llamadas futuras.
+
+    `urgente=True` (solo circuito urgente) usa la identidad visual roja
+    URGENTE en lugar de la imagen/placa habitual.
     """
     if noticia.get("revision_estado") != RevisionEstado.APROBADA.value:
         raise ErrorPreparacionFacebook(
@@ -79,7 +109,12 @@ def preparar_publicacion(
         noticia, incluir_menciones=incluir_menciones, menciones=menciones
     )
 
-    imagen_ruta, generada_automaticamente = _resolver_imagen(noticia, db)
+    if urgente:
+        # Solo el circuito urgente pide esto (clave "urgente-<id>"): el rojo
+        # queda reservado exclusivamente a URGENTES.
+        imagen_ruta, generada_automaticamente = _resolver_imagen_urgente(noticia), True
+    else:
+        imagen_ruta, generada_automaticamente = _resolver_imagen(noticia, db)
     contenido.imagen_url = imagen_ruta
     contenido.imagen_generada_automaticamente = generada_automaticamente
 

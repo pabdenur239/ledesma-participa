@@ -203,6 +203,14 @@ COLUMNAS_CATEGORIA_TEMATICA = {
 # que se envía, timestamp UTC ISO una vez enviada — evita mandar más de un
 # push por la misma noticia (dedup) y sirve de marca de "ya evaluada" para
 # no volver a escanearla en cada corrida.
+# Deduplicación por acontecimiento (motor_noticias/eventos.py): id de la
+# noticia ya publicada del mismo acontecimiento cuando esta es una
+# ACTUALIZACIÓN real (apareció la persona, hubo una detención…). NULL =
+# noticia independiente. Se usa para rotularla "ACTUALIZACIÓN" en redes y web.
+COLUMNAS_EVENTO = {
+    "actualizacion_de": "INTEGER",
+}
+
 COLUMNAS_PUSH = {
     "push_enviado_en": "TEXT",
 }
@@ -226,6 +234,7 @@ class Database:
         self._migrar_columnas(COLUMNAS_STORY)
         self._migrar_columnas(COLUMNAS_CATEGORIA_TEMATICA)
         self._migrar_columnas(COLUMNAS_PUSH)
+        self._migrar_columnas(COLUMNAS_EVENTO)
 
     def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
         """Migración no destructiva, aditiva y segura entre procesos: varios
@@ -316,7 +325,8 @@ class Database:
         candidata nueva contra lo que ya salió, sin importar por qué
         circuito (franja fija, urgente o reintento) haya salido."""
         query = (
-            "SELECT id, url_normalizada, titulo_original, texto_original, nombre_fuente "
+            "SELECT id, url_normalizada, titulo_original, texto_original, nombre_fuente, "
+            "fecha_recoleccion, fecha_fuente, actualizacion_de "
             "FROM noticias WHERE estado = ? AND fecha_recoleccion >= ?"
         )
         params: list = [Estado.PUBLICADA.value, fecha_limite]
@@ -742,13 +752,15 @@ class Database:
         fila = cur.fetchone()
         return dict(fila) if fila else None
 
-    def candidatos_urgentes(self, excluidos_ids: set, fecha_limite: str) -> list:
-        """Noticias locales/departamentales marcadas urgentes, `preparada`,
-        no rechazadas, sin riesgo editorial obligatorio, no usadas todavía
-        en ninguna agenda."""
+    def candidatos_editoriales(self, excluidos_ids: set, fecha_limite: str) -> list:
+        """Todas las candidatas `preparada` para competir por una franja
+        (scoring editorial único, ver `motor_editorial`): mismas protecciones
+        que `candidato_editorial` (no rechazadas, no usadas en ninguna
+        agenda, sin riesgo editorial obligatorio, dentro de la antigüedad
+        máxima), sin filtrar por territorio — el motor decide en Python qué
+        territorios/categorías compiten y cuál gana por puntaje."""
         query = (
-            "SELECT * FROM noticias WHERE estado = ? AND urgente = 1 "
-            "AND territorio IN ('local', 'departamental') "
+            "SELECT * FROM noticias WHERE estado = ? "
             "AND revision_estado != ? AND fecha_recoleccion >= ? "
             "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
         )
@@ -760,6 +772,83 @@ class Database:
         query += " ORDER BY fecha_recoleccion DESC"
         cur = self.conn.execute(query, params)
         return [dict(fila) for fila in cur.fetchall()]
+
+    def candidatos_urgentes(self, excluidos_ids: set, fecha_limite: str) -> list:
+        """Noticias marcadas urgentes, `preparada`, no rechazadas, sin riesgo
+        editorial obligatorio, no usadas todavía en ninguna agenda. Desde el
+        scoring editorial único (2/10/2026) incluye provincial/nacional: el
+        flag lo pone `scoring_editorial` (solo acontecimientos
+        extraordinarios) y `motor_editorial.resolver_urgentes` lo confirma."""
+        query = (
+            "SELECT * FROM noticias WHERE estado = ? AND urgente = 1 "
+            "AND territorio IN ('local', 'departamental', 'provincial', 'nacional') "
+            "AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)"
+        )
+        params: list = [Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value, fecha_limite]
+        if excluidos_ids:
+            placeholders = ",".join("?" * len(excluidos_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(sorted(excluidos_ids))
+        query += " ORDER BY fecha_recoleccion DESC"
+        cur = self.conn.execute(query, params)
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def noticias_comprometidas_desde(self, fecha_limite: str, excluir_id: Optional[int] = None) -> list:
+        """Noticias ya publicadas, o ya asignadas a una franja/urgente de la
+        agenda, recolectadas desde `fecha_limite`: contra ellas se compara
+        una candidata para no publicar dos veces el mismo acontecimiento
+        (ver `motor_noticias.eventos`) por ningún circuito."""
+        query = (
+            "SELECT * FROM noticias WHERE fecha_recoleccion >= ? AND ("
+            "estado = ? OR id IN (SELECT noticia_id FROM agenda_item WHERE noticia_id IS NOT NULL))"
+        )
+        params: list = [fecha_limite, Estado.PUBLICADA.value]
+        if excluir_id is not None:
+            query += " AND id != ?"
+            params.append(excluir_id)
+        cur = self.conn.execute(query, params)
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def marcar_actualizacion(self, id_noticia: int, id_base: Optional[int]) -> None:
+        self.conn.execute("UPDATE noticias SET actualizacion_de = ? WHERE id = ?", (id_base, id_noticia))
+        self.conn.commit()
+
+    def fechas_publicacion(self) -> dict:
+        """published_at real por noticia: la primera confirmación de
+        publicación en cualquier red (`programacion_meta.publicada_en`)."""
+        cur = self.conn.execute(
+            "SELECT noticia_id, MIN(publicada_en) AS publicada_en FROM programacion_meta "
+            "WHERE estado = 'publicado' AND publicada_en IS NOT NULL GROUP BY noticia_id"
+        )
+        return {fila["noticia_id"]: fila["publicada_en"] for fila in cur.fetchall()}
+
+    def estado_por_plataforma(self, id_noticia: int) -> dict:
+        """Estado independiente por plataforma de una noticia: facebook /
+        instagram / instagram_story (de `programacion_meta`) y web (la web
+        publica toda noticia en estado `publicada`). Un fallo de Instagram
+        nunca se reporta como publicación global exitosa: `completa` exige
+        Facebook e Instagram publicados."""
+        cur = self.conn.execute(
+            "SELECT red_social, estado, intentos, ultimo_error, publicada_en, actualizada_en, fecha, hora "
+            "FROM programacion_meta WHERE noticia_id = ? ORDER BY actualizada_en",
+            (id_noticia,),
+        )
+        redes: dict = {}
+        for fila in cur.fetchall():
+            actual = redes.get(fila["red_social"])
+            if actual is None or fila["estado"] == "publicado" or actual["estado"] != "publicado":
+                redes[fila["red_social"]] = dict(fila)
+        noticia = self.obtener(id_noticia)
+        estados = {red: datos["estado"] for red, datos in redes.items()}
+        return {
+            "noticia_id": id_noticia,
+            "facebook": redes.get("facebook"),
+            "instagram": redes.get("instagram"),
+            "instagram_story": redes.get("instagram_story"),
+            "web": "publicado" if noticia and noticia["estado"] == Estado.PUBLICADA.value else "no_publicado",
+            "completa": estados.get("facebook") == "publicado" and estados.get("instagram") == "publicado",
+        }
 
     def noticias_ids_usadas_en_agenda(self) -> set:
         cur = self.conn.execute("SELECT DISTINCT noticia_id FROM agenda_item WHERE noticia_id IS NOT NULL")

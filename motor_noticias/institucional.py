@@ -25,7 +25,7 @@ from .db import Database
 from .dedupe import normalizar_url
 from .meta.imagen import generar_placa
 from .models import Estado, Noticia, OrigenIngreso, RevisionEstado
-from .motor_editorial import EntradaAgenda, HORA_INSTITUCIONAL_RESERVADA, ZONA_JUJUY
+from .motor_editorial import EntradaAgenda, HORA_INSTITUCIONAL_RESERVADA, HORARIOS_DEFAULT, ZONA_JUJUY, _es_franja_pasada
 
 CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "config" / "institucional.json"
 
@@ -115,6 +115,29 @@ def _crear_noticia_institucional(db: Database, fecha_iso: str, ahora_local: date
     return noticia.id
 
 
+def _noticia_importante_disponible(db: Database, ahora_local: datetime) -> Optional[dict]:
+    """Mejor candidata de la cascada (mismos filtros: deduplicación por
+    acontecimiento, calidad, vigencia, riesgo) si su puntaje base alcanza
+    el umbral "importante" del scoring editorial; None si no hay."""
+    from .eventos import ventana_desde
+    from .motor_editorial import _buscar_candidato_cascada, _fecha_limite_antiguedad
+    from .scoring_editorial import cargar_config as cargar_config_scoring, evaluar_noticia
+
+    ahora_utc = ahora_local.astimezone(timezone.utc)
+    usados = db.noticias_ids_usadas_en_agenda() | db.ids_fuente_reelaborados()
+    comprometidas = db.noticias_comprometidas_desde(ventana_desde(ahora_utc))
+    candidata = _buscar_candidato_cascada(
+        db, usados, _fecha_limite_antiguedad(ahora_utc), {}, ahora_utc, comprometidas, {}
+    )
+    if candidata is None:
+        return None
+    evaluacion = evaluar_noticia(candidata, ahora_utc)
+    if evaluacion["clasificacion"] == "urgente":
+        return None  # sale de inmediato por el circuito urgente, nunca espera a las 20:30
+    umbral = cargar_config_scoring()["umbrales"]["importante"]
+    return candidata if evaluacion["base"] >= umbral else None
+
+
 def reservar_franja_institucional(
     db: Database,
     fecha: Optional[str] = None,
@@ -130,6 +153,46 @@ def reservar_franja_institucional(
     fecha = fecha or ahora_local.strftime("%Y-%m-%d")
     config = config or _cargar_config()
 
+    # Slot editorial vs. autopromoción (2/10/2026): las 20:30 son una de las
+    # seis franjas editoriales. La promoción la ocupa por defecto (rinde
+    # bien en Instagram), pero nunca impide publicar una noticia importante:
+    # si hay una candidata "importante" (scoring editorial) que no entró en
+    # las otras franjas, la franja es para la noticia y ese día no hay
+    # promoción. Una franja ya ocupada por una noticia publicada, aprobada
+    # por un humano o ya pasada no se toca.
+    existente_item = db.obtener_agenda_item(fecha, HORA_INSTITUCIONAL)
+    ocupante = db.obtener(existente_item["noticia_id"]) if existente_item and existente_item.get("noticia_id") else None
+    if ocupante is not None and ocupante.get("origen_ingreso") != OrigenIngreso.INSTITUCIONAL.value:
+        protegida = (
+            ocupante["estado"] == Estado.PUBLICADA.value
+            or (ocupante["revision_estado"] == RevisionEstado.APROBADA.value and not ocupante.get("revision_automatica"))
+            or _es_franja_pasada(fecha, HORA_INSTITUCIONAL, ahora_local)
+        )
+        if protegida or ocupante["estado"] == Estado.PREPARADA.value:
+            return EntradaAgenda(
+                fecha, HORA_INSTITUCIONAL, "normal", ocupante.get("territorio"), ocupante["id"], "existente"
+            )
+    # Solo cuando las demás franjas del día ya pasaron (desde la última
+    # franja de cascada): así la noticia no "se guarda" para las 20:30 si
+    # podía salir antes.
+    ultima_franja = HORARIOS_DEFAULT[-1]
+    if (
+        config.get("ceder_franja_a_noticia_importante", True)
+        and _es_franja_pasada(fecha, ultima_franja, ahora_local)
+        and not _es_franja_pasada(fecha, HORA_INSTITUCIONAL, ahora_local)
+    ):
+        importante = _noticia_importante_disponible(db, ahora_local)
+        if importante is not None:
+            db.guardar_agenda_item(
+                fecha, HORA_INSTITUCIONAL, "normal", importante.get("territorio"), importante["id"],
+                datetime.now(timezone.utc).isoformat(),
+                id_existente=existente_item["id"] if existente_item else None,
+            )
+            return EntradaAgenda(
+                fecha, HORA_INSTITUCIONAL, "normal", importante.get("territorio"), importante["id"],
+                "actualizado" if existente_item else "creado",
+            )
+
     url = _url_institucional(fecha)
     existente_noticia = db.obtener_por_url(url)
     if existente_noticia is not None:
@@ -137,7 +200,6 @@ def reservar_franja_institucional(
     else:
         noticia_id = _crear_noticia_institucional(db, fecha, ahora_local, config)
 
-    existente_item = db.obtener_agenda_item(fecha, HORA_INSTITUCIONAL)
     if existente_item is not None and existente_item.get("noticia_id") == noticia_id:
         return EntradaAgenda(
             fecha, HORA_INSTITUCIONAL, "normal", TERRITORIO_INSTITUCIONAL, noticia_id, "existente"

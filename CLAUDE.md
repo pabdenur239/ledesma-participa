@@ -15,6 +15,12 @@ individual por publicación, mientras esta notebook funcione como servidor
 provisional (hasta migrar a un servidor real). Estas reglas son la
 referencia estable — no reinterpretar por criterio propio en cada tarea:
 
+- **Prueba editorial 30/9/2026 al 6/10/2026 (vigente, sin otros cambios
+  durante el período)**: feed normal de 6 publicaciones/día (informe 07:30
+  + 4 franjas de cascada + institucional 20:30) y cascada cortada en
+  provincial (`"solo_territorios_prioritarios": true` en
+  `config/agenda.json`: sin nacional ni entretenimiento de relleno).
+  Urgentes y Stories sin cambios. Al terminar, decidir si se revierte.
 - **Objetivo de 12 a 15 publicaciones diarias** (informe diario de
   clima/dólar a las 07:30 + una franja por hora de 09:00 a 22:00 por
   cascada, `HORARIOS_DEFAULT` en `motor_noticias/motor_editorial.py`).

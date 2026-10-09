@@ -93,12 +93,19 @@ def cierre_html(*, ruta_raiz: str, config_sitio: dict) -> str:
     )
 
 
+# Misma taxonomía que la app (motor_noticias.categorias): territorio y
+# temáticas.
 SECCIONES_NAV = (
     ("libertador", "Libertador"),
     ("ledesma", "Ledesma"),
     ("jujuy", "Jujuy"),
     ("nacionales", "Nacionales"),
-    ("entretenimiento", "Entretenimiento"),
+    ("internacionales", "Internacionales"),
+    ("policiales", "Policiales"),
+    ("deportes", "Deportes"),
+    ("espectaculos", "Espectáculos"),
+    ("salud", "Salud"),
+    ("gastronomia", "Gastronomía"),
 )
 
 
@@ -126,7 +133,7 @@ def encabezado_html(*, ruta_raiz: str, seccion_activa: Optional[str] = None) -> 
 def tarjeta_noticia(n: dict, *, ruta_raiz: str, destacada: bool = False) -> str:
     clase = "tarjeta tarjeta-destacada" if destacada else "tarjeta"
     if n["imagen_web"]:
-        media = f'<img src="{escapar(n["imagen_web"])}" alt="" loading="lazy" width="600" height="600">'
+        media = f'<img src="{escapar(n["imagen_web"])}" alt="" loading="lazy" width="600" height="600" referrerpolicy="no-referrer">'
     else:
         media = '<div class="tarjeta-sin-imagen" aria-hidden="true">LP</div>'
     return f"""<article class="{clase}">
@@ -200,7 +207,7 @@ def pagina_noticia(*, n: dict, relacionadas: List[dict], ruta_raiz: str, config_
     titulo_pagina = f"{n['titulo']} — Ledesma Participa"
     parrafos = "\n".join(f"<p>{escapar(p)}</p>" for p in n["texto_parrafos"] if p.strip())
     if n["imagen_web"]:
-        figura = f'<figure class="noticia-figura"><img src="{escapar(n["imagen_web"])}" alt="{escapar(n["titulo"])}"></figure>'
+        figura = f'<figure class="noticia-figura"><img src="{escapar(n["imagen_web"])}" alt="{escapar(n["titulo"])}" referrerpolicy="no-referrer"></figure>'
     else:
         figura = ""
     fuente_html = ""
@@ -231,6 +238,7 @@ def pagina_noticia(*, n: dict, relacionadas: List[dict], ruta_raiz: str, config_
   <p class="migas"><a href="{ruta_raiz}categoria/{n['seccion_slug']}/">{escapar(n['seccion_etiqueta'])}</a></p>
   <h1 class="noticia-titulo">{escapar(n['titulo'])}</h1>
   <p class="noticia-meta">{escapar(n['fecha_legible'])}{(' · ' + escapar(n['nombre_fuente'])) if n.get('nombre_fuente') else ''}</p>
+  {('<p class="noticia-meta">Publicada originalmente por la fuente: ' + escapar(n['fecha_fuente_legible']) + '</p>') if n.get('fecha_fuente_legible') else ''}
   {figura}
   <div class="noticia-cuerpo">
   {parrafos}

@@ -1,0 +1,38 @@
+{
+  "habilitada": true,
+  "campania": "Publicidad comercial gratuita - Ledesma Participa",
+  "hora": "18:00",
+  "ventana_minutos": 59,
+  "max_intentos": 3,
+  "story_habilitada": true,
+  "etiqueta": "ESPACIO COMERCIAL",
+  "directorio_imagenes": "publicidad/entrada",
+  "hashtags": "#EspacioComercial #LedesmaParticipa",
+  "comercios": [
+    {
+      "id": "dosis_jeans",
+      "nombre": "DOSIS Jeans",
+      "direccion": "Tucumán 314",
+      "whatsapp": "3886576721",
+      "instagram": "@Dosis.jeans",
+      "horario": "Lunes a sábado 09:00-13:00 y 18:00-22:00",
+      "promocion": "50% de descuento en zapatillas seleccionadas. Zapatillas desde $25.000. Financiación de hasta 6 cuotas.",
+      "imagenes": ["dosis_01.jpg", "dosis_02.jpg", "dosis_03.jpg"]
+    },
+    {
+      "id": "un_clasico",
+      "nombre": "Un Clásico",
+      "rubro": "Drugstore y librería",
+      "direccion": "Chile N.º 25, B° Arrieta, frente a Escuela Raúl Galán",
+      "texto": "Artículos escolares, golosinas, bebidas, recargas y productos de uso diario.",
+      "imagenes": ["un_clasico.jpg"]
+    },
+    {
+      "id": "wifi_lumetto",
+      "nombre": "WiFi Internet Banda Ancha",
+      "alias": "Internet de Lumetto",
+      "texto": "Ampliación de red en barrio Raúl Alfonsín mediante instalación de postes para extender la fibra óptica y brindar servicio a más vecinos.",
+      "imagenes": ["wifi_lumetto.jpg"]
+    }
+  ]
+}

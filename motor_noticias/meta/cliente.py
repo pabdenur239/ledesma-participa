@@ -1,4 +1,5 @@
 import json
+import time
 import mimetypes
 import os
 import urllib.error
@@ -400,6 +401,36 @@ class ClienteMetaGraphAPI:
             raise ErrorClienteMeta("Meta no devolvió un ID de comentario de Facebook.")
         return comment_id
 
+    def _esperar_contenedor_imagen(
+        self, creation_id: str, espera_maxima_segundos: int = 30, intervalo_segundos: int = 3
+    ) -> None:
+        """Causa real de "Media ID is not available" (código 9007 / subcódigo
+        2207027) en publicaciones que salieron en Facebook y no en
+        Instagram: `media_publish` se llamaba apenas creado el contenedor,
+        antes de que Meta terminara de procesar la imagen. Se espera a que
+        el contenedor esté FINISHED (como ya se hacía con los Reels). Si la
+        consulta de estado misma falla, se sigue igual (comportamiento
+        anterior); un estado ERROR/EXPIRED sí corta con un error claro."""
+        transcurrido = 0
+        while transcurrido < espera_maxima_segundos:
+            try:
+                estado = self._peticion_get_json(
+                    f"{GRAPH_API_BASE}/{creation_id}",
+                    {"fields": "status_code", "access_token": self._access_token},
+                )
+            except ErrorClienteMeta:
+                return
+            status_code = (estado or {}).get("status_code")
+            if status_code in (None, "FINISHED", "PUBLISHED"):
+                return
+            if status_code in ("ERROR", "EXPIRED"):
+                raise ErrorClienteMeta(f"Meta no pudo procesar la imagen para Instagram: {estado}")
+            time.sleep(intervalo_segundos)
+            transcurrido += intervalo_segundos
+        raise ErrorClienteMeta(
+            f"La imagen para Instagram no terminó de procesarse en {espera_maxima_segundos}s (contenedor {creation_id})."
+        )
+
     def publicar_instagram(self, caption: str, imagen_url: Optional[str], dry_run: bool = True):
         """Publica en Instagram con el flujo oficial de dos pasos de la
         Graph API: crea un contenedor de media (requiere una `image_url`
@@ -434,6 +465,7 @@ class ClienteMetaGraphAPI:
         creation_id = contenedor.get("id")
         if not creation_id:
             raise ErrorClienteMeta("Meta no devolvió un ID de contenedor de Instagram.")
+        self._esperar_contenedor_imagen(creation_id)
 
         cuerpo_publish, tipo_publish = _multipart(
             {"creation_id": creation_id, "access_token": self._access_token}

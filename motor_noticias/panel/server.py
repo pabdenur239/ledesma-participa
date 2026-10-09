@@ -218,8 +218,16 @@ def _seccion_imagen(contenido) -> str:
         return f"""<h3>Imagen: placa generada automáticamente</h3>
 <img class="placa-preview" src="{data_uri}" alt="Placa generada automáticamente">"""
 
+    src = contenido.imagen_url
+    if not (src.startswith("http://") or src.startswith("https://")):
+        # Foto original ya descargada y preparada para Facebook/Instagram
+        # (archivo local): se embebe para que el navegador pueda mostrarla.
+        try:
+            src = "data:image/jpeg;base64," + base64.b64encode(Path(src).read_bytes()).decode("ascii")
+        except OSError:
+            src = ""
     return f"""<h3>Imagen: imagen original</h3>
-<img class="imagen-original" src="{_e(contenido.imagen_url)}" alt="Imagen original de la noticia">"""
+<img class="imagen-original" src="{_e(src)}" alt="Imagen original de la noticia">"""
 
 
 def _facebook_preview_html(noticia: dict, contenido) -> str:
@@ -571,7 +579,7 @@ def _resultado_carga_manual_html(resultado: ResultadoIngresoManual) -> str:
         acciones_extra = ""
         motivo_html = (
             f"<p><strong>Motivo:</strong> {_e(resultado.motivo_territorio)}</p>"
-            if resultado.territorio == "sin_clasificar"
+            if resultado.territorio in ("sin_clasificar", "internacional")
             else "<p><strong>Motivo:</strong> no superó el control mínimo de calidad editorial "
             "(contenido insuficiente, publicitario o no periodístico).</p>"
         )

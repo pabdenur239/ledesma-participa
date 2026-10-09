@@ -1,0 +1,32 @@
+{
+  "_descripcion": "Control de calidad del texto antes de publicar (motor_noticias/calidad_editorial.py). Si un problema lo introdujo la redacción automática y la fuente está bien, se publica el texto de la fuente; si no se puede corregir con seguridad, la noticia queda retenida para revisión humana. Nunca se inventa información. Ampliar con casos reales.",
+  "titulos_metadata": [
+    "novedad de .+\\(\\d{1,2}/\\d{1,2}/\\d{2,4}\\)",
+    "\\(\\d{1,2}/\\d{1,2}/\\d{4}\\)\\s*$",
+    "\\.(jpe?g|png|webp|gif|pdf|docx?|xlsx?|mp4)\\s*$",
+    "^(img|dsc|fb_img|whatsapp image|screenshot|captura)[\\s_-]*\\d",
+    "\\w+_\\w+_\\w+",
+    "^\\s*https?://",
+    "^\\s*\\d+\\s*$"
+  ],
+  "placeholders": [
+    "lorem ipsum",
+    "\\{\\{?\\s*\\w*\\s*\\}?\\}",
+    "\\[(titulo|título|texto|nombre|fecha|insertar)[^\\]]*\\]",
+    "^\\s*(t[ií]tulo|texto|resumen)\\s*:",
+    "(?-i:\\b(TODO|FIXME|XXX)\\b)",
+    "(?-i:\\b(undefined|NaN|None|null)\\b)"
+  ],
+  "erratas_conocidas": {
+    "_descripcion": "Erratas evidentes vistas en notas reales: si aparecen en el texto final la noticia se retiene (si la errata la introdujo la redacción y la fuente está bien, se usa la fuente).",
+    "fuetes": "fuertes",
+    "lluvas": "lluvias",
+    "goberno": "gobierno",
+    "munipalidad": "municipalidad",
+    "municipaliad": "municipalidad",
+    "secretria": "secretaría",
+    "minsterio": "ministerio",
+    "trancito": "tránsito",
+    "precipitaicones": "precipitaciones"
+  }
+}

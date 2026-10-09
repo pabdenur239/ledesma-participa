@@ -14,6 +14,7 @@ Costo cero: ambas APIs son públicas y no requieren clave. Solo biblioteca
 estándar (urllib/json), sin dependencias nuevas."""
 import json
 import logging
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from typing import Optional, Tuple
 from urllib.parse import urlencode
 
 from .db import Database
+from .dedupe import normalizar_url
 from .models import Noticia
 from .motor_editorial import ZONA_JUJUY
 from .pipeline import normalizar_noticia, procesar_noticia
@@ -287,11 +289,23 @@ class ResultadoInformeDiario:
     mensaje_error: Optional[str] = None
 
 
+# Reintentos ante fallas transitorias de las fuentes (bug real: Open-Meteo
+# respondió HTTP 503 el 25/9, 28/9, 30/9 y 1/10 y ese día no hubo informe,
+# porque el job no reintentaba). Esperas entre intentos, en segundos.
+ESPERAS_REINTENTO_SEGUNDOS = (20, 60)
+
+
+def url_informe_del_dia(fecha_iso: str) -> str:
+    return f"https://ledesma-participa.local/informe-diario/{fecha_iso}"
+
+
 def generar_informe_diario(
     db: Database,
     ahora: Optional[datetime] = None,
     config_path: Optional[Path] = None,
     urlopen=urllib.request.urlopen,
+    esperas_reintento=ESPERAS_REINTENTO_SEGUNDOS,
+    dormir=None,
 ) -> ResultadoInformeDiario:
     """Genera (a lo sumo una vez por fecha local en America/Argentina/Jujuy)
     el informe diario de clima + dólar, y lo deja como noticia `preparada`/
@@ -307,17 +321,38 @@ def generar_informe_diario(
     # Identidad determinística por día: reutiliza el mecanismo de dedupe ya
     # existente (URL normalizada) para garantizar como máximo un informe
     # por fecha, sin necesidad de ningún campo ni tabla nueva.
-    url_informe = f"https://ledesma-participa.local/informe-diario/{fecha_iso}"
+    url_informe = url_informe_del_dia(fecha_iso)
 
-    try:
-        clima = obtener_clima(config, urlopen=urlopen)
-        dolar_oficial = obtener_dolar("oficial", config, urlopen=urlopen)
-        dolar_blue = obtener_dolar("blue", config, urlopen=urlopen)
-    except ErrorInformeDiario as error:
-        mensaje = str(error)
-        logger.error("Informe diario: %s", mensaje)
-        db.registrar_salud_fuente(NOMBRE_SALUD, "error", mensaje_error=mensaje)
-        return ResultadoInformeDiario(resultado="error", noticia_id=None, fecha_local=fecha_iso, mensaje_error=mensaje)
+    # Idempotente: si el informe de hoy ya existe (otra ejecución, un
+    # reintento o el publicador de las 07:30), no se vuelve a consultar ni a
+    # generar — nunca dos informes el mismo día.
+    if db.obtener_por_url(normalizar_url(url_informe)) is not None:
+        logger.info("Informe diario: el informe de %s ya existe, no se duplica.", fecha_iso)
+        db.registrar_salud_fuente(NOMBRE_SALUD, "ok", elementos_obtenidos=1, noticias_nuevas=0)
+        return ResultadoInformeDiario(resultado="duplicado", noticia_id=None, fecha_local=fecha_iso)
+
+    dormir = dormir or time.sleep
+    intentos = len(esperas_reintento) + 1
+    for intento in range(1, intentos + 1):
+        try:
+            clima = obtener_clima(config, urlopen=urlopen)
+            dolar_oficial = obtener_dolar("oficial", config, urlopen=urlopen)
+            dolar_blue = obtener_dolar("blue", config, urlopen=urlopen)
+            break
+        except ErrorInformeDiario as error:
+            mensaje = str(error)
+            if intento < intentos:
+                espera = esperas_reintento[intento - 1]
+                logger.warning(
+                    "Informe diario: intento %s/%s falló (%s); reintento en %ss.", intento, intentos, mensaje, espera
+                )
+                dormir(espera)
+                continue
+            logger.error("Informe diario: fallaron los %s intentos (%s). Hoy no hay informe.", intentos, mensaje)
+            db.registrar_salud_fuente(NOMBRE_SALUD, "error", mensaje_error=f"{mensaje} (tras {intentos} intentos)")
+            return ResultadoInformeDiario(
+                resultado="error", noticia_id=None, fecha_local=fecha_iso, mensaje_error=mensaje
+            )
 
     titulo, texto = _construir_texto(clima, dolar_oficial, dolar_blue, fecha_local)
 

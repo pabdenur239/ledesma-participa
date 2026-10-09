@@ -1,5 +1,6 @@
 {
   "agenda_automatica": true,
   "publicacion_meta_automatica": true,
-  "proporcion_minima_contenido_propio": 0.7
+  "proporcion_minima_contenido_propio": 0.7,
+  "solo_territorios_prioritarios": true
 }

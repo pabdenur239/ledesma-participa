@@ -1,4 +1,5 @@
 import json
+import re
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,33 @@ def _contiene_alguna(texto_norm: str, terminos: list) -> Optional[str]:
     return None
 
 
+def _coincide_patron(texto_norm: str, patrones) -> Optional[str]:
+    """Familias de palabras (regex de `patrones` en riesgo_editorial.json):
+    reconocen variantes ("agredió", "agresiones", "golpeó") sin depender de
+    una palabra exacta. Bug real: "una joven denunció una brutal agresión
+    de su hermano" no se detectaba porque ningún término exacto coincidía."""
+    for patron in patrones:
+        encontrado = re.search(patron, texto_norm)
+        if encontrado:
+            return encontrado.group(0)
+    return None
+
+
+def _categorias_exceptuadas_por_busqueda_oficial(contenido_norm: str, config: dict) -> set:
+    """Una búsqueda oficial de persona desaparecida (CINDAC, Policía…) no se
+    bloquea automáticamente por mencionar a un menor o términos judiciales
+    del propio pedido: es información pública necesaria. Violencia o muerte
+    siguen reteniéndose (no se exceptúan)."""
+    regla = config.get("busqueda_oficial")
+    if not regla:
+        return set()
+    if not any(re.search(p, contenido_norm) for p in regla["patrones"]):
+        return set()
+    if not any(re.search(p, contenido_norm) for p in regla["organismos"]):
+        return set()
+    return set(regla.get("categorias_exceptuadas", []))
+
+
 def evaluar_riesgo_editorial(
     titulo_original: str,
     texto_original: str,
@@ -42,8 +70,12 @@ def evaluar_riesgo_editorial(
         )
     )
 
+    patrones = {k: v for k, v in config.get("patrones", {}).items() if not k.startswith("_")}
+    exceptuadas = _categorias_exceptuadas_por_busqueda_oficial(contenido, config)
     for categoria, terminos in config["categorias"].items():
-        match = _contiene_alguna(contenido, terminos)
+        if categoria in exceptuadas:
+            continue
+        match = _contiene_alguna(contenido, terminos) or _coincide_patron(contenido, patrones.get(categoria, ()))
         if match:
             return {
                 "requiere_revision_especial": True,

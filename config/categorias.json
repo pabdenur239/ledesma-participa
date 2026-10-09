@@ -1,0 +1,22 @@
+{
+  "_descripcion": "Temáticas de presentación (motor_noticias/categorias.py), independientes del territorio. Una nota puede tener varias. Detección: categoría temática de la fuente, sección de la URL, 1 término en el título o 2 términos distintos en la bajada. Términos sin acentos; '*' final = raíz.",
+  "por_categoria_tematica": {
+    "espectaculos": "espectaculos",
+    "salud": "salud",
+    "gastronomia": "gastronomia"
+  },
+  "secciones_url": {
+    "policiales": ["policiales", "policial", "seguridad", "judiciales", "judicial", "sucesos", "inseguridad"],
+    "deportes": ["deportes", "deporte", "futbol", "sports", "hockey", "basquetbol", "rugby", "tenis", "automovilismo", "polideportivo"],
+    "espectaculos": ["espectaculos", "teleshow", "show", "famosos", "gente", "cine", "musica", "cultura", "entretenimiento"],
+    "salud": ["salud", "bienestar", "medicina"],
+    "gastronomia": ["gastronomia", "recetas", "cocina", "comer-y-beber"]
+  },
+  "terminos": {
+    "policiales": ["detenid*", "detuvieron", "aprehendid*", "robo", "robaron", "asalto", "hurto", "policia", "policial*", "comisaria", "operativo", "allanamiento", "balead*", "disparo", "apunal*", "homicidio", "femicidio", "imputad*", "condenad*", "narcomenudeo", "estafa*", "choque", "chocaron", "vuelco", "siniestro vial", "atropell*", "se busca", "buscan a", "desaparecid*"],
+    "deportes": ["futbol", "partido", "torneo", "campeonato", "liga", "copa", "goles", "golazo", "seleccion", "boxeo", "basquet", "voley", "hockey", "rugby", "atletismo", "maraton", "fixture", "juegos nacionales", "juegos evita", "olimpiada*", "club atletico", "deportista*", "intercolegial*"],
+    "espectaculos": ["teatro", "concierto", "recital", "festival", "ballet", "danza", "cine", "pelicula", "serie", "cantante", "musica", "musical", "espectaculo*", "show", "circo", "artista*", "obra teatral", "mimo", "clown", "pena", "folclore", "famoso*", "television"],
+    "salud": ["salud", "hospital", "dengue", "vacun*", "medic*", "enfermedad*", "cardiovascular", "sobrepeso", "diabetes", "cancer", "epidemi*", "sanitari*", "caps", "nutricion"],
+    "gastronomia": ["receta*", "cocina", "gastronom*", "restaurante*", "comida*", "empanada*", "asado", "chef", "plato*", "postre*"]
+  }
+}

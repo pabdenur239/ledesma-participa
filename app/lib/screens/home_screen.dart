@@ -6,7 +6,6 @@ import '../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/noticia_card.dart';
 import 'busqueda_screen.dart';
-import 'contacto_screen.dart';
 import 'detalle_screen.dart';
 
 /// Pantalla principal: feed cronológico con prioridad editorial (Inicio,
@@ -81,11 +80,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               Uri.parse('https://ledesmaparticipa.com.ar'),
               mode: LaunchMode.externalApplication,
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.mail_outline),
-            tooltip: 'Contacto',
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ContactoScreen())),
           ),
         ],
         bottom: TabBar(

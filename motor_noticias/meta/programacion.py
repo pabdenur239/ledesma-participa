@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, NamedTuple, Optional
 
+from ..calidad_editorial import evaluar_calidad
 from ..db import Database
 from ..institucional import reservar_franja_institucional
 from ..meta.elegibilidad_automatica import evaluar_elegibilidad_publicacion_automatica
@@ -45,11 +46,20 @@ def aprobar_si_elegible(db: Database, noticia: dict, ahora: Optional[datetime] =
     if not resultado.elegible:
         return noticia
 
+    # Control de calidad: si la redacción automática introdujo un problema
+    # (número que la fuente no dice, nombre deformado, fecha imposible) y el
+    # texto de la fuente está bien, se aprueba el texto de la fuente.
+    titulo_aprobado = noticia.get("titulo_preparado")
+    texto_aprobado = noticia.get("texto_preparado")
+    if evaluar_calidad(noticia).accion == "usar_original":
+        titulo_aprobado = noticia.get("titulo_original")
+        texto_aprobado = noticia.get("texto_original")
+
     db.actualizar_revision(
         noticia["id"],
         RevisionEstado.APROBADA.value,
-        noticia.get("titulo_preparado"),
-        noticia.get("texto_preparado"),
+        titulo_aprobado,
+        texto_aprobado,
         datetime.now(timezone.utc).isoformat(),
         automatica=True,
     )

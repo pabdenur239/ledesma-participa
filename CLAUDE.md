@@ -296,3 +296,68 @@ cambios: no todo lo que entra a web/app se publica en redes.
   escucha el estado real del audio (`MotorAudio.sonandoReal`) y lo
   re-verifica al volver al frente; si se cortó muestra "Transmisión
   interrumpida. Tocá Play para reconectar." y Play reconecta.
+
+## Etapa 3 — MEDICIÓN, CRECIMIENTO Y OPTIMIZACIÓN (implementada 9/10/2026, rama `etapa3-crecimiento-medicion`)
+
+Sin publicidad paga (prohibido activar/reactivar campañas; el gasto previo
+de ~$3.014,49 ARS no se usa para calcular costo por seguidor). Frecuencia de
+redes sin cambios.
+
+- **Línea base** `data/metricas/baseline_2026-09-30.json` (23–29/09, FUENTE =
+  auditoría Meta confirmada): solo referencia histórica, no se modifica. Las
+  tablas de Gemini no son verdad operativa.
+- **Métricas Meta** (`motor_noticias/metricas_meta.py`, solo lectura, sin
+  permisos nuevos), verificado contra la API real el 9/10/2026:
+  DISPONIBLE = FB seguidores (`followers_count`); IG seguidores, cantidad de
+  medios y likes/comentarios por publicación. NO DISPONIBLE = todo insight
+  (FB devuelve `data: []` → falta `read_insights`; IG "Application does not
+  have permission" → falta `instagram_manage_insights`; listar posts de FB
+  requiere `pages_read_user_content`). `data: []` nunca se toma como 0. Las
+  respuestas de paginación de Meta traen el token: siempre se descartan.
+  Snapshot diario `data/metricas/meta_<fecha>.json` (no versionado).
+- **content_id** (`motor_noticias/contenido_registro.py`, tabla
+  `contenido_registro`): `lp_AAAAMMDD_HHMM_NNN` por noticia publicada, con
+  territorio, categoría, urgente, `visual_format` (PHOTO_HEADLINE,
+  EDITORIAL_CARD, URGENT_CARD, SERVICE_CARD, INSTITUTIONAL, STORY, CAROUSEL,
+  REEL, EXTERNAL_IMAGE), has_real_photo/has_video/has_link, fuente,
+  propia/externa, URL web, `reel_candidate` (solo marca, no publica Reels) y
+  alertas de titular. Los IDs de Meta se leen de `programacion_meta`. Lo
+  publicado antes de Etapa 3 se registra con `formato_inferido = 1`. El
+  publicador lo registra tras publicar (try/except: nunca afecta la
+  publicación).
+- **Titulares** (`motor_noticias/titulares.py`, `config/titulares.json`):
+  solo limpieza mecánica (espacios, "…" final de título cortado); largo,
+  clickbait, exageración y frases sin información quedan como alertas,
+  nunca se reescribe. Copy sin cambios (urgente sin nota propia sigue
+  enlazando a la fuente; futura mejora: actualizar el enlace cuando exista
+  la nota propia).
+- **Medición propia web/app** (`motor_noticias/medicion.py`,
+  `run_medicion.py`, `assets_fuente/medicion.js`, app
+  `services/telemetria.dart`): contadores agregados (fecha, origen, evento,
+  clave de contenido) en `data/medicion.db`; sin IP, cookies, IDs de
+  dispositivo ni texto libre; respeta Do Not Track; sin terceros. **Estado:
+  instalada y DESACTIVADA** (`medicion_endpoint` vacío en
+  `config/sitio.json`): no hay endpoint HTTPS público de Ledesma en la
+  infraestructura actual (sitio estático en GitHub Pages; en Contabo solo
+  SSH es público, el proxy 80/443 y los túneles son de otros proyectos).
+  Activarla requiere autorización explícita para un hostname nuevo (p. ej.
+  túnel propio + DNS en Cloudflare). Con el endpoint cargado, la web lo usa
+  en la siguiente regeneración y la app lo lee de `api/medicion.json`
+  (la app instrumentada sale con la próxima versión publicada).
+- **Informe interno CRECIMIENTO LEDESMA PARTICIPA**
+  (`motor_noticias/crecimiento.py`): se genera dentro de la tarea existente
+  del Informe Diario (07:30), en `data/informes/crecimiento_<fecha>.{json,txt}`
+  y en el panel (`/crecimiento`). Nunca se publica en redes. Ranking interno
+  transparente (interacción IG, aperturas web/app, clics de portada,
+  recencia, prioridad territorial); informativo, no altera la selección
+  editorial; lo local tiene listado propio. Alertas: interacción alta, local
+  destacado, caída de actividad/web y alcance (si Meta no da alcance: "no
+  evaluable"; con ≥2 publicaciones en 0, la frase fija de alcance 0, sin
+  atribuir causas).
+- **Web**: NewsArticle JSON-LD (autor/editor = la organización, nunca un
+  autor falso; `image` solo si la nota tiene imagen real), og:image por
+  defecto en páginas sin imagen, `article:published_time`, lastmod real en
+  sitemap; CTA "Seguí Ledesma Participa" (cabecera, portada, final de nota)
+  con Facebook e Instagram (`instagram_url` = @ledesmaparticipa, verificado
+  por API); "También puede interesarte" (misma localidad > territorio >
+  categoría > recientes, máx. 4); acceso a Radios en portada.

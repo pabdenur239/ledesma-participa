@@ -1,0 +1,19 @@
+[Unit]
+StartLimitIntervalSec=0
+Description=Ledesma Participa - Medicion agregada web/app (Etapa 3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ledesma
+Group=ledesma
+WorkingDirectory=/opt/ledesma-participa
+ExecStart=/opt/ledesma-participa/.venv/bin/python /opt/ledesma-participa/run_medicion.py --puerto 8010
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

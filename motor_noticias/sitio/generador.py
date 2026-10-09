@@ -396,6 +396,28 @@ PRIORIDAD_SECCION = {
 }
 
 
+def relacionadas_para(n: dict, candidatas: List[dict], maximo: int = MAXIMO_RELACIONADAS) -> List[dict]:
+    """"También puede interesarte" (Etapa 3): misma localidad > mismo
+    territorio > misma categoría > más reciente. Solo notas reales del
+    portal (sin informes de clima/dólar ni la propia nota); nunca se
+    rellena con contenido que no comparta al menos territorio o categoría
+    salvo que no haya nada más reciente que mostrar."""
+    localidad = (n.get("localidad") or "").strip().lower()
+
+    def prioridad(r: dict) -> tuple:
+        misma_localidad = bool(localidad) and (r.get("localidad") or "").strip().lower() == localidad
+        mismo_territorio = r.get("territorio") == n.get("territorio")
+        misma_categoria = bool(n.get("categoria_tema")) and r.get("categoria_tema") == n.get("categoria_tema") and n.get(
+            "categoria_tema") != "general"
+        return (not misma_localidad, not mismo_territorio, not misma_categoria)
+
+    otras = [r for r in candidatas if r["id"] != n["id"] and not r.get("es_informe")]
+    # Orden estable: primero por fecha (más reciente), después por afinidad.
+    otras.sort(key=lambda r: (r["fecha_orden"], r["id"]), reverse=True)
+    otras.sort(key=prioridad)
+    return otras[:maximo]
+
+
 def _elegir_destacadas(noticias: List[dict], cantidad: int = 3) -> List[dict]:
     ordenadas = sorted(
         enumerate(noticias),
@@ -721,10 +743,13 @@ def _escribir_api_json(
         _escribir(salida_dir / "api" / "portada.json", json.dumps(datos_portada, ensure_ascii=False))
 
 
-def _sitemap_xml(urls: List[str]) -> str:
+def _sitemap_xml(urls: List[str], lastmod: Optional[dict] = None) -> str:
+    """`lastmod` por URL cuando se conoce (fecha real de cada nota); el
+    resto (portada, secciones) cambia en cada regeneración: hoy."""
     hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    lastmod = lastmod or {}
     entradas = "\n".join(
-        f"  <url><loc>{plantillas.escapar(u)}</loc><lastmod>{hoy}</lastmod></url>" for u in urls
+        f"  <url><loc>{plantillas.escapar(u)}</loc><lastmod>{lastmod.get(u, hoy)}</lastmod></url>" for u in urls
     )
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{entradas}\n</urlset>\n'
 
@@ -762,9 +787,13 @@ def generar_sitio(
 
     _copiar_assets_estaticos(salida_dir)
     imagen_og_default_abs = base_url + _generar_imagen_og_default(salida_dir)
+    plantillas.IMAGEN_OG_DEFAULT = imagen_og_default_abs
     for n in noticias:
+        # Imagen real de la nota (para NewsArticle.image): nunca el banner.
+        n["imagen_og_propia"] = n["imagen_og"]
         if not n["imagen_og"]:
             n["imagen_og"] = imagen_og_default_abs
+        n["fecha_iso"] = n["fecha_orden"].isoformat() if n["fecha_orden"].year > 1970 else ""
 
     comercios = cargar_comercios()
     _copiar_imagenes_guia(salida_dir, comercios)
@@ -801,6 +830,7 @@ def generar_sitio(
 
     portada = armar_portada(noticias, ahora, videos, comercios, clima_dolar)
     portada["url_informe"] = url_informe
+    portada["cantidad_radios"] = len(radios)
     _escribir(
         salida_dir / "index.html",
         plantillas.pagina_index(
@@ -824,9 +854,12 @@ def generar_sitio(
         if items:
             urls_sitemap.append(url_categoria)
 
+    lastmod: dict = {}
     for n in noticias:
-        relacionadas = [r for r in por_seccion.get(n["seccion_slug"], []) if r["id"] != n["id"]][:MAXIMO_RELACIONADAS]
+        relacionadas = relacionadas_para(n, lista)
         url_articulo = base_url + n["url_relativa"]
+        if n["fecha_iso"]:
+            lastmod[url_articulo] = n["fecha_iso"][:10]
         _escribir(
             salida_dir / n["url_relativa"] / "index.html",
             plantillas.pagina_noticia(
@@ -897,8 +930,11 @@ def generar_sitio(
 
     _escribir_api_json(salida_dir, noticias, base_url, portada, comercios, videos, clima_dolar)
     _escribir_api_radios(salida_dir, radios)
+    # Etapa 3: la app lee de acá el receptor de medición (null = no envía).
+    _escribir(salida_dir / "api" / "medicion.json",
+              json.dumps({"endpoint": config_sitio.get("medicion_endpoint") or None}, ensure_ascii=False))
 
-    _escribir(salida_dir / "sitemap.xml", _sitemap_xml(urls_sitemap))
+    _escribir(salida_dir / "sitemap.xml", _sitemap_xml(urls_sitemap, lastmod))
     _escribir(salida_dir / "robots.txt", f"User-agent: *\nAllow: /\nSitemap: {base_url}sitemap.xml\n")
 
     return {

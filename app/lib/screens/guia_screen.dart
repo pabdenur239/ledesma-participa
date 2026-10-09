@@ -6,6 +6,7 @@ import '../models/noticia.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 import 'categoria_screen.dart';
+import '../services/telemetria.dart';
 
 /// GUÍA COMERCIAL LEDESMA PARTICIPA: listado de comercios. Contenido
 /// comercial, siempre rotulado como tal y separado de las noticias.
@@ -78,7 +79,10 @@ class TarjetaComercio extends StatelessWidget {
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ComercioScreen(comercio: comercio))),
+          onTap: () {
+            Telemetria.instancia.evento('commercial_open', comercio.slug);
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ComercioScreen(comercio: comercio)));
+          },
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -149,7 +153,12 @@ class ComercioScreen extends StatelessWidget {
             const SizedBox(height: 14),
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: MarcaColores.servicio, foregroundColor: Colors.white),
-              onPressed: () => launchUrl(Uri.parse(comercio.contactoUrl!), mode: LaunchMode.externalApplication),
+              onPressed: () {
+                Telemetria.instancia.evento(
+                    comercio.contactoUrl!.contains('instagram.com') ? 'commercial_instagram_click' : 'commercial_whatsapp_click',
+                    comercio.slug);
+                launchUrl(Uri.parse(comercio.contactoUrl!), mode: LaunchMode.externalApplication);
+              },
               icon: const Icon(Icons.chat_outlined),
               label: Text(comercio.contactoEtiqueta ?? 'Contactar'),
             ),

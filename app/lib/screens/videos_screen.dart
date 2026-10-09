@@ -7,12 +7,15 @@ import '../services/api_service.dart';
 import '../theme.dart';
 import 'categoria_screen.dart';
 import 'radios_screen.dart';
+import '../services/telemetria.dart';
 
 /// Abre la página del video en ledesmaparticipa.com.ar, que embebe el
 /// reproductor oficial de YouTube, dentro de la app (navegador integrado).
 /// Nunca se descarga el video.
-Future<void> abrirVideo(Video video) =>
-    launchUrl(Uri.parse(video.url), mode: LaunchMode.inAppBrowserView);
+Future<void> abrirVideo(Video video) {
+  Telemetria.instancia.evento('video_open', video.id);
+  return launchUrl(Uri.parse(video.url), mode: LaunchMode.inAppBrowserView);
+}
 
 class VideosScreen extends StatefulWidget {
   const VideosScreen({super.key});

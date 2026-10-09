@@ -40,6 +40,9 @@ a { color: inherit; }
 .logo { color: var(--blanco); text-decoration: none; font-weight: 900; letter-spacing: .04em; font-size: 1.08rem; }
 .logo span { color: var(--dorado); }
 .cabecera-buscar { color: var(--dorado); text-decoration: none; font-weight: 700; font-size: .9rem; padding: 8px 4px; }
+.cabecera-seguir { display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 12px; font-size: .78rem; color: var(--gris, #c8c4ba); }
+.cabecera-seguir a { color: var(--blanco); text-decoration: none; font-weight: 700; padding: 6px 2px; }
+@media (max-width: 380px) { .cabecera-seguir span { display: none; } }
 .nav { border-top: 1px solid #262521; }
 .nav-pista {
   display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 6px 12px;

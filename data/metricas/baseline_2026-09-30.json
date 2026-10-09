@@ -1,0 +1,26 @@
+{
+  "FUENTE": "auditoría Meta confirmada",
+  "periodo": {"desde": "2026-09-23", "hasta": "2026-09-29"},
+  "registrada_en": "2026-10-09",
+  "uso": "Solo referencia histórica. No modificar estos números. No se usan las tablas creadas posteriormente por Gemini.",
+  "facebook": {
+    "seguidores": 321,
+    "nuevos_seguidores": 7,
+    "alcance": 199,
+    "visualizaciones": 953,
+    "publicaciones": 144,
+    "interacciones_meta": 16
+  },
+  "instagram": {
+    "seguidores": 136,
+    "nuevos_seguidores": 0,
+    "alcance": 106,
+    "visualizaciones": 2030,
+    "publicaciones": 137,
+    "stories": 134,
+    "interacciones_meta": 10
+  },
+  "publicidad_paga": {
+    "nota": "Campaña anterior: gasto aproximado $3.014,49 ARS. No hay evidencia suficiente para atribuirle el crecimiento observado; no se usa para calcular costo por seguidor."
+  }
+}

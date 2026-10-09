@@ -157,7 +157,11 @@
         nombre: barra.querySelector(".mr-nombre"), dial: barra.querySelector(".mr-dial"), estado: barra.querySelector(".mr-estado"),
         volumen: barra.querySelector(".mr-volumen input"), cerrar: barra.querySelector(".mr-cerrar")
       };
-      ui.play.addEventListener("click", function () { control.alternar(); });
+      ui.play.addEventListener("click", function () {
+        var e = control.estado();
+        if (e.radio) medir(e.reproduciendo ? "radio_pause" : "radio_play", e.radio.id);
+        control.alternar();
+      });
       ui.cerrar.addEventListener("click", function () { control.cerrar(); });
       ui.volumen.addEventListener("input", function () { control.volumen(ui.volumen.value); });
     }
@@ -197,13 +201,30 @@
         // Un HLS en un navegador sin soporte nativo dispara "error" y se ve el aviso de no disponible.
         var radio = { id: b.getAttribute("data-radio-id"), nombre: b.getAttribute("data-nombre"), dial: b.getAttribute("data-dial"), stream: b.getAttribute("data-stream"), tipo: b.getAttribute("data-tipo") || "" };
         var e = control.estado();
-        if (e.radio && e.radio.id === radio.id && e.reproduciendo) control.pausar();
-        else control.reproducir(radio);
+        if (e.radio && e.radio.id === radio.id && e.reproduciendo) { medir("radio_pause", radio.id); control.pausar(); }
+        else { medir("radio_select", radio.id); medir("radio_play", radio.id); control.reproducir(radio); }
       });
     }
 
+    // Medición agregada (Etapa 3): minutos aproximados escuchados, en
+    // bloques de 5 (y el resto al salir de la página). Sin identificadores.
+    var minutos = 0;
+    function enviarMinutos() {
+      var r = control.estado().radio;
+      if (minutos > 0 && r) medir("radio_listen_minutes", r.id, minutos);
+      minutos = 0;
+    }
+    global.setInterval(function () {
+      if (!audio.paused && control.estado().radio) { minutos++; if (minutos >= 5) enviarMinutos(); }
+    }, 60000);
+    global.addEventListener("pagehide", enviarMinutos);
+
     iniciarFiltros();
     control.restaurar();
+  }
+
+  function medir(evento, clave, valor) {
+    try { if (global.LPMedicion) global.LPMedicion.evento(evento, clave, valor); } catch (e) { /* la medición nunca afecta al reproductor */ }
   }
 
   function iniciarFiltros() {

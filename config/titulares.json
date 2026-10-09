@@ -1,0 +1,26 @@
+{
+  "_descripcion": "Control de titulares (Etapa 3, motor_noticias/titulares.py): frases que se registran como alerta. No bloquean ni reescriben el titular. Ampliar con casos reales.",
+  "clickbait": [
+    "no vas a creer",
+    "no podras creer",
+    "lo que paso despues",
+    "te sorprendera",
+    "mira lo que",
+    "mira como",
+    "nadie esperaba",
+    "la verdad detras",
+    "esto es lo que",
+    "enterate"
+  ],
+  "exageracion": [
+    "impactante",
+    "insolito",
+    "escandalo",
+    "brutal",
+    "terrible",
+    "increible",
+    "polemica total",
+    "furor",
+    "explota"
+  ]
+}

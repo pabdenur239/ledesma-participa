@@ -4,10 +4,12 @@ import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'theme.dart';
 import 'widgets/mini_reproductor.dart';
+import 'services/telemetria.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
+  Telemetria.instancia.evento('app_open');
   runApp(LedesmaParticipaApp(navigatorKey: navigatorKey));
   // No bloquea el arranque de la app: si Firebase no está configurado
   // todavía (ver README, sección "Notificaciones push"), esto no hace

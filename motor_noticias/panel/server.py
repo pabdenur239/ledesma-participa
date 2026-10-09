@@ -112,7 +112,7 @@ label {{ display: block; margin-top: 0.75rem; font-weight: bold; }}
 </head>
 <body>
 <h1><a href="/" style="text-decoration:none;color:inherit;">Ledesma Participa — Panel de revisión</a></h1>
-<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a> | <a href="/cargar-noticia">Cargar noticia</a></nav>
+<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a> | <a href="/cargar-noticia">Cargar noticia</a> | <a href="/crecimiento">Crecimiento</a></nav>
 {cuerpo}
 </body>
 </html>"""
@@ -154,6 +154,53 @@ def _tarjeta_noticia(n: dict) -> str:
 <p><a href="/noticia?id={n['id']}">Editar / aprobar / rechazar</a></p>
 {_enlace_facebook(n)}
 </div>"""
+
+
+def _crecimiento_html(informe: Optional[dict] = None) -> str:
+    """Sección CRECIMIENTO (Etapa 3): muestra el último informe interno
+    guardado por la tarea del Informe Diario. Solo lectura, no publica."""
+    from ..crecimiento import ultimo_informe
+
+    informe = informe if informe is not None else ultimo_informe()
+    if not informe:
+        return _pagina("Crecimiento — Ledesma Participa",
+                       "<h2>Crecimiento</h2><p>Todavía no hay informe de crecimiento (se genera con el Informe Diario de las 07:30).</p>")
+
+    def red(nombre: str, b: dict) -> str:
+        variacion = b["variacion"]
+        if isinstance(variacion, int):
+            variacion = f"{variacion:+d} desde {b['variacion_desde']}"
+        mejor = b.get("mejor_contenido")
+        if isinstance(mejor, dict):
+            mejor = f"{mejor['content_id']} — {mejor['titulo']} ({mejor['likes_mas_comentarios']})"
+        filas = "".join(f"<tr><td>{_e(k)}</td><td>{_e(str(v))}</td></tr>" for k, v in b["metricas"].items())
+        return (f"<h3>{nombre}</h3><p>Seguidores: <strong>{_e(str(b['seguidores']))}</strong> · Variación 7 días: "
+                f"{_e(str(variacion))} · Mejor contenido: {_e(str(mejor))}</p><table>{filas}</table>")
+
+    web = informe["web"]
+    pub = informe["publicaciones"]
+    top = "".join(
+        f"<tr><td>{_e(str(f['puntaje']))}</td><td>{_e(f['content_id'])}</td><td>{_e(f['territorio'] or '')}</td>"
+        f"<td>{_e(f['visual_format'])}</td><td>{_e(str(f['interaccion_ig'] if f['interaccion_ig'] is not None else 'N/D'))}</td>"
+        f"<td>{_e(str(f['aperturas_web']))}</td><td>{_e(f.get('titulo', ''))}</td></tr>"
+        for f in informe["ranking"]
+    )
+    alertas = "".join(f"<li><strong>{_e(a['tipo'])}</strong>: {_e(a['detalle'])}</li>" for a in informe["alertas"]) or "<li>ninguna</li>"
+    cuerpo = f"""<h2>Crecimiento — {_e(informe['fecha'])}</h2>
+<p>Informe interno (no se publica). Período {_e(informe['periodo']['desde'])} a {_e(informe['periodo']['hasta'])}.
+NO DISPONIBLE = Meta no entrega esa métrica con los permisos actuales (nunca se estima).</p>
+{red("Facebook", informe["facebook"])}
+{red("Instagram", informe["instagram"])}
+<h3>Publicaciones</h3><p>Confirmadas por día: {_e(str(pub['confirmadas_por_dia']))} · Por formato: {_e(str(pub['por_formato']))}</p>
+<h3>Top contenidos (ranking interno)</h3>
+<table><tr><th>Puntaje</th><th>content_id</th><th>Territorio</th><th>Formato</th><th>IG likes+com.</th><th>Web</th><th>Título</th></tr>{top}</table>
+<h3>Web (medición: {_e(web['estado_medicion'])})</h3>
+<p>Notas abiertas ayer: {web['notas_abiertas_ayer']} · 7 días: {web['notas_abiertas_7d']} · Portada: {web['visitas_portada_7d']}</p>
+<p>Radios: {_e(str(web['radios']))}</p>
+<p>Guía Comercial: {_e(str(web['guia_comercial']))}</p>
+<h3>App</h3><p>{_e(informe['app']['estado_medicion'])} · {_e(str(informe['app']['eventos_7d']))}</p>
+<h3>Alertas</h3><ul>{alertas}</ul>"""
+    return _pagina("Crecimiento — Ledesma Participa", cuerpo)
 
 
 def _lista_html(db: Database, filtro: str) -> str:
@@ -683,6 +730,10 @@ class PanelHandler(BaseHTTPRequestHandler):
                 if filtro not in FILTROS_VALIDOS:
                     filtro = "pendientes"
                 self._responder_html(_lista_html(db, filtro))
+                return
+
+            if partes.path == "/crecimiento":
+                self._responder_html(_crecimiento_html())
                 return
 
             if partes.path == "/estado":

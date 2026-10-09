@@ -129,14 +129,18 @@ def etiqueta_territorio_copy(noticia: dict) -> Optional[str]:
 
 
 def encabezado_copy(noticia: dict, titulo: str, urgente: bool = False) -> str:
-    """[TERRITORIO] | TITULAR EN MAYÚSCULAS (URGENTE adelante si corresponde)."""
+    """[TERRITORIO] | TITULAR EN MAYÚSCULAS (URGENTE adelante si corresponde).
+    Control de titulares (Etapa 3): solo se limpian espacios y puntos
+    suspensivos de un título cortado; nunca se reescribe."""
+    from ..titulares import limpiar_titular
+
     partes = []
     if urgente:
         partes.append("URGENTE")
     territorio = etiqueta_territorio_copy(noticia)
     if territorio:
         partes.append(territorio)
-    partes.append(titulo.strip().upper())
+    partes.append(limpiar_titular(titulo).upper())
     return " | ".join(partes)
 
 

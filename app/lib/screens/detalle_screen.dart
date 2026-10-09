@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/imagen_noticia.dart';
 import '../widgets/insignias.dart';
+import '../services/telemetria.dart';
 
 /// Nota completa: insignias (urgente / territorio / categoría), titular,
 /// fecha y fuente, imagen real o placa editorial, texto y enlace a la nota
@@ -29,6 +30,7 @@ class _DetalleScreenState extends State<DetalleScreen> {
   void initState() {
     super.initState();
     _detalle = _api.obtenerDetalle(widget.noticiaId);
+    Telemetria.instancia.evento('article_open', widget.noticiaId);
   }
 
   @override
@@ -110,7 +112,10 @@ class _Contenido extends StatelessWidget {
                 ],
                 const SizedBox(height: 20),
                 OutlinedButton.icon(
-                  onPressed: () => Share.share('${noticia.titulo}\n${noticia.url}'),
+                  onPressed: () {
+                    Telemetria.instancia.evento('share_click', 'sistema');
+                    Share.share('${noticia.titulo}\n${noticia.url}');
+                  },
                   icon: const Icon(Icons.share_outlined),
                   label: const Text('Compartir'),
                 ),

@@ -8,6 +8,7 @@ import '../services/favoritos_radios.dart';
 import '../services/reproductor_radio.dart';
 import '../theme.dart';
 import 'categoria_screen.dart';
+import '../services/telemetria.dart';
 
 /// RADIOS EN VIVO (Etapa 2): listado con filtro por zona y favoritas,
 /// ficha de emisora y reproductor (mini reproductor global, main.dart).
@@ -240,7 +241,10 @@ class BotonEscuchar extends StatelessWidget {
           child: FilledButton.icon(
             key: Key('escuchar-${radio.id}'),
             style: _estilo(esta),
-            onPressed: () => esta ? reproductor.pausar() : reproductor.reproducir(radio),
+            onPressed: () {
+              Telemetria.instancia.evento(esta ? 'radio_pause' : 'radio_play', radio.id);
+              esta ? reproductor.pausar() : reproductor.reproducir(radio);
+            },
             icon: Icon(esta ? Icons.pause : Icons.play_arrow),
             label: Text(esta ? 'PAUSA' : 'ESCUCHAR EN VIVO'),
           ),

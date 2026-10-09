@@ -389,6 +389,24 @@ def _duplicado_por_contenido(db: Database, noticia: dict, ahora_utc: datetime) -
     return None
 
 
+def _registrar_contenido(db: Database, noticia: dict, fecha: str, clave: str, contenido) -> None:
+    """Etapa 3 (medición): content_id + formato visual real de la pieza.
+    Telemetría interna: un fallo acá nunca afecta la publicación."""
+    try:
+        from ..contenido_registro import registrar_publicacion
+        from ..sitio.urls import base_url, url_relativa_noticia
+
+        registrar_publicacion(
+            db, noticia, fecha=fecha, clave=clave,
+            imagen_generada=bool(contenido.imagen_generada_automaticamente),
+            texto_publicado=contenido.post_principal,
+            url_web=base_url() + url_relativa_noticia(noticia),
+            publicada_en=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:
+        logger.exception("No se pudo registrar el content_id de la noticia #%s (no afecta la publicación).", noticia.get("id"))
+
+
 def _publicar_noticia_en_clave(
     db: Database,
     fecha: str,
@@ -561,6 +579,7 @@ def _publicar_noticia_en_clave(
 
     if any(r.estado == "publicado" for r in resultados_red):
         db.actualizar_estado_noticia(noticia["id"], Estado.PUBLICADA.value)
+        _registrar_contenido(db, noticia, fecha, clave, contenido)
 
     # -- Instagram Story: independiente del feed (no depende de que Facebook
     # o Instagram feed hayan publicado), pero reutiliza la misma noticia ya

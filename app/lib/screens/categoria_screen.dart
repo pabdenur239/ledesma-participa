@@ -4,6 +4,7 @@ import '../models/noticia.dart';
 import '../services/api_service.dart';
 import '../widgets/noticia_card.dart';
 import 'detalle_screen.dart';
+import '../services/telemetria.dart';
 
 void abrirNoticia(BuildContext context, Noticia noticia) {
   Navigator.of(context).push(
@@ -31,6 +32,7 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
   @override
   void initState() {
     super.initState();
+    Telemetria.instancia.evento('category_open', widget.slug);
     _cargar();
   }
 

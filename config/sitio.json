@@ -3,7 +3,9 @@
   "descripcion": "Información de Libertador General San Martín y el Departamento Ledesma. Noticias locales, servicios, comunidad y temas de Jujuy que impactan en nuestra región.",
   "email_contacto": "ledesmaparticipa@gmail.com",
   "facebook_url": "https://www.facebook.com/1174992842373499",
-  "instagram_url": "",
+  "instagram_url": "https://www.instagram.com/ledesmaparticipa/",
   "base_url_produccion": "https://ledesmaparticipa.com.ar",
-  "deploy_automatico": true
+  "deploy_automatico": true,
+  "medicion_endpoint": "",
+  "_medicion": "Etapa 3: URL HTTPS pública del receptor propio (run_medicion.py, /e). Vacío = la web no envía medición."
 }

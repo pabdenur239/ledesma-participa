@@ -39,3 +39,8 @@ exports/android/*.aab
 # Datos de runtime (Etapa 1): caché del sitio y datos del informe Clima + Dólar
 data/cache/
 data/informe_diario/
+
+# Etapa 3 (medición): snapshots diarios de Meta e informes internos de
+# crecimiento (runtime del VPS). La línea base sí se versiona.
+data/metricas/meta_*.json
+data/informes/

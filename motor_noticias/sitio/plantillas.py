@@ -13,6 +13,7 @@ vacía.
 Etapa 2 (9/10/2026): Multimedia y Radios en vivo (`pagina_multimedia`,
 `pagina_radios`); el mini reproductor persistente vive en assets/radio.js."""
 import html
+import json
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from ..radios import ZONAS as ZONAS_RADIO
@@ -20,6 +21,11 @@ from ..radios import ZONAS as ZONAS_RADIO
 COLOR_FONDO_MARCA = "#111111"
 COLOR_ORO = "#d4af37"
 COLOR_NARANJA = "#e8631c"
+
+# og:image para páginas sin imagen propia (portada, secciones, guía): el
+# banner genérico de la marca. Lo fija el generador (URL absoluta) antes de
+# renderizar; nunca se inventa una imagen de nota.
+IMAGEN_OG_DEFAULT: Optional[str] = None
 
 
 def escapar(texto: Optional[str]) -> str:
@@ -40,14 +46,18 @@ def cabecera_html(
     imagen_og: Optional[str] = None,
     tipo_og: str = "website",
     css_href: Optional[str] = None,
+    datos_estructurados: Optional[dict] = None,
+    metas_extra: Sequence[Tuple[str, str]] = (),
 ) -> str:
     css_href = css_href or f"{ruta_raiz}assets/site.css"
+    imagen_og = imagen_og or IMAGEN_OG_DEFAULT
     metas_og = [
         _tag_meta("og:title", titulo_pagina, propiedad=True),
         _tag_meta("og:description", descripcion, propiedad=True),
         _tag_meta("og:type", tipo_og, propiedad=True),
         _tag_meta("og:url", url_canonica, propiedad=True),
         _tag_meta("og:site_name", "Ledesma Participa", propiedad=True),
+        _tag_meta("og:locale", "es_AR", propiedad=True),
         _tag_meta("twitter:card", "summary_large_image"),
         _tag_meta("twitter:title", titulo_pagina),
         _tag_meta("twitter:description", descripcion),
@@ -55,6 +65,11 @@ def cabecera_html(
     if imagen_og:
         metas_og.append(_tag_meta("og:image", imagen_og, propiedad=True))
         metas_og.append(_tag_meta("twitter:image", imagen_og))
+    metas_og.extend(_tag_meta(nombre, valor, propiedad=True) for nombre, valor in metas_extra if valor)
+    if datos_estructurados:
+        # "</" se neutraliza para que ningún texto pueda cerrar el <script>.
+        ld = json.dumps(datos_estructurados, ensure_ascii=False).replace("</", "<\\/")
+        metas_og.append(f'<script type="application/ld+json">{ld}</script>')
 
     return f"""<!DOCTYPE html>
 <html lang="es-AR">
@@ -97,18 +112,31 @@ PIE_HTML_PLANTILLA = """
     <p class="pie-nota">Cada nota indica su fuente original y enlaza a ella. Contacto: {email}</p>
   </div>
 </footer>
-<script src="{ruta_raiz}assets/radio.js" defer></script>
+{script_medicion}<script src="{ruta_raiz}assets/radio.js" defer></script>
 </body>
 </html>
 """
 
 
-def cierre_html(*, ruta_raiz: str, config_sitio: dict) -> str:
+def script_medicion(config_sitio: dict, ruta_raiz: str, pagina: str = "", clave="") -> str:
+    """Medición propia y anónima (Etapa 3, assets/medicion.js). Sin
+    `medicion_endpoint` en config/sitio.json no se incluye nada."""
+    endpoint = config_sitio.get("medicion_endpoint")
+    if not endpoint:
+        return ""
+    return (
+        f'<script src="{ruta_raiz}assets/medicion.js" data-endpoint="{escapar(endpoint)}" '
+        f'data-pagina="{escapar(pagina)}" data-clave="{escapar(str(clave))}"></script>\n'
+    )
+
+
+def cierre_html(*, ruta_raiz: str, config_sitio: dict, pagina: str = "", clave="") -> str:
     enlaces = [
         f'<a href="{escapar(url)}" rel="noopener" target="_blank">{escapar(nombre)}</a>'
         for nombre, url in _enlaces_sociales(config_sitio)
     ]
     return PIE_HTML_PLANTILLA.format(
+        script_medicion=script_medicion(config_sitio, ruta_raiz, pagina, clave),
         descripcion=escapar(config_sitio.get("descripcion", "")),
         enlaces_sociales="\n      ".join(enlaces),
         ruta_raiz=ruta_raiz,
@@ -138,9 +166,21 @@ SECCIONES_NAV = (
 )
 
 
+def _cta_seguir_cabecera(config_sitio: Optional[dict]) -> str:
+    enlaces = _enlaces_sociales(config_sitio or {})
+    if not enlaces:
+        return ""
+    botones = "".join(
+        f'<a href="{escapar(url)}" rel="noopener" target="_blank" data-ev="follow_cta_click" data-k="{nombre.lower()}" '
+        f'aria-label="Seguí Ledesma Participa en {escapar(nombre)}">{escapar(nombre)}</a>'
+        for nombre, url in enlaces
+    )
+    return f'<div class="cabecera-seguir"><span>Seguí</span>{botones}</div>'
+
+
 def encabezado_html(
     *, ruta_raiz: str, seccion_activa: Optional[str] = None, nav: Optional[Sequence[Tuple[str, str]]] = None,
-    extras: Sequence[Tuple[str, str, str]] = (),
+    extras: Sequence[Tuple[str, str, str]] = (), config_sitio: Optional[dict] = None,
 ) -> str:
     """Cabecera fija: logo + buscador + menú. Debajo, la barra de secciones
     con desplazamiento horizontal (cómoda con el pulgar en el celular)."""
@@ -155,6 +195,7 @@ def encabezado_html(
     return f"""<header class="cabecera">
   <div class="ancho cabecera-fila">
     <a class="logo" href="{ruta_raiz}">LEDESMA <span>PARTICIPA</span></a>
+    {_cta_seguir_cabecera(config_sitio)}
     <a class="cabecera-buscar" href="{ruta_raiz}buscar/" aria-label="Buscar">Buscar</a>
   </div>
   <nav class="nav" aria-label="Secciones">
@@ -317,8 +358,9 @@ def tarjeta_comercio(c: dict, *, ruta_raiz: str) -> str:
     )
     rubro = f'<p class="comercio-rubro">{escapar(c["rubro"])}</p>' if c.get("rubro") else ""
     promo = f'<p class="comercio-promo">{escapar(c["promociones"][0])}</p>' if c.get("promociones") else ""
+    medicion = _attrs_medicion("commercial_promo_open", c["slug"]) if c.get("promociones") else ""
     return f"""<article class="tarjeta-comercio">
-  <a href="{ruta_raiz}guia-comercial/{escapar(c['slug'])}/">
+  <a href="{ruta_raiz}guia-comercial/{escapar(c['slug'])}/"{medicion}>
     <div class="comercio-media">{imagen}</div>
     <div class="comercio-cuerpo"><h3>{escapar(c['nombre'])}</h3>{rubro}{promo}</div>
   </a>
@@ -340,13 +382,23 @@ def bloque_seguinos(config_sitio: dict) -> str:
     if not enlaces:
         return ""
     botones = "".join(
-        f'<a class="boton boton-red" href="{escapar(url)}" rel="noopener" target="_blank">{escapar(nombre)}</a>'
+        f'<a class="boton boton-red" href="{escapar(url)}" rel="noopener" target="_blank" '
+        f'data-ev="follow_cta_click" data-k="{nombre.lower()}">{escapar(nombre)}</a>'
         for nombre, url in enlaces
     )
     return f"""<section class="bloque-seguinos">
-  <h2>Seguinos</h2>
+  <h2>Seguí Ledesma Participa</h2>
   <p>Las noticias de Libertador y el Departamento Ledesma, también en redes.</p>
   <div class="botones">{botones}</div>
+</section>"""
+
+
+def bloque_radios_portada(cantidad_radios: int, *, ruta_raiz: str) -> str:
+    if not cantidad_radios:
+        return ""
+    return f"""<section class="seccion-portada seccion-radios" aria-label="Radios en vivo">
+  <div class="seccion-encabezado"><h2 class="titulo-seccion">Radios en vivo</h2><a class="ver-mas" href="{ruta_raiz}radios/">Ver todas</a></div>
+  <p><a class="boton" href="{ruta_raiz}radios/">Escuchá las radios de la región</a></p>
 </section>"""
 
 
@@ -372,7 +424,7 @@ def pagina_index(
             url_canonica=url_base,
             ruta_raiz=ruta_raiz,
         ),
-        encabezado_html(ruta_raiz=ruta_raiz, nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, nav=nav, extras=extras_nav),
         '<main class="ancho portada">',
         '<h1 class="solo-lectores">Ledesma Participa — Noticias de Libertador General San Martín y el Departamento Ledesma</h1>',
     ]
@@ -394,10 +446,11 @@ def pagina_index(
             partes.append(seccion_portada(slug, etiqueta, noticias, ruta_raiz=ruta_raiz))
         partes.append(bloque_videos(portada.get("videos", []), ruta_raiz=ruta_raiz))
         partes.append(bloque_guia(portada.get("comercios", []), ruta_raiz=ruta_raiz))
+        partes.append(bloque_radios_portada(portada.get("cantidad_radios", 0), ruta_raiz=ruta_raiz))
         partes.append(f'<p class="mas-noticias"><a class="boton" href="{ruta_raiz}categoria/ultimas/">Todas las últimas noticias</a></p>')
         partes.append(bloque_seguinos(config_sitio))
     partes.append("</main>")
-    partes.append(cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio))
+    partes.append(cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio, pagina="home"))
     return "\n".join(p for p in partes if p)
 
 
@@ -409,7 +462,7 @@ def pagina_categoria(
     descripcion = f"Noticias de {etiqueta} en Ledesma Participa."
     partes = [
         cabecera_html(titulo_pagina=titulo_pagina, descripcion=descripcion, url_canonica=url_base, ruta_raiz=ruta_raiz),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa=slug, nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa=slug, nav=nav, extras=extras_nav),
         f'<main class="ancho"><h1 class="titulo-seccion">{escapar(etiqueta)}</h1>',
     ]
     if noticias:
@@ -418,7 +471,7 @@ def pagina_categoria(
     else:
         partes.append('<p class="vacio">Todavía no hay noticias publicadas en esta sección.</p>')
     partes.append("</main>")
-    partes.append(cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio))
+    partes.append(cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio, pagina="category", clave=slug))
     return "\n".join(partes)
 
 
@@ -428,8 +481,8 @@ def _botones_compartir(url: str, titulo: str) -> str:
     texto = quote(f"{titulo} {url}")
     return (
         '<div class="compartir"><span>Compartir:</span>'
-        f'<a class="boton boton-chico" href="https://wa.me/?text={texto}" rel="noopener" target="_blank">WhatsApp</a>'
-        f'<a class="boton boton-chico" href="https://www.facebook.com/sharer/sharer.php?u={quote(url, safe="")}" rel="noopener" target="_blank">Facebook</a>'
+        f'<a class="boton boton-chico" href="https://wa.me/?text={texto}" rel="noopener" target="_blank" data-ev="share_click" data-k="whatsapp">WhatsApp</a>'
+        f'<a class="boton boton-chico" href="https://www.facebook.com/sharer/sharer.php?u={quote(url, safe="")}" rel="noopener" target="_blank" data-ev="share_click" data-k="facebook">Facebook</a>'
         "</div>"
     )
 
@@ -459,7 +512,7 @@ def pagina_noticia(
     relacionadas_html = ""
     if relacionadas:
         relacionadas_html = (
-            '<section class="seccion-relacionadas"><h2 class="titulo-seccion">Más de ' + escapar(n["seccion_etiqueta"]) + "</h2>"
+            '<section class="seccion-relacionadas"><h2 class="titulo-seccion">También puede interesarte</h2>'
             f'<div class="lista-compacta">{grilla_noticias(relacionadas, ruta_raiz=ruta_raiz, variante="compacta")}</div></section>'
         )
     partes = [
@@ -470,8 +523,14 @@ def pagina_noticia(
             ruta_raiz=ruta_raiz,
             imagen_og=n.get("imagen_og"),
             tipo_og="article",
+            datos_estructurados=datos_news_article(n, url_base, config_sitio),
+            metas_extra=(
+                ("article:published_time", n.get("fecha_iso") or ""),
+                ("article:modified_time", n.get("fecha_iso") or ""),
+                ("article:section", n.get("seccion_etiqueta") or ""),
+            ),
         ),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa=n["seccion_slug"], nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa=n["seccion_slug"], nav=nav, extras=extras_nav),
         f"""<main class="ancho ancho-articulo">
 <article class="noticia{' noticia-urgente' if n.get('urgente') else ''}">
   <p class="migas"><a href="{ruta_raiz}categoria/{n['seccion_slug']}/">{escapar(n['seccion_etiqueta'])}</a></p>
@@ -489,9 +548,42 @@ def pagina_noticia(
 {relacionadas_html}
 {bloque_seguinos(config_sitio)}
 </main>""",
-        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio, pagina="article", clave=n["id"]),
     ]
     return "\n".join(partes)
+
+
+def datos_news_article(n: dict, url: str, config_sitio: dict) -> dict:
+    """Datos estructurados schema.org NewsArticle. Sin autor falso: autor y
+    editor son la organización (Ledesma Participa) y la fuente original va
+    en `isBasedOn`. `image` solo si la nota tiene una imagen real propia
+    (nunca el banner genérico)."""
+    nombre = config_sitio.get("nombre") or "Ledesma Participa"
+    base = (config_sitio.get("base_url_produccion") or "").rstrip("/") + "/"
+    organizacion = {"@type": "NewsMediaOrganization", "name": nombre, "url": base}
+    datos = {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": n["titulo"][:110],
+        "description": n.get("resumen") or "",
+        "mainEntityOfPage": {"@type": "WebPage", "@id": url},
+        "url": url,
+        "author": organizacion,
+        "publisher": dict(organizacion, logo={"@type": "ImageObject", "url": base + "assets/img/og-default-v2.png"}),
+        "inLanguage": "es-AR",
+        "articleSection": n.get("seccion_etiqueta") or "",
+    }
+    if n.get("fecha_iso"):
+        datos["datePublished"] = n["fecha_iso"]
+        datos["dateModified"] = n["fecha_iso"]
+    if n.get("imagen_og_propia"):
+        datos["image"] = [n["imagen_og_propia"]]
+    lugar = n.get("territorio_etiqueta_completa")
+    if n.get("territorio") in ("local", "departamental", "provincial") and lugar:
+        datos["contentLocation"] = {"@type": "Place", "name": lugar}
+    if n.get("url_fuente"):
+        datos["isBasedOn"] = n["url_fuente"]
+    return datos
 
 
 def pagina_guia(*, comercios: List[dict], ruta_raiz: str, config_sitio: dict, url_base: str,
@@ -502,15 +594,28 @@ def pagina_guia(*, comercios: List[dict], ruta_raiz: str, config_sitio: dict, ur
             descripcion="Guía Comercial Ledesma Participa: comercios y servicios de la zona.",
             url_canonica=url_base, ruta_raiz=ruta_raiz,
         ),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="guia-comercial", nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa="guia-comercial", nav=nav, extras=extras_nav),
         '<main class="ancho"><h1 class="titulo-seccion">Guía Comercial</h1>',
         '<p class="guia-aviso">Espacio comercial: no es contenido periodístico.</p>',
         f'<div class="grilla grilla-comercios">{"".join(tarjeta_comercio(c, ruta_raiz=ruta_raiz) for c in comercios)}</div>'
         if comercios else '<p class="vacio">Todavía no hay comercios en la guía.</p>',
         "</main>",
-        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio, pagina="guia"),
     ]
     return "\n".join(partes)
+
+
+def _evento_contacto_comercial(url: str) -> str:
+    url = (url or "").lower()
+    if "wa.me" in url or "whatsapp" in url:
+        return "commercial_whatsapp_click"
+    if "instagram.com" in url:
+        return "commercial_instagram_click"
+    return ""
+
+
+def _attrs_medicion(evento: str, clave: str) -> str:
+    return f' data-ev="{evento}" data-k="{escapar(clave)}"' if evento else ""
 
 
 def pagina_comercio(*, c: dict, ruta_raiz: str, config_sitio: dict, url_base: str, nav=None, extras_nav=()) -> str:
@@ -522,11 +627,13 @@ def pagina_comercio(*, c: dict, ruta_raiz: str, config_sitio: dict, url_base: st
     if c.get("horarios"):
         datos.append(("Horarios", escapar(c["horarios"])))
     if c.get("whatsapp_url"):
-        datos.append(("WhatsApp", f'<a href="{escapar(c["whatsapp_url"])}" rel="noopener" target="_blank">{escapar(c["whatsapp"])}</a>'))
+        datos.append(("WhatsApp", f'<a href="{escapar(c["whatsapp_url"])}" rel="noopener" target="_blank"'
+                      f'{_attrs_medicion("commercial_whatsapp_click", c["slug"])}>{escapar(c["whatsapp"])}</a>'))
     if c.get("telefono"):
         datos.append(("Teléfono", escapar(c["telefono"])))
     if c.get("instagram_url"):
-        datos.append(("Instagram", f'<a href="{escapar(c["instagram_url"])}" rel="noopener" target="_blank">{escapar(c["instagram"])}</a>'))
+        datos.append(("Instagram", f'<a href="{escapar(c["instagram_url"])}" rel="noopener" target="_blank"'
+                      f'{_attrs_medicion("commercial_instagram_click", c["slug"])}>{escapar(c["instagram"])}</a>'))
     if c.get("facebook"):
         datos.append(("Facebook", f'<a href="{escapar(c["facebook"])}" rel="noopener" target="_blank">Facebook</a>'))
     filas = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in datos)
@@ -539,14 +646,17 @@ def pagina_comercio(*, c: dict, ruta_raiz: str, config_sitio: dict, url_base: st
     )
     boton = ""
     if c.get("contacto"):
-        boton = f'<a class="boton boton-contacto" href="{escapar(c["contacto"]["url"])}" rel="noopener" target="_blank">{escapar(c["contacto"]["etiqueta"])}</a>'
+        boton = (
+            f'<a class="boton boton-contacto" href="{escapar(c["contacto"]["url"])}" rel="noopener" target="_blank"'
+            f'{_attrs_medicion(_evento_contacto_comercial(c["contacto"]["url"]), c["slug"])}>{escapar(c["contacto"]["etiqueta"])}</a>'
+        )
     partes = [
         cabecera_html(
             titulo_pagina=f"{c['nombre']} — Guía Comercial Ledesma Participa",
             descripcion=c.get("descripcion") or f"{c['nombre']} en la Guía Comercial Ledesma Participa.",
             url_canonica=url_base, ruta_raiz=ruta_raiz,
         ),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="guia-comercial", nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa="guia-comercial", nav=nav, extras=extras_nav),
         f"""<main class="ancho ancho-articulo">
 <article class="ficha-comercio">
   <p class="migas"><a href="{ruta_raiz}guia-comercial/">Guía Comercial</a></p>
@@ -559,7 +669,7 @@ def pagina_comercio(*, c: dict, ruta_raiz: str, config_sitio: dict, url_base: st
   {('<div class="comercio-galeria">' + imagenes + '</div>') if imagenes else ''}
 </article>
 </main>""",
-        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio, pagina="commercial", clave=c["slug"]),
     ]
     return "\n".join(partes)
 
@@ -576,7 +686,7 @@ def pagina_videos(*, videos: List[dict], ruta_raiz: str, config_sitio: dict, url
     partes = [
         cabecera_html(titulo_pagina="Videos — Ledesma Participa", descripcion="Videos en Ledesma Participa.",
                       url_canonica=url_base, ruta_raiz=ruta_raiz),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="videos", nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa="videos", nav=nav, extras=extras_nav),
         '<main class="ancho"><h1 class="titulo-seccion">Videos</h1>',
         f'<div class="grilla grilla-videos">{"".join(tarjeta_video(v, ruta_raiz=ruta_raiz) for v in videos)}</div>'
         if videos else '<p class="vacio">Todavía no hay videos.</p>',
@@ -594,7 +704,7 @@ def pagina_video(*, v: dict, ruta_raiz: str, config_sitio: dict, url_base: str, 
     partes = [
         cabecera_html(titulo_pagina=f"{v['titulo']} — Videos — Ledesma Participa", descripcion=v.get("descripcion") or v["titulo"],
                       url_canonica=url_base, ruta_raiz=ruta_raiz, imagen_og=v["miniatura"], tipo_og="video.other"),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="videos", nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa="videos", nav=nav, extras=extras_nav),
         f"""<main class="ancho ancho-articulo">
   <p class="migas"><a href="{ruta_raiz}videos/">Videos</a></p>
   <h1 class="noticia-titulo">{escapar(v['titulo'])}</h1>
@@ -602,7 +712,7 @@ def pagina_video(*, v: dict, ruta_raiz: str, config_sitio: dict, url_base: str, 
   {('<p>' + escapar(v['descripcion']) + '</p>') if v.get('descripcion') else ''}
   {fuente}
 </main>""",
-        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio),
+        cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio, pagina="video", clave=v["id"]),
     ]
     return "\n".join(partes)
 
@@ -685,7 +795,7 @@ def pagina_radios(*, radios: List[dict], ruta_raiz: str, config_sitio: dict, url
         cabecera_html(titulo_pagina="Radios en vivo — Ledesma Participa",
                       descripcion="Radios de Libertador, el Departamento Ledesma, Jujuy y Argentina en vivo.",
                       url_canonica=url_base, ruta_raiz=ruta_raiz),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="radios", nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa="radios", nav=nav, extras=extras_nav),
         f"""<main class="ancho">
   <p class="migas"><a href="{ruta_raiz}multimedia/">Multimedia</a></p>
   <h1 class="titulo-seccion">Radios en vivo</h1>
@@ -713,7 +823,7 @@ def pagina_multimedia(*, hay_videos: bool, cantidad_radios: int, ruta_raiz: str,
     partes = [
         cabecera_html(titulo_pagina="Multimedia — Ledesma Participa", descripcion="Videos y radios en vivo en Ledesma Participa.",
                       url_canonica=url_base, ruta_raiz=ruta_raiz),
-        encabezado_html(ruta_raiz=ruta_raiz, seccion_activa="multimedia", nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, seccion_activa="multimedia", nav=nav, extras=extras_nav),
         f"""<main class="ancho">
   <h1 class="titulo-seccion">Multimedia</h1>
   <ul class="lista-multimedia">
@@ -739,7 +849,7 @@ def pagina_contacto(*, ruta_raiz: str, config_sitio: dict, url_base: str, nav=No
             url_canonica=url_base,
             ruta_raiz=ruta_raiz,
         ),
-        encabezado_html(ruta_raiz=ruta_raiz, nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, nav=nav, extras=extras_nav),
         f"""<main class="ancho ancho-articulo">
   <h1 class="titulo-seccion">Contacto</h1>
   <p>Para consultas, correcciones, información, reclamos o contacto con
@@ -763,7 +873,7 @@ def pagina_buscar(*, ruta_raiz: str, config_sitio: dict, url_base: str, nav=None
             url_canonica=url_base,
             ruta_raiz=ruta_raiz,
         ),
-        encabezado_html(ruta_raiz=ruta_raiz, nav=nav, extras=extras_nav),
+        encabezado_html(config_sitio=config_sitio, ruta_raiz=ruta_raiz, nav=nav, extras=extras_nav),
         f"""<main class="ancho">
   <h1 class="titulo-seccion">Buscar noticias</h1>
   <input type="search" id="buscador-input" class="buscador-input" placeholder="Escribí un tema, barrio o palabra clave…" autofocus>

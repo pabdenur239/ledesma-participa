@@ -54,10 +54,18 @@ class TestDatosRadios(unittest.TestCase):
         ruta.write_text(json.dumps({"radios": lista}), encoding="utf-8")
         return ruta
 
-    def test_config_real_no_inventa_emisoras(self):
+    def test_config_real_solo_emisoras_con_fuente_oficial(self):
+        """Sin red: cada radio cargada tiene stream/player autorizable,
+        fuente_autorizacion documentada y nunca es demo."""
         datos = json.loads((RAIZ / "config" / "radios.json").read_text(encoding="utf-8"))
-        self.assertEqual(datos["radios"], [])
-        self.assertEqual(radios.cargar_radios(incluir_demo=False), [])
+        for crudo in datos["radios"]:
+            self.assertFalse(crudo.get("demo"), crudo["id"])
+            self.assertTrue((crudo.get("fuente_autorizacion") or "").strip(), crudo["id"])
+            self.assertNotIn(".invalid", json.dumps(crudo), crudo["id"])
+        cargadas = radios.cargar_radios(incluir_demo=False)
+        self.assertEqual(len(cargadas), len([c for c in datos["radios"] if c.get("activa") and c.get("estado") == "activa"]))
+        for r in cargadas:
+            self.assertTrue(r["stream_url"] or r["player_url"], r["id"])
 
     def test_demo_del_archivo_demo_esta_marcado_y_no_apunta_a_radios_reales(self):
         datos = json.loads((RAIZ / "config" / "radios_demo.json").read_text(encoding="utf-8"))

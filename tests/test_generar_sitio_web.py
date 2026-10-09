@@ -246,6 +246,7 @@ class TestCliDespliegaDespuesDeGenerar(unittest.TestCase):
         self.db_path = Path(self.tmpdir.name) / "test.db"
         db = Database(self.db_path)
         db.close()
+        _aislar(self, self.tmpdir.name)  # sin caché real ni streams de radio por red
 
     def tearDown(self):
         self.tmpdir.cleanup()

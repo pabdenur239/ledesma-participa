@@ -273,3 +273,19 @@ cambios: no todo lo que entra a web/app se publica en redes.
   dispositivo físico.
 - **Futuro**: Entrevistas y Podcast quedan como "Próximamente" en Multimedia,
   sin producción activa.
+
+### Cierre operativo de Etapa 2 (9/10/2026)
+- Emisoras reales cargadas (stream tomado del reproductor OFICIAL de cada
+  radio, `fuente_autorizacion` en el JSON): Radio City Ledesma
+  (Libertador, HLS, sin dial: la fuente oficial no publica el dial local),
+  Radio Nacional Jujuy LRA 22 AM 790 (mp3) y Radio City Jujuy 107.1 FM
+  (HLS). Otras radios de Libertador (Bajando Caña 101.5, FM Ciudad 101.9,
+  Radio del Valle 99.1…) solo aparecen en directorios o Facebook, sin
+  stream oficial verificable: no se cargaron.
+- Prueba real en producción (Chrome 154): reproducción mp3 y HLS, Play/
+  Pausa, filtro por zona, mini reproductor y aviso de stream caído OK. Al
+  cambiar de página el audio SE REINICIA (nueva conexión al vivo, corte de
+  1–2 s), no continúa sin corte. HLS sin soporte nativo (p. ej. Firefox):
+  aviso claro + enlace "Reproductor oficial", sin convertir el stream.
+- App: compila; prueba en teléfono físico PENDIENTE (no había dispositivo
+  ADB).

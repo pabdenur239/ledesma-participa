@@ -357,7 +357,7 @@ class TestConfiguracionOllama(unittest.TestCase):
 
     def test_motor_continuo_sigue_vivo_ante_un_error_de_ollama(self):
         # "Motor continúa ante error": un fallo real de Ollama (timeout) no
-        # debe interrumpir el ciclo ni las demás fuentes.
+        # debe interrumpir el ciclo, las demás fuentes ni la propia fuente.
         import tempfile as _tempfile
         from pathlib import Path as _Path
         from unittest.mock import patch as _patch
@@ -388,9 +388,14 @@ class TestConfiguracionOllama(unittest.TestCase):
                     urlopen_mock.side_effect = TimeoutError("timed out")
                     resumen = ejecutar_ciclo(db, redactor, agenda_automatica=False)
 
-                self.assertEqual(resumen.total_errores, 1)
-                self.assertEqual(resumen.resultados[0].resultado, "error")
-                self.assertIn("Ollama", resumen.resultados[0].mensaje_error)
+                # Cobertura web/app (9/10/2026): un fallo de Ollama ya no tumba
+                # la fuente: la noticia sigue con el texto original y queda
+                # marcada como sin redacción automática.
+                self.assertEqual(resumen.total_errores, 0)
+                self.assertEqual(resumen.resultados[0].resultado, "ok")
+                preparada = db.listar_preparadas()[0]
+                self.assertEqual(preparada["texto_preparado"], preparada["texto_original"])
+                self.assertTrue(preparada["observacion_interna"].startswith("sin_redaccion_automatica"))
                 # el ciclo se registró igual pese al error del redactor
                 self.assertIsNotNone(db.ultimo_ciclo())
             finally:

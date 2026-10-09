@@ -36,6 +36,7 @@ from .collectors.rss_ops_paho import OPSPAHORSSCollector
 from .collectors.rss_paparazzi import PaparazziRSSCollector
 from .collectors.rss_paulina_cocina import PaulinaCocinaRSSCollector
 from .collectors.rss_prensa_jujuy import ErrorRecoleccionRSS, PrensaJujuyRSSCollector
+from .collectors.rss_regionales import InfoYungasRSSCollector, JujuyAlMomentoRSSCollector, TribunoJujuyRSSCollector
 from .collectors.rss_somosjujuy import ErrorRecoleccionSomosJujuy, SomosJujuyRSSCollector
 from .collectors.rss_tmz import TMZRSSCollector
 from .collectors.rss_todojujuy import ErrorRecoleccionTodoJujuy, TodoJujuyRSSCollector
@@ -50,6 +51,10 @@ logger = logging.getLogger("motor_noticias.continuo")
 
 INTERVALO_SEGUNDOS_DEFAULT = 1800
 
+# Un ítem con menos texto que esto cuenta como "sin texto" para la alerta
+# de salud de la fuente (mismo umbral que el portal web/app).
+MINIMO_CARACTERES_TEXTO = 40
+
 # Clave sintética usada en la tabla `fuente_salud` (reutilizada, no se crea
 # una tabla nueva) para registrar la salud de la actualización automática de
 # la Agenda Editorial, aparte de la salud de cada fuente de noticias.
@@ -63,9 +68,11 @@ CONFIG_AGENDA_PATH_DEFAULT = Path(__file__).resolve().parent.parent / "config" /
 FUENTES_CONTINUAS = (
     ("rss-prensa-jujuy", PrensaJujuyRSSCollector, ErrorRecoleccionRSS),
     ("municipio-libertador", MunicipioLibertadorHTMLCollector, ErrorRecoleccionHTML),
-    ("infoyungas", InfoYungasHTMLCollector, ErrorRecoleccionInfoYungas),
-    ("jujuy-al-momento", JujuyAlMomentoHTMLCollector, ErrorRecoleccionJujuyAlMomento),
-    ("tribuno-jujuy", TribunoJujuyHTMLCollector, ErrorRecoleccionTribunoJujuy),
+    # RSS oficial con el listado HTML de siempre como respaldo (9/10/2026,
+    # `collectors/rss_regionales.py`): mismo identificador de salud.
+    ("infoyungas", InfoYungasRSSCollector, ErrorRecoleccionInfoYungas),
+    ("jujuy-al-momento", JujuyAlMomentoRSSCollector, ErrorRecoleccionJujuyAlMomento),
+    ("tribuno-jujuy", TribunoJujuyRSSCollector, ErrorRecoleccionTribunoJujuy),
     ("todojujuy", TodoJujuyRSSCollector, ErrorRecoleccionTodoJujuy),
     ("somos-jujuy", SomosJujuyRSSCollector, ErrorRecoleccionSomosJujuy),
     ("jujuyaldia", JujuyAlDiaRSSCollector, ErrorRecoleccionJujuyAlDia),
@@ -98,6 +105,7 @@ class ResultadoFuente(NamedTuple):
     elementos_obtenidos: int
     noticias_nuevas: int
     mensaje_error: Optional[str]
+    items_sin_texto: int = 0
 
 
 class ResumenCiclo(NamedTuple):
@@ -155,10 +163,11 @@ def _procesar_fuente(db: Database, identificador: str, collector_cls, error_cls,
 
     elementos_obtenidos = len(resultados)
     noticias_nuevas = sum(1 for _, resultado in resultados if resultado != "duplicado")
+    items_sin_texto = sum(1 for noticia, _ in resultados if len((noticia.texto_original or "").strip()) < MINIMO_CARACTERES_TEXTO)
     logger.info(
         "Fuente %s: OK — %d elementos, %d nuevas", identificador, elementos_obtenidos, noticias_nuevas
     )
-    return ResultadoFuente(identificador, "ok", elementos_obtenidos, noticias_nuevas, None)
+    return ResultadoFuente(identificador, "ok", elementos_obtenidos, noticias_nuevas, None, items_sin_texto)
 
 
 def _actualizar_agenda(db: Database) -> "tuple[bool, Optional[str]]":
@@ -213,6 +222,7 @@ def ejecutar_ciclo(
             elementos_obtenidos=resultado.elementos_obtenidos,
             noticias_nuevas=resultado.noticias_nuevas,
             mensaje_error=resultado.mensaje_error,
+            items_sin_texto=resultado.items_sin_texto,
         )
         resultados.append(resultado)
 

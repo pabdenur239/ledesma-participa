@@ -124,6 +124,24 @@ CREATE TABLE IF NOT EXISTS portal_seleccion (
 CREATE INDEX IF NOT EXISTS idx_portal_seleccion_fecha ON portal_seleccion(fecha);
 """
 
+# Riesgo editorial en el portal web/app (cobertura 9/10/2026): sin riesgo,
+# o una local/departamental de categoría REVISABLE que una persona aprobó en
+# el panel (revisión rápida en vez de descarte definitivo). Bloqueo duro
+# siempre, aun aprobada: menores identificables, contenido violento, salud
+# dudosa y control de calidad (no figuran en la lista). Nunca afecta a Meta:
+# solo lo usan `candidatas_portal` y `listar_portal`.
+CATEGORIAS_RIESGO_REVISABLES_PORTAL = (
+    "institucional_municipal", "politica_partidaria", "figura_publica_relacionada",
+    "fiscal_institucional", "judicial", "muertes", "salud_sensible",
+)
+_CONDICION_RIESGO_PORTAL = (
+    "(((requiere_revision_especial = 0 OR requiere_revision_especial IS NULL) "
+    "AND (categoria_riesgo IS NULL OR categoria_riesgo = '')) "
+    "OR (revision_estado = 'aprobada' AND (revision_automatica = 0 OR revision_automatica IS NULL) "
+    "AND territorio IN ('local', 'departamental') "
+    "AND categoria_riesgo IN (" + ", ".join(f"'{c}'" for c in CATEGORIAS_RIESGO_REVISABLES_PORTAL) + ")))"
+)
+
 # Motivos normalizados de descarte (INFORMACIÓN LOCAL NO PUBLICADA): la
 # lista es fija a propósito, para que el resumen operativo pueda agrupar sin
 # depender de texto libre. "otro" cubre cualquier caso real no previsto acá.
@@ -212,6 +230,14 @@ COLUMNAS_CATEGORIA_TEMATICA = {
     "categoria_tematica": "TEXT",
 }
 
+# Salud de fuentes (cobertura web/app, 9/10/2026): consultas OK seguidas
+# que no trajeron ningún ítem y cuántos ítems de la última consulta
+# llegaron sin texto utilizable. Alimentan `alertas.calcular_alertas`.
+COLUMNAS_FUENTE_SALUD = {
+    "vacios_consecutivos": "INTEGER NOT NULL DEFAULT 0",
+    "items_sin_texto": "INTEGER NOT NULL DEFAULT 0",
+}
+
 # Notificaciones push (motor_noticias/push_notificaciones.py): NULL hasta
 # que se envía, timestamp UTC ISO una vez enviada — evita mandar más de un
 # push por la misma noticia (dedup) y sirve de marca de "ya evaluada" para
@@ -248,6 +274,7 @@ class Database:
         self._migrar_columnas(COLUMNAS_CATEGORIA_TEMATICA)
         self._migrar_columnas(COLUMNAS_PUSH)
         self._migrar_columnas(COLUMNAS_EVENTO)
+        self._migrar_columnas(COLUMNAS_FUENTE_SALUD, tabla="fuente_salud")
 
     def _migrar_columnas(self, columnas: dict, tabla: str = "noticias"):
         """Migración no destructiva, aditiva y segura entre procesos: varios
@@ -479,18 +506,19 @@ class Database:
         return [dict(fila) for fila in cur.fetchall()]
 
     def candidatas_portal(self, fecha_limite: str) -> list:
-        """Pool del portal web/app: `preparada` no rechazada, sin riesgo
-        editorial obligatorio, recolectada desde `fecha_limite` y todavía no
-        seleccionada. Mismas protecciones que `candidatos_editoriales`
-        (riesgo y rechazo siempre excluyen); la deduplicación ya la aplicó
-        el pipeline al ingresar."""
+        """Pool del portal web/app: `preparada` (o `solo_portal`) no
+        rechazada, sin riesgo editorial obligatorio, recolectada desde
+        `fecha_limite` y todavía no seleccionada. Mismas protecciones que
+        `candidatos_editoriales` (riesgo y rechazo siempre excluyen); la
+        deduplicación ya la aplicó el pipeline al ingresar. Única excepción
+        al riesgo: una local/departamental de categoría revisable que una
+        PERSONA aprobó en el panel (`_CONDICION_RIESGO_PORTAL`)."""
         cur = self.conn.execute(
-            "SELECT * FROM noticias WHERE estado = ? AND revision_estado != ? AND fecha_recoleccion >= ? "
-            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL) "
-            "AND (categoria_riesgo IS NULL OR categoria_riesgo = '') "
+            "SELECT * FROM noticias WHERE estado IN (?, ?) AND revision_estado != ? AND fecha_recoleccion >= ? "
+            f"AND {_CONDICION_RIESGO_PORTAL} "
             "AND id NOT IN (SELECT noticia_id FROM portal_seleccion) "
             "ORDER BY fecha_recoleccion DESC",
-            (Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value, fecha_limite),
+            (Estado.PREPARADA.value, Estado.SOLO_PORTAL.value, RevisionEstado.RECHAZADA.value, fecha_limite),
         )
         return [dict(fila) for fila in cur.fetchall()]
 
@@ -531,10 +559,13 @@ class Database:
         seleccionarlas, y siempre que no hayan sido descartadas."""
         cur = self.conn.execute(
             "SELECT * FROM noticias WHERE estado = ? OR (id IN (SELECT noticia_id FROM portal_seleccion WHERE fecha >= ?) "
-            "AND estado = ? AND revision_estado != ? "
-            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)) "
+            "AND estado IN (?, ?) AND revision_estado != ? "
+            f"AND {_CONDICION_RIESGO_PORTAL}) "
             "ORDER BY fecha_recoleccion DESC, id DESC",
-            (Estado.PUBLICADA.value, fecha_limite[:10], Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value),
+            (
+                Estado.PUBLICADA.value, fecha_limite[:10], Estado.PREPARADA.value, Estado.SOLO_PORTAL.value,
+                RevisionEstado.RECHAZADA.value,
+            ),
         )
         return [dict(fila) for fila in cur.fetchall()]
 
@@ -627,6 +658,7 @@ class Database:
         noticias_nuevas: int = 0,
         mensaje_error: Optional[str] = None,
         fecha_consulta: Optional[str] = None,
+        items_sin_texto: int = 0,
     ) -> None:
         """Registra el resultado de la última consulta a una fuente del motor
         continuo. `resultado` es "ok" o "error". Acumula fallos consecutivos
@@ -640,13 +672,21 @@ class Database:
         ultima_noticia_fecha = existente["ultima_noticia_fecha"] if existente else None
         if noticias_nuevas > 0:
             ultima_noticia_fecha = fecha_consulta
+        # Vacíos seguidos: solo cuentan las consultas OK sin ningún ítem; un
+        # error no los resetea ni los suma (ya lo cuenta fallos_consecutivos).
+        vacios_previos = (existente.get("vacios_consecutivos") or 0) if existente else 0
+        if resultado != "ok":
+            vacios_consecutivos = vacios_previos
+        else:
+            vacios_consecutivos = vacios_previos + 1 if elementos_obtenidos == 0 else 0
 
         self.conn.execute(
             """
             INSERT INTO fuente_salud (
                 nombre_fuente, ultima_consulta, ultimo_resultado, elementos_obtenidos,
-                noticias_nuevas, ultima_noticia_fecha, ultimo_error, fallos_consecutivos
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                noticias_nuevas, ultima_noticia_fecha, ultimo_error, fallos_consecutivos,
+                vacios_consecutivos, items_sin_texto
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(nombre_fuente) DO UPDATE SET
                 ultima_consulta = excluded.ultima_consulta,
                 ultimo_resultado = excluded.ultimo_resultado,
@@ -654,7 +694,9 @@ class Database:
                 noticias_nuevas = excluded.noticias_nuevas,
                 ultima_noticia_fecha = excluded.ultima_noticia_fecha,
                 ultimo_error = excluded.ultimo_error,
-                fallos_consecutivos = excluded.fallos_consecutivos
+                fallos_consecutivos = excluded.fallos_consecutivos,
+                vacios_consecutivos = excluded.vacios_consecutivos,
+                items_sin_texto = excluded.items_sin_texto
             """,
             (
                 nombre_fuente,
@@ -665,6 +707,8 @@ class Database:
                 ultima_noticia_fecha,
                 mensaje_error,
                 fallos_consecutivos,
+                vacios_consecutivos,
+                items_sin_texto,
             ),
         )
         self.conn.commit()

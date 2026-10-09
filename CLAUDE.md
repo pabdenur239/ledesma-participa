@@ -140,12 +140,23 @@ cambios: no todo lo que entra a web/app se publica en redes.
   - URGENTE (bool): no es categoría; lo decide el scoring editorial único
     (`scoring_editorial.urgente_confirmado`).
 - **Volumen web/app** (`motor_noticias/portal.py`, tabla `portal_seleccion`):
-  15–25 noticias válidas por día + urgentes = lo publicado en redes + lo
-  agendado hoy + las preparadas de mayor puntaje, con topes por territorio
-  (Jujuy 10, nacional 8, internacional 2) y por categoría (6). Nunca
-  entran: riesgo editorial, rechazadas, descartadas, el mismo hecho de dos
+  ~45 noticias válidas por día + urgentes (cobertura web/app 9/10/2026,
+  antes 15–25) = lo publicado en redes + lo agendado hoy + las preparadas
+  de mayor puntaje. Local/departamental sin tope y nunca bloqueadas por el
+  cupo general; topes para el resto (Jujuy 15, nacional 10, internacional
+  4) y por categoría (10, sin contar "general"); recuperación de locales
+  vigentes hasta 48 h. Internacional relevante entra como `solo_portal`
+  (texto original, nunca va a Meta). Una local de riesgo revisable
+  (muertes, judicial, política…) aprobada por una persona en el panel
+  entra al portal; menores, violencia y salud dudosa nunca. Nunca entran:
+  riesgo editorial, rechazadas, descartadas, el mismo hecho de dos
   medios, piezas periódicas de cotización/pronóstico. No se rellena. Web y
   app leen la misma fuente (`sitio/generador.py` → `docs/` + `docs/api/`).
+  InfoYungas, Jujuy al Momento y El Tribuno se leen por RSS oficial con el
+  listado HTML como respaldo (`collectors/rss_regionales.py`). Alertas de
+  fuentes (vacías, sin texto, HTTP, certificado, parser) en el panel
+  (/estado) y en el informe interno de crecimiento. Si Ollama falla, la
+  noticia sigue con el texto original (`sin_redaccion_automatica`).
 - **Web mobile-first** (`sitio/plantillas.py`, `assets_fuente/site.css`):
   portada Urgente → Clima + Dólar → principal (prioriza Libertador /
   Ledesma / Jujuy) → Libertador → Ledesma → Jujuy → Policiales → Salud →

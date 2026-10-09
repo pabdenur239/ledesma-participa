@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+        xmlns:content="http://purl.org/rss/1.0/modules/content/"
+        xmlns:dc="http://purl.org/dc/elements/1.1/"
+        xmlns:atom="http://www.w3.org/2005/Atom"
+	>
+
+	<channel>
+		<title><![CDATA[ El Tribuno - Últimas noticias ]]></title>
+		<link>https://eltribunodejujuy.com</link>
+		<description><![CDATA[ El Tribuno - Últimas noticias ]]></description>
+		<lastBuildDate>Fri, 09 Oct 2026 14:07:47 GMT</lastBuildDate>
+		<language>es</language>
+		<generator>https://www.mustang.cloud/</generator>
+
+		<item>
+			<title><![CDATA[Choque en cadena en el ingreso a San Salvador de Jujuy]]></title>
+			<description><![CDATA[Tres vehículos colisionaron en Ruta 66 a la altura de la Nueva Terminal de Ómnibus. ]]></description>
+			<link>https://eltribunodejujuy.com/policiales/2026-10-9-9-39-0-choque-en-cadena-en-el-ingreso-a-san-salvador-de-jujuy</link>
+			<guid isPermaLink="false">https://eltribunodejujuy.com/policiales/2026-10-9-9-39-0-choque-en-cadena-en-el-ingreso-a-san-salvador-de-jujuy</guid>
+			<pubDate>Fri, 09 Oct 2026 12:39:00 GMT</pubDate>
+			<enclosure url="https://uscdn.eltribunodejujuy.com/102026/prueba.jpg?cw=320&amp;ch=180" type="image/jpeg" />
+		</item>
+		<item>
+			<title><![CDATA[Concurso del caballo peruano de paso inicia en esta ciudad]]></title>
+			<description><![CDATA[La competencia reúne a criadores de todo el NOA durante el fin de semana en el predio ferial. ]]></description>
+			<link>https://eltribunodejujuy.com/informacion-general/2026-10-9-0-0-0-concurso-del-caballo-peruano-de-paso-inicia-en-esta-ciudad</link>
+			<guid isPermaLink="false">https://eltribunodejujuy.com/informacion-general/2026-10-9-0-0-0-concurso-del-caballo-peruano-de-paso-inicia-en-esta-ciudad</guid>
+			<pubDate>Fri, 09 Oct 2026 03:00:00 GMT</pubDate>
+			<enclosure url="https://uscdn.eltribunodejujuy.com/102026/prueba2.jpg?cw=320&amp;ch=180" type="image/jpeg" />
+		</item>
+	</channel>
+</rss>

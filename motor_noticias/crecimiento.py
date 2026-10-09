@@ -312,7 +312,23 @@ def generar_informe(db, hoy: date, snapshot: dict, db_medicion=None, directorio_
     informe["alertas"] = detectar_alertas(
         ranking, alcances, contenidos, por_dia, informe["web"]["notas_abiertas_ayer"], promedio_web
     )
+    informe["alertas_fuentes"] = _alertas_fuentes(db)
     return informe
+
+
+def _alertas_fuentes(db) -> list:
+    """Fuentes caídas, vacías o sin texto (las mismas alertas del panel,
+    `alertas.calcular_alertas`). Nunca rompe el informe."""
+    from .alertas import calcular_alertas
+
+    try:
+        return [
+            {"tipo": a["tipo"], "nivel": a["nivel"], "detalle": a["mensaje"]}
+            for a in calcular_alertas(db)
+            if a.get("fuente")
+        ]
+    except Exception:  # base sin tablas de salud o similar: el informe sigue
+        return []
 
 
 def _linea_red(nombre: str, bloque: dict) -> list:
@@ -370,6 +386,8 @@ def informe_texto(informe: dict) -> str:
         )
     lineas += ["", "ALERTAS"]
     lineas += [f"- [{a['tipo']}] {a['detalle']}" for a in informe["alertas"]] or ["- ninguna"]
+    lineas += ["", "FUENTES (caídas, vacías o sin texto)"]
+    lineas += [f"- [{a['nivel']}] {a['detalle']}" for a in informe.get("alertas_fuentes", [])] or ["- sin alertas"]
     return "\n".join(lineas) + "\n"
 
 

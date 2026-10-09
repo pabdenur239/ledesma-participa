@@ -1,4 +1,5 @@
 import html
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
@@ -12,8 +13,23 @@ from .entretenimiento import es_entretenimiento_o_curiosidad
 from .models import Estado, Noticia, RevisionEstado
 from .redaccion.base import Redactor
 from .riesgo_editorial import evaluar_riesgo_editorial
-from .scoring_editorial import es_urgente
+from .scoring_editorial import es_urgente, evaluar_noticia
 from .territorio import clasificar_territorio
+
+logger = logging.getLogger("motor_noticias.pipeline")
+
+# Marca en `observacion_interna` (privada) cuando la redacción automática
+# falló y se conservó el texto original de la fuente.
+MARCA_SIN_REDACCION = "sin_redaccion_automatica"
+
+# Internacional para web/app (cobertura 9/10/2026): una internacional que
+# no es entretenimiento ya no se descarta si pasa el gate mínimo de calidad
+# y tiene al menos este puntaje base del scoring editorial único (filtro
+# mínimo de relevancia: una cumbre o una suba de tasas sí, una muestra de
+# museo no). Queda en estado `solo_portal`: nunca entra a franjas, urgentes,
+# Stories ni push (todas esas consultas piden `preparada`); el portal toma
+# como máximo `portal.TOPES_POR_TERRITORIO["internacional"]` por día.
+BASE_MINIMA_INTERNACIONAL_PORTAL = 30
 
 # Territorios que hoy ya se preparan siempre (igual que el comportamiento
 # histórico de `relevancia_local`): local y departamental.
@@ -73,6 +89,7 @@ def procesar_noticia(
     categoria: Optional[str] = None,
     clave_dedup: Optional[str] = None,
     territorio_forzado: Optional[str] = None,
+    tolerar_fallo_redaccion: bool = False,
 ) -> Tuple[Noticia, str]:
     """`clave_dedup` (opcional): cuando se pasa, la deduplicación de ingreso
     se hace contra esa clave sintética (URL de identidad propia) en vez de
@@ -89,7 +106,13 @@ def procesar_noticia(
     hereda ese territorio en vez de reclasificar el texto reescrito, que
     puede quedar `sin_clasificar` al perder alguna mención geográfica en la
     reescritura. El riesgo editorial sí se reevalúa siempre sobre el texto
-    final."""
+    final.
+
+    `tolerar_fallo_redaccion`: lo usa la recolección (`ejecutar_pipeline`):
+    si el redactor (Ollama) falla o no responde, se conserva el texto
+    original y la noticia sigue su circuito en vez de tumbar la fuente
+    entera. La reelaboración de contenido propio NO lo usa: sin redacción
+    no hay nota propia."""
     if clave_dedup:
         noticia.url_normalizada = normalizar_url(clave_dedup)
         noticia.hash_contenido = hash_contenido(clave_dedup, "")
@@ -161,6 +184,9 @@ def procesar_noticia(
                 ("fuente_insuficiente", gate["motivo"]) if not gate["elegible"]
                 else ("fuera_de_alcance", noticia.motivo_territorio)
             )
+        if not apta_para_preparar and gate["elegible"] and _es_internacional(noticia):
+            if evaluar_noticia(asdict(noticia))["base"] >= BASE_MINIMA_INTERNACIONAL_PORTAL:
+                return _guardar_solo_portal(db, noticia)
 
     if not apta_para_preparar:
         noticia.estado = Estado.DESCARTADA.value
@@ -178,7 +204,19 @@ def procesar_noticia(
         )
         return noticia, "descartada"
 
-    titulo_preparado, texto_preparado = redactor.redactar(noticia)
+    try:
+        titulo_preparado, texto_preparado = redactor.redactar(noticia)
+    except Exception as error:  # Ollama caído o lento: no debe tumbar la fuente entera
+        if not tolerar_fallo_redaccion:
+            raise
+        # Se conserva el texto original (mismo criterio que el fallback
+        # seguro del redactor) y se deja constancia interna de que no hubo
+        # redacción automática; la noticia sigue el circuito normal.
+        logger.warning("Redacción automática falló para '%s' (%s): %s", noticia.titulo_original[:80], noticia.nombre_fuente, error)
+        titulo_preparado = noticia.titulo_original
+        texto_preparado = noticia.texto_original or noticia.titulo_original
+        if not noticia.observacion_interna:
+            noticia.observacion_interna = f"{MARCA_SIN_REDACCION}: {str(error)[:200]}"
     noticia.titulo_preparado = titulo_preparado
     noticia.texto_preparado = texto_preparado
     # Control de calidad (calidad_editorial): si la redacción automática
@@ -216,11 +254,33 @@ def procesar_noticia(
     return noticia, "preparada"
 
 
+def _es_internacional(noticia: Noticia) -> bool:
+    return noticia.territorio == "internacional" or (
+        noticia.territorio in (None, "sin_clasificar") and noticia.categoria_tematica == "internacional"
+    )
+
+
+def _guardar_solo_portal(db: Database, noticia: Noticia) -> Tuple[Noticia, str]:
+    """Internacional relevante solo para web/app: texto original de la
+    fuente (sin redacción automática), riesgo editorial evaluado igual que
+    siempre (con riesgo no entra al portal), nunca urgente."""
+    noticia.titulo_preparado = noticia.titulo_original
+    noticia.texto_preparado = noticia.texto_original or noticia.titulo_original
+    noticia.estado = Estado.SOLO_PORTAL.value
+    noticia.revision_estado = RevisionEstado.PENDIENTE.value
+    noticia.urgente = False
+    _aplicar_riesgo_editorial(noticia)
+    db.guardar(noticia)
+    return noticia, "solo_portal"
+
+
 def ejecutar_pipeline(
     db: Database, collector: Collector, redactor: Redactor
 ) -> List[Tuple[Noticia, str]]:
     resultados = []
     for cruda in collector.recolectar():
         noticia = normalizar_noticia(cruda)
-        resultados.append(procesar_noticia(db, noticia, redactor, categoria=cruda.get("categoria")))
+        resultados.append(procesar_noticia(
+            db, noticia, redactor, categoria=cruda.get("categoria"), tolerar_fallo_redaccion=True
+        ))
     return resultados

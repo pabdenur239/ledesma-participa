@@ -8,6 +8,10 @@ class Estado(str, Enum):
     DESCARTADA = "descartada"
     PREPARADA = "preparada"
     PUBLICADA = "publicada"
+    # Solo web/app (cobertura 9/10/2026): internacionales relevantes que no
+    # entran a ningún circuito de Meta (todas sus consultas piden
+    # `preparada`). Ver `pipeline.procesar_noticia` y `portal.py`.
+    SOLO_PORTAL = "solo_portal"
 
 
 class RevisionEstado(str, Enum):

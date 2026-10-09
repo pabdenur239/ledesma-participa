@@ -10,15 +10,18 @@
   },
   "infoyungas": {
     "nombre_fuente": "InfoYungas",
-    "url": "https://www.infoyungas.com/"
+    "url": "https://www.infoyungas.com/",
+    "url_rss": "https://www.infoyungas.com/blog-feed.xml"
   },
   "jujuyalmomento": {
     "nombre_fuente": "Jujuy al Momento",
-    "url": "https://www.jujuyalmomento.com/"
+    "url": "https://www.jujuyalmomento.com/",
+    "url_rss": "https://www.jujuyalmomento.com/rss/pages/home.xml"
   },
   "tribuno_jujuy": {
     "nombre_fuente": "El Tribuno de Jujuy",
-    "url": "https://eltribunodejujuy.com/"
+    "url": "https://eltribunodejujuy.com/",
+    "url_rss": "https://eltribunodejujuy.com/feed"
   },
   "todojujuy": {
     "nombre_fuente": "TodoJujuy",

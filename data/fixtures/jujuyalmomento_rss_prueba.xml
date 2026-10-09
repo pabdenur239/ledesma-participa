@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/">
+<channel>
+<title>Inicio - JujuyalMomento.com | Jujuy Al Momento</title>
+<link>https://www.jujuyalmomento.com</link>
+<description><![CDATA[Inicio]]></description>
+<image><title>Inicio - JujuyalMomento.com | Jujuy Al Momento</title>
+<link>https://www.jujuyalmomento.com</link>
+<url>https://www.jujuyalmomento.com/css-custom/260/images/logo-ei-2018.png</url>
+</image>
+<lastBuildDate>Fri, 09 Oct 2026 11:07:43 -0300</lastBuildDate>
+<atom:link href="https://www.jujuyalmomento.com/rss/pages/home.xml" rel="self" type="application/rss+xml"></atom:link>
+<language>spa</language>
+<generator>Dos Al Cubo</generator>
+<item>
+<guid isPermaLink="true">https://www.jujuyalmomento.com/familias/con-la-jornada-familias-van-la-escuela-dio-inicio-el-cronograma-ingreso-1-ano-n208402</guid>
+<title>Con la jornada &quot;Familias van a la escuela&quot;, dio inicio el cronograma de Ingreso a 1° Año</title>
+<link>https://www.jujuyalmomento.com/familias/con-la-jornada-familias-van-la-escuela-dio-inicio-el-cronograma-ingreso-1-ano-n208402</link>
+<description><![CDATA[Se trata de un día de encuentros con padres de estudiantes para coordinar el paso al nivel secundario.]]></description>
+<pubDate>Fri, 09 Oct 2026 11:00:00 -0300</pubDate>
+<enclosure length="0" type="image/jpeg" url="https://media.jujuyalmomento.com/p/prueba/adjuntos/260/imagenes/escuela.jpg"></enclosure>
+<category>Jujuy</category>
+</item>
+<item>
+<guid isPermaLink="true">https://www.jujuyalmomento.com/lluvias/lluvias-la-ciudad-y-alerta-viento-el-norte-n208391</guid>
+<title>Lluvias en la ciudad y alerta por viento en el norte</title>
+<link>https://www.jujuyalmomento.com/lluvias/lluvias-la-ciudad-y-alerta-viento-el-norte-n208391</link>
+<description><![CDATA[El Servicio Meteorológico Nacional emitió una alerta amarilla por vientos fuertes para la Puna y la Quebrada.]]></description>
+<pubDate>Fri, 09 Oct 2026 09:30:00 -0300</pubDate>
+<category>Jujuy</category>
+</item>
+</channel>
+</rss>

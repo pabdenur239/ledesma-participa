@@ -32,16 +32,16 @@
     vacio.hidden = items.length > 0;
     items.forEach(function (n) {
       var art = document.createElement("article");
-      art.className = "tarjeta";
+      art.className = "tarjeta tarjeta-compacta";
       var media = n.imagen
-        ? '<img src="' + n.imagen + '" alt="" loading="lazy">'
-        : '<div class="tarjeta-sin-imagen" aria-hidden="true">LP</div>';
+        ? '<img src="' + n.imagen + '" alt="" loading="lazy" referrerpolicy="no-referrer">'
+        : '<div class="placa-css" aria-hidden="true"><span class="placa-titulo">' + n.titulo + "</span></div>";
       art.innerHTML =
         '<a class="tarjeta-enlace" href="' + raiz + n.url + '">' +
-        '<div class="tarjeta-media">' + media +
-        '<span class="etiqueta-seccion">' + n.seccion + "</span></div>" +
-        '<div class="tarjeta-cuerpo"><h2 class="tarjeta-titulo">' + n.titulo + "</h2>" +
-        '<p class="tarjeta-resumen">' + n.resumen + "</p>" +
+        '<div class="tarjeta-media">' + media + "</div>" +
+        '<div class="tarjeta-cuerpo"><div class="insignias"><span class="insignia insignia-territorio">' +
+        n.seccion + "</span></div>" +
+        '<h3 class="tarjeta-titulo">' + n.titulo + "</h3>" +
         '<p class="tarjeta-meta">' + n.fecha + "</p></div></a>";
       resultados.appendChild(art);
     });

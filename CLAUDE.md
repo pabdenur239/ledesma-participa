@@ -287,5 +287,12 @@ cambios: no todo lo que entra a web/app se publica en redes.
   cambiar de página el audio SE REINICIA (nueva conexión al vivo, corte de
   1–2 s), no continúa sin corte. HLS sin soporte nativo (p. ej. Firefox):
   aviso claro + enlace "Reproductor oficial", sin convertir el stream.
-- App: compila; prueba en teléfono físico PENDIENTE (no había dispositivo
-  ADB).
+- Teléfono físico (Motorola Edge 60 Pro, Android 16, APK de prueba con id
+  `.prueba` instalado junto a la versión de Play): reproducción, Play/Pausa,
+  navegación entre pantallas y pantalla bloqueada CON LA APP EN PRIMER
+  PLANO (>3 min) OK. App MINIMIZADA: el sistema congela el proceso
+  (`moto_freezer`) a los ~10–60 s y el audio se corta (sin servicio en
+  primer plano, ver "Segundo plano"). Corregido el estado falso: la app
+  escucha el estado real del audio (`MotorAudio.sonandoReal`) y lo
+  re-verifica al volver al frente; si se cortó muestra "Transmisión
+  interrumpida. Tocá Play para reconectar." y Play reconecta.

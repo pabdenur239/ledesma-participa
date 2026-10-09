@@ -1,6 +1,7 @@
 // Radios en vivo (Etapa 2): modelo, reproductor (motor de audio simulado,
 // nunca radios reales ni red), pantalla con filtro por zona, fallback sin
 // stream, favoritos locales y mini reproductor persistente al navegar.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -18,8 +19,27 @@ import 'package:ledesma_participa_app/widgets/mini_reproductor.dart';
 class MotorFalso implements MotorAudio {
   final bool falla;
   final acciones = <String>[];
+  final _sonando = StreamController<bool>.broadcast(sync: true);
+  bool _ahora = false;
 
   MotorFalso({this.falla = false});
+
+  void _emitir(bool valor) {
+    _ahora = valor;
+    _sonando.add(valor);
+  }
+
+  /// Simula que el audio se corta sin que la app lo pida (red, sistema).
+  void cortarSinAviso({bool emitir = true}) {
+    _ahora = false;
+    if (emitir) _sonando.add(false);
+  }
+
+  @override
+  Stream<bool> get sonandoReal => _sonando.stream;
+
+  @override
+  bool get sonandoAhora => _ahora;
 
   @override
   Future<void> cargar(String url) async {
@@ -28,13 +48,22 @@ class MotorFalso implements MotorAudio {
   }
 
   @override
-  Future<void> reproducir() async => acciones.add('play');
+  Future<void> reproducir() async {
+    acciones.add('play');
+    _emitir(true);
+  }
 
   @override
-  Future<void> pausar() async => acciones.add('pausa');
+  Future<void> pausar() async {
+    acciones.add('pausa');
+    _emitir(false);
+  }
 
   @override
-  Future<void> detener() async => acciones.add('stop');
+  Future<void> detener() async {
+    acciones.add('stop');
+    _emitir(false);
+  }
 
   @override
   Future<void> volumen(double valor) async => acciones.add('volumen $valor');
@@ -102,6 +131,40 @@ void main() {
     expect(motor.acciones, [
       'cargar https://stream.test/uno.mp3', 'play', 'pausa', 'cargar https://stream.test/uno.mp3', 'play', 'stop',
     ]);
+  });
+
+  test('Audio cortado sin aviso: nunca queda "En vivo"', () async {
+    final motor = MotorFalso();
+    final rep = ReproductorRadio(motor: motor);
+    await rep.reproducir(Emisora.fromJson(_radiosJson[0]));
+    expect(rep.sonando, isTrue);
+    motor.cortarSinAviso();
+    expect(rep.estado, EstadoReproductor.interrumpido);
+    expect(rep.sonando, isFalse);
+    expect(rep.mensaje, 'Transmisión interrumpida. Tocá Play para reconectar.');
+    await rep.alternar(); // Play reconecta
+    expect(rep.sonando, isTrue);
+    expect(motor.acciones.where((a) => a.startsWith('cargar')).length, 2);
+  });
+
+  test('Al volver a la app se verifica el audio real (proceso congelado)', () async {
+    final motor = MotorFalso();
+    final rep = ReproductorRadio(motor: motor);
+    await rep.reproducir(Emisora.fromJson(_radiosJson[0]));
+    motor.cortarSinAviso(emitir: false); // congelado: no llegó ningún evento
+    expect(rep.sonando, isTrue);
+    rep.verificarAlVolver();
+    expect(rep.estado, EstadoReproductor.interrumpido);
+  });
+
+  test('Pausa del usuario no se confunde con un corte', () async {
+    final motor = MotorFalso();
+    final rep = ReproductorRadio(motor: motor);
+    await rep.reproducir(Emisora.fromJson(_radiosJson[0]));
+    await rep.pausar();
+    expect(rep.estado, EstadoReproductor.pausado);
+    rep.verificarAlVolver();
+    expect(rep.estado, EstadoReproductor.pausado);
   });
 
   test('Reproductor: stream inválido muestra no disponible', () async {

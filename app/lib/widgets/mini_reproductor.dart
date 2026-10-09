@@ -5,11 +5,35 @@ import '../theme.dart';
 
 /// Barra del reproductor de radio, fija abajo en todas las pantallas
 /// (MaterialApp.builder): nombre + dial, estado, Play/Pausa y cerrar.
-class MiniReproductor extends StatelessWidget {
+class MiniReproductor extends StatefulWidget {
   final ReproductorRadio reproductor;
 
   MiniReproductor({super.key, ReproductorRadio? reproductor})
       : reproductor = reproductor ?? ReproductorRadio.instancia;
+
+  @override
+  State<MiniReproductor> createState() => _MiniReproductorState();
+}
+
+class _MiniReproductorState extends State<MiniReproductor> with WidgetsBindingObserver {
+  ReproductorRadio get reproductor => widget.reproductor;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) reproductor.verificarAlVolver();
+  }
 
   @override
   Widget build(BuildContext context) {

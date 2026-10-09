@@ -13,12 +13,35 @@ abstract class MotorAudio {
   Future<void> pausar();
   Future<void> detener();
   Future<void> volumen(double valor);
+
+  /// Estado REAL del audio (true = está sonando). Puede pasar a false sin
+  /// que la app lo pida: corte de red, error del stream o el sistema que
+  /// congela el proceso con la app minimizada.
+  Stream<bool> get sonandoReal;
+  bool get sonandoAhora;
 }
 
 /// just_audio (ExoPlayer en Android): reproduce directamente la URL oficial
 /// de la emisora; no graba ni descarga.
 class MotorJustAudio implements MotorAudio {
   final AudioPlayer _player = AudioPlayer();
+  final _sonando = StreamController<bool>.broadcast();
+
+  MotorJustAudio() {
+    _player.playerStateStream.listen((_) => _sonando.add(sonandoAhora), onError: (_) => _sonando.add(false));
+    _player.playbackEventStream.listen((_) {}, onError: (_) => _sonando.add(false));
+  }
+
+  @override
+  Stream<bool> get sonandoReal => _sonando.stream;
+
+  @override
+  bool get sonandoAhora {
+    final estado = _player.playerState;
+    return estado.playing &&
+        estado.processingState != ProcessingState.idle &&
+        estado.processingState != ProcessingState.completed;
+  }
 
   @override
   Future<void> cargar(String url) async {
@@ -41,7 +64,7 @@ class MotorJustAudio implements MotorAudio {
   Future<void> volumen(double valor) => _player.setVolume(valor);
 }
 
-enum EstadoReproductor { detenido, conectando, sonando, pausado, error }
+enum EstadoReproductor { detenido, conectando, sonando, pausado, error, interrumpido }
 
 /// Reproductor único de la app: vive por encima del Navigator (ver
 /// main.dart), así que el audio sigue sonando al cambiar de pantalla.
@@ -52,7 +75,28 @@ class ReproductorRadio extends ChangeNotifier {
 
   final MotorAudio? _motorInyectado;
   MotorAudio? _motorPerezoso;
-  MotorAudio get _motor => _motorInyectado ?? (_motorPerezoso ??= MotorJustAudio());
+  StreamSubscription<bool>? _escucha;
+
+  MotorAudio get _motor {
+    final motor = _motorInyectado ?? (_motorPerezoso ??= MotorJustAudio());
+    _escucha ??= motor.sonandoReal.listen(_alCambiarAudioReal);
+    return motor;
+  }
+
+  /// Nunca mostrar "En vivo" si el audio real se detuvo.
+  void _alCambiarAudioReal(bool sonandoReal) {
+    if (!sonandoReal && _estado == EstadoReproductor.sonando) {
+      _cambiar(EstadoReproductor.interrumpido);
+    }
+  }
+
+  /// Al volver a la app (p. ej. después de que Android la congeló
+  /// minimizada): si el audio ya no suena, se informa y no se miente.
+  void verificarAlVolver() {
+    if (_estado == EstadoReproductor.sonando && !_motor.sonandoAhora) {
+      _cambiar(EstadoReproductor.interrumpido);
+    }
+  }
 
   Emisora? _radio;
   EstadoReproductor _estado = EstadoReproductor.detenido;
@@ -72,6 +116,8 @@ class ReproductorRadio extends ChangeNotifier {
         return 'En pausa';
       case EstadoReproductor.error:
         return 'Transmisión no disponible temporalmente';
+      case EstadoReproductor.interrumpido:
+        return 'Transmisión interrumpida. Tocá Play para reconectar.';
       case EstadoReproductor.detenido:
         return '';
     }

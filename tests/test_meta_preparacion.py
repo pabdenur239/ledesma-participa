@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+
+from PIL import Image
 from pathlib import Path
 from unittest.mock import patch
 
@@ -61,7 +63,7 @@ class TestPrepararPublicacion(TestPrepararPublicacionConDirectorioAislado):
     def test_aprobada_genera_vista_previa(self):
         contenido = preparar_publicacion(_noticia())
         self.assertIsInstance(contenido, ContenidoFacebook)
-        self.assertIn("Título preparado", contenido.post_principal)
+        self.assertIn("TÍTULO PREPARADO", contenido.post_principal)
 
     def test_riesgo_politico_aprobado_permite_dry_run(self):
         noticia = _noticia(requiere_revision_especial=True)
@@ -93,9 +95,25 @@ class TestImagenEnPreparacion(TestPrepararPublicacionConDirectorioAislado):
             tiene_imagen_original=True,
             imagen_publicacion_ruta="https://ejemplo.test/foto.jpg",
         )
-        contenido = preparar_publicacion(noticia)
+        foto = Path(self.tmpdir.name) / "foto_original.jpg"
+        Image.new("RGB", (1200, 800), (90, 120, 160)).save(foto, format="JPEG")
+        with patch("motor_noticias.meta.preparacion.preparar_foto_publicable", return_value=foto):
+            contenido = preparar_publicacion(noticia)
+        # La foto real del hecho se conserva dentro de la pieza Versión C
+        # (1080x1350), no se reemplaza por una placa.
         self.assertFalse(contenido.imagen_generada_automaticamente)
-        self.assertEqual(contenido.imagen_url, "https://ejemplo.test/foto.jpg")
+        with Image.open(contenido.imagen_url) as pieza:
+            self.assertEqual(pieza.size, (1080, 1350))
+
+    def test_imagen_de_stock_usa_placa_editorial(self):
+        noticia = _noticia(
+            tiene_imagen_original=True,
+            imagen_publicacion_ruta="https://www.shutterstock.com/image-photo/diarios-123.jpg",
+        )
+        with patch("motor_noticias.meta.preparacion.preparar_foto_publicable") as preparar:
+            contenido = preparar_publicacion(noticia)
+        preparar.assert_not_called()
+        self.assertTrue(contenido.imagen_generada_automaticamente)
 
     def test_riesgo_politico_aprobado_tambien_muestra_imagen_en_dry_run(self):
         noticia = _noticia(requiere_revision_especial=True)

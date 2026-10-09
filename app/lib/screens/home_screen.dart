@@ -6,65 +6,74 @@ import '../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/noticia_card.dart';
 import 'busqueda_screen.dart';
-import 'detalle_screen.dart';
+import 'categoria_screen.dart';
+import 'guia_screen.dart';
+import 'videos_screen.dart';
 
-/// Pantalla principal: feed cronológico con prioridad editorial (Inicio,
-/// ya viene ordenado así desde la API — ver PRIORIDAD_SECCION en
-/// motor_noticias/sitio/generador.py) más una pestaña por categoría real.
-/// "Policiales" y "Deportes" están en la lista mínima pedida pero hoy no
-/// tienen clasificación real en el sistema (ver README): la pestaña existe
-/// y muestra "sin noticias todavía" en vez de inventar contenido ahí.
-const _categoriasFijas = [
-  ('inicio', 'Inicio'),
-  ('locales', 'Locales'),
-  ('provinciales', 'Provinciales'),
-  ('nacionales', 'Nacionales'),
-  ('internacionales', 'Internacionales'),
+/// Accesos de Inicio (Etapa 1). Territorio y categoría son listados
+/// distintos; Videos, Guía Comercial y Multimedia tienen pantalla propia.
+/// (Radios en vivo: Etapa 2, todavía no implementado.)
+const accesosInicio = <(String, String)>[
+  ('ultimas', 'Últimas'),
+  ('libertador', 'Libertador'),
+  ('ledesma', 'Departamento Ledesma'),
+  ('jujuy', 'Jujuy'),
   ('policiales', 'Policiales'),
-  ('espectaculos', 'Espectáculos'),
   ('salud', 'Salud'),
-  ('gastronomia', 'Gastronomía'),
   ('deportes', 'Deportes'),
+  ('servicios', 'Servicios'),
+  ('videos', 'Videos'),
+  ('guia', 'Guía Comercial'),
+  ('multimedia', 'Multimedia'),
 ];
 
+void abrirAcceso(BuildContext context, String slug, String etiqueta) {
+  final Widget pantalla;
+  switch (slug) {
+    case 'videos':
+      pantalla = const VideosScreen();
+    case 'guia':
+      pantalla = const GuiaScreen();
+    case 'multimedia':
+      pantalla = const MultimediaScreen();
+    default:
+      pantalla = CategoriaScreen(slug: slug, titulo: etiqueta);
+  }
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => pantalla));
+}
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final ApiService? api;
+
+  const HomeScreen({super.key, this.api});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-  final _api = ApiService();
+class _HomeScreenState extends State<HomeScreen> {
+  late final ApiService _api = widget.api ?? ApiService();
+  late Future<Portada> _portada;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _categoriasFijas.length, vsync: this);
+    _portada = _api.obtenerPortada();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  Future<void> _refrescar() async {
+    setState(() => _portada = _api.obtenerPortada());
+    await _portada;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(
+        title: const Row(
           children: [
-            Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: MarcaColores.marcaFondo, borderRadius: BorderRadius.circular(6)),
-              child: const Text('LP', style: TextStyle(color: MarcaColores.marcaOro, fontWeight: FontWeight.w800, fontSize: 12)),
-            ),
-            const SizedBox(width: 8),
-            const Text('Ledesma Participa', style: TextStyle(fontSize: 17)),
+            Text('LEDESMA ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+            Text('PARTICIPA', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: MarcaColores.marcaOro)),
           ],
         ),
         actions: [
@@ -76,199 +85,163 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           IconButton(
             icon: const Icon(Icons.public),
             tooltip: 'Abrir ledesmaparticipa.com.ar',
-            onPressed: () => launchUrl(
-              Uri.parse('https://ledesmaparticipa.com.ar'),
-              mode: LaunchMode.externalApplication,
-            ),
+            onPressed: () => launchUrl(Uri.parse(ApiService.baseSitio), mode: LaunchMode.externalApplication),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          indicatorColor: MarcaColores.marcaNaranja,
-          labelColor: Colors.white,
-          unselectedLabelColor: MarcaColores.textoSuave,
-          tabs: _categoriasFijas.map((c) => Tab(text: c.$2)).toList(),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(46),
+          child: SizedBox(
+            height: 46,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              children: accesosInicio
+                  .map((a) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          label: Text(a.$2),
+                          labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                          backgroundColor: MarcaColores.marcaFondo,
+                          side: const BorderSide(color: Color(0xFF34322C)),
+                          onPressed: () => abrirAcceso(context, a.$1, a.$2),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: _categoriasFijas.map((c) {
-          if (c.$1 == 'inicio') {
-            return _FeedInicio(api: _api);
-          }
-          return _FeedCategoria(api: _api, slug: c.$1);
-        }).toList(),
+      body: RefreshIndicator(
+        onRefresh: _refrescar,
+        child: FutureBuilder<Portada>(
+          future: _portada,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError || snapshot.data == null) {
+              return ErrorConReintentar(onReintentar: _refrescar);
+            }
+            return _Portada(portada: snapshot.data!);
+          },
+        ),
       ),
     );
   }
 }
 
-class _FeedInicio extends StatefulWidget {
-  final ApiService api;
-  const _FeedInicio({required this.api});
+class _Portada extends StatelessWidget {
+  final Portada portada;
 
-  @override
-  State<_FeedInicio> createState() => _FeedInicioState();
-}
-
-class _FeedInicioState extends State<_FeedInicio> {
-  late Future<List<Noticia>> _feed;
-  late Future<List<Noticia>> _urgentes;
-
-  @override
-  void initState() {
-    super.initState();
-    _cargar();
-  }
-
-  void _cargar() {
-    _feed = widget.api.obtenerFeed();
-    _urgentes = widget.api.obtenerUrgentes();
-  }
-
-  Future<void> _refrescar() async {
-    setState(_cargar);
-    await Future.wait([_feed, _urgentes]);
-  }
+  const _Portada({required this.portada});
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _refrescar,
-      child: FutureBuilder<List<Noticia>>(
-        future: _feed,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _ErrorConReintentar(onReintentar: _refrescar);
-          }
-          final feed = snapshot.data ?? [];
-          return ListView(
-            children: [
-              FutureBuilder<List<Noticia>>(
-                future: _urgentes,
-                builder: (context, snapUrg) {
-                  final urgentes = snapUrg.data ?? [];
-                  if (urgentes.isEmpty) return const SizedBox.shrink();
-                  return _BannerUrgentes(urgentes: urgentes);
-                },
-              ),
-              if (feed.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: Text('No hay noticias todavía.')),
-                ),
-              ...feed.map(
-                (n) => NoticiaCard(
-                  noticia: n,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => DetalleScreen(noticiaId: n.id, resumenPrevio: n)),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+    final hijos = <Widget>[
+      if (portada.urgentes.isNotEmpty) _BloqueUrgentes(urgentes: portada.urgentes),
+      if (portada.climaDolar != null) _BloqueClimaDolar(datos: portada.climaDolar!),
+      if (portada.principal != null)
+        NoticiaDestacada(noticia: portada.principal!, onTap: () => abrirNoticia(context, portada.principal!)),
+      for (final seccion in portada.secciones) ...[
+        _TituloSeccion(
+          etiqueta: seccion.etiqueta,
+          onVerMas: () => abrirAcceso(context, seccion.slug, seccion.etiqueta),
+        ),
+        ...seccion.noticias.map((n) => NoticiaCard(noticia: n, onTap: () => abrirNoticia(context, n))),
+      ],
+      if (portada.videos.isNotEmpty) ...[
+        _TituloSeccion(etiqueta: 'Videos', onVerMas: () => abrirAcceso(context, 'videos', 'Videos')),
+        SizedBox(
+          height: 230,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            children: portada.videos.map((v) => TarjetaVideo(video: v, ancho: 260)).toList(),
+          ),
+        ),
+      ],
+      if (portada.guiaComercial.isNotEmpty) ...[
+        _TituloSeccion(etiqueta: 'Guía Comercial', onVerMas: () => abrirAcceso(context, 'guia', 'Guía Comercial')),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text('Espacio comercial: no es contenido periodístico.',
+              style: TextStyle(fontSize: 11, color: MarcaColores.textoSuave)),
+        ),
+        SizedBox(
+          height: 270,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            children: portada.guiaComercial.map((c) => TarjetaComercio(comercio: c, ancho: 250)).toList(),
+          ),
+        ),
+      ],
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: OutlinedButton(
+          onPressed: () => abrirAcceso(context, 'ultimas', 'Últimas'),
+          child: const Text('Todas las últimas noticias'),
+        ),
       ),
-    );
+    ];
+    if (hijos.length == 1) {
+      hijos.insert(0, const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('No hay noticias todavía.'))));
+    }
+    return ListView(padding: const EdgeInsets.only(top: 6, bottom: 16), children: hijos);
   }
 }
 
-class _FeedCategoria extends StatefulWidget {
-  final ApiService api;
-  final String slug;
-  const _FeedCategoria({required this.api, required this.slug});
+class _TituloSeccion extends StatelessWidget {
+  final String etiqueta;
+  final VoidCallback onVerMas;
 
-  @override
-  State<_FeedCategoria> createState() => _FeedCategoriaState();
-}
-
-class _FeedCategoriaState extends State<_FeedCategoria> {
-  late Future<List<Noticia>> _items;
-
-  @override
-  void initState() {
-    super.initState();
-    _items = widget.api.obtenerCategoria(widget.slug);
-  }
+  const _TituloSeccion({required this.etiqueta, required this.onVerMas});
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        setState(() => _items = widget.api.obtenerCategoria(widget.slug));
-        await _items;
-      },
-      child: FutureBuilder<List<Noticia>>(
-        future: _items,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _ErrorConReintentar(
-              onReintentar: () async {
-                setState(() => _items = widget.api.obtenerCategoria(widget.slug));
-                await _items;
-              },
-            );
-          }
-          final items = snapshot.data ?? [];
-          if (items.isEmpty) {
-            return ListView(
-              children: const [
-                Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: Text('Sin noticias en esta categoría todavía.')),
-                ),
-              ],
-            );
-          }
-          return ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (context, i) => NoticiaCard(
-              noticia: items[i],
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => DetalleScreen(noticiaId: items[i].id, resumenPrevio: items[i])),
-              ),
-            ),
-          );
-        },
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 8, 4),
+      child: Row(
+        children: [
+          Container(width: 4, height: 18, color: MarcaColores.marcaOro),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(etiqueta.toUpperCase(),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
+          ),
+          TextButton(onPressed: onVerMas, child: const Text('Ver más')),
+        ],
       ),
     );
   }
 }
 
-class _BannerUrgentes extends StatelessWidget {
+class _BloqueUrgentes extends StatelessWidget {
   final List<Noticia> urgentes;
-  const _BannerUrgentes({required this.urgentes});
+
+  const _BloqueUrgentes({required this.urgentes});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: MarcaColores.marcaNaranja.withValues(alpha: 0.12),
-        border: Border.all(color: MarcaColores.marcaNaranja),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: MarcaColores.urgente, borderRadius: BorderRadius.circular(10)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('🔴 URGENTE', style: TextStyle(color: MarcaColores.marcaNaranja, fontWeight: FontWeight.bold, fontSize: 13)),
-          const SizedBox(height: 6),
+          const Text('URGENTE', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 13)),
           ...urgentes.take(3).map(
-                (n) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => DetalleScreen(noticiaId: n.id, resumenPrevio: n)),
+                (n) => InkWell(
+                  onTap: () => abrirNoticia(context, n),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '${(n.territorioEtiqueta ?? '').toUpperCase()}  ${n.titulo}',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700, height: 1.25),
                     ),
-                    child: Text(n.titulo, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
                 ),
               ),
@@ -278,21 +251,73 @@ class _BannerUrgentes extends StatelessWidget {
   }
 }
 
-class _ErrorConReintentar extends StatelessWidget {
-  final Future<void> Function() onReintentar;
-  const _ErrorConReintentar({required this.onReintentar});
+String _pesos(double? valor) {
+  if (valor == null) return 'No disponible';
+  final entero = valor.round().toString();
+  final conPuntos = entero.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
+  return '\$$conPuntos';
+}
+
+class _BloqueClimaDolar extends StatelessWidget {
+  final ClimaDolar datos;
+
+  const _BloqueClimaDolar({required this.datos});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    Widget filaDolar(String etiqueta, DolarCotizacion? d) => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(children: [
+            SizedBox(width: 64, child: Text(etiqueta, style: const TextStyle(fontWeight: FontWeight.w700))),
+            Expanded(
+              child: Text(
+                d == null ? 'No disponible' : 'Compra ${_pesos(d.compra)} · Venta ${_pesos(d.venta)}',
+                style: TextStyle(color: d == null ? MarcaColores.textoSuave : MarcaColores.marcaOro, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ]),
+        );
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: MarcaColores.marcaFondo, borderRadius: BorderRadius.circular(10)),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('No se pudo cargar. Revisá tu conexión.'),
+          Row(children: [
+            const Text('CLIMA + DÓLAR',
+                style: TextStyle(color: MarcaColores.marcaOro, fontWeight: FontWeight.w900, letterSpacing: 1)),
+            const Spacer(),
+            Text(datos.fechaLegible, style: const TextStyle(fontSize: 11.5, color: MarcaColores.textoSuave)),
+          ]),
           const SizedBox(height: 8),
-          OutlinedButton(onPressed: onReintentar, child: const Text('Reintentar')),
+          if (datos.hayClima)
+            Row(children: [
+              Text('${datos.temperaturaActual!.round()}°', style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w900)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(_capitalizar(datos.descripcion ?? ''), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                    'Mín ${datos.temperaturaMinima?.round() ?? '-'}° · Máx ${datos.temperaturaMaxima?.round() ?? '-'}°'
+                    ' · Lluvia ${datos.probabilidadLluvia?.round() ?? '-'}%',
+                    style: const TextStyle(fontSize: 12.5, color: MarcaColores.textoSuave),
+                  ),
+                ]),
+              ),
+            ])
+          else
+            const Text('Clima: No disponible', style: TextStyle(color: MarcaColores.textoSuave)),
+          const SizedBox(height: 6),
+          filaDolar('Oficial', datos.oficial),
+          filaDolar('Blue', datos.blue),
+          const SizedBox(height: 6),
+          Text('Actualizado ${datos.actualizado} · ${datos.fuentes}',
+              style: const TextStyle(fontSize: 10.5, color: MarcaColores.textoSuave)),
         ],
       ),
     );
   }
 }
+
+String _capitalizar(String texto) => texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);

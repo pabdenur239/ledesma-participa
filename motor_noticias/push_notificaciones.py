@@ -10,13 +10,13 @@ dispositivo.
 
 Regla dura, no una preferencia: NUNCA una notificación por cada
 publicación. Solo dos casos (ver `evaluar_push`):
-  A) noticias urgentes reales (accidentes graves, cortes importantes,
-     emergencias, desapariciones, alertas, hechos policiales relevantes,
-     información crítica de servicios);
-  B) noticias locales/departamentales de alta importancia — mismo criterio,
-     no hay una categoría B distinta en la práctica: ambas se evalúan con
-     el mismo filtro de palabras clave sobre contenido ya local/
-     departamental y ya publicado.
+  A) urgentes reales: los confirma el scoring editorial único
+     (`scoring_editorial.urgente_confirmado`), no una palabra suelta;
+  B) cortes/servicios críticos e información pública inmediata (cortes de
+     luz/agua/tránsito, alertas, emergencias, búsqueda de personas,
+     suspensión de clases) nombrados en el TÍTULO.
+  Siempre sobre noticias locales/departamentales ya publicadas (Etapa 1,
+  9/10/2026; antes bastaba la palabra en cualquier parte del texto).
 
 Nunca infiere ni interpreta: solo reconoce palabras clave explícitas en el
 título/texto YA redactado y publicado — mismo principio que
@@ -42,6 +42,7 @@ from typing import List, Optional
 
 from .db import Database
 from .models import OrigenIngreso
+from .scoring_editorial import urgente_confirmado
 
 logger = logging.getLogger("motor_noticias.push_notificaciones")
 
@@ -57,22 +58,22 @@ LONGITUD_CUERPO_PUSH = 120
 # motor_noticias.institucional / motor_noticias.resumen_dia).
 ORIGENES_EXCLUIDOS_PUSH = (OrigenIngreso.INSTITUCIONAL.value, OrigenIngreso.RESUMEN_DIARIO.value)
 
-# Palabras clave explícitas de urgencia/importancia real — ejemplos del
-# propio alcance pedido: accidentes graves, cortes importantes,
-# emergencias, desapariciones, alertas, hechos policiales relevantes,
-# información crítica de servicios. Deliberadamente NO incluye "policía"
-# ni "urgente" solas (demasiado amplias: aparecerían en coberturas
-# rutinarias) — exige la palabra concreta del hecho.
+# Etapa 1 (9/10/2026): push SOLO para (a) urgentes reales confirmados por
+# el scoring editorial único (`scoring_editorial.urgente_confirmado`, el
+# mismo que decide el circuito inmediato de Meta) o (b) cortes/servicios
+# críticos e información pública inmediata nombrados en el TÍTULO de una
+# noticia local/departamental. Un accidente, un robo o un hecho policial
+# que no es urgente ya no genera push (antes alcanzaba con que la palabra
+# apareciera en cualquier parte del texto). Nunca un push por cada
+# publicación.
 PALABRAS_CLAVE_PUSH_DEFAULT = (
-    "accidente", "choque", "colisión", "colision", "vuelco", "atropell",
-    "incendio", "explosión", "explosion", "derrumbe", "inundación", "inundacion",
-    "evacua",
-    "corte de luz", "corte de agua", "corte programado", "sin luz", "sin agua",
-    "emergencia", "alerta meteorológica", "alerta meteorologica", "alerta sanitaria",
-    "desaparici", "desaparecid", "busca a", "encontrar a",
-    "operativo policial", "tiroteo", "balacera", "asalto", "robo a mano armada",
-    "persona herida", "personas heridas", "hallaron el cuerpo",
-    "corte de tránsito", "corte de transito", "corte total de",
+    "corte de luz", "cortes de luz", "corte de energia", "corte de energía", "sin luz",
+    "corte de agua", "cortes de agua", "sin agua", "corte programado",
+    "corte de tránsito", "corte de transito", "corte total de", "corte de ruta", "ruta cortada",
+    "alerta meteorológica", "alerta meteorologica", "alerta amarilla", "alerta naranja", "alerta roja",
+    "alerta sanitaria", "emergencia", "evacua",
+    "desaparecid", "buscan a", "busca a",
+    "suspensión de clases", "suspension de clases", "sin clases",
 )
 
 
@@ -97,13 +98,12 @@ def evaluar_push(noticia: dict, palabras_clave: tuple = PALABRAS_CLAVE_PUSH_DEFA
         return None
     if noticia.get("territorio") not in ("local", "departamental"):
         return None
+    if urgente_confirmado(noticia):
+        return "urgente"
 
     titulo = (noticia.get("titulo_revisado") or noticia.get("titulo_preparado") or noticia.get("titulo_original") or "").lower()
-    texto = (noticia.get("texto_revisado") or noticia.get("texto_preparado") or noticia.get("texto_original") or "").lower()
-    contenido = f"{titulo} {texto}"
-
     for palabra in palabras_clave:
-        if palabra in contenido:
+        if palabra in titulo:
             return palabra
     return None
 

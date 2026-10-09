@@ -1,0 +1,55 @@
+{
+  "_descripcion": "GUÍA COMERCIAL LEDESMA PARTICIPA (Etapa 1, 9/10/2026; nunca 'Marketplace'). Contenido comercial, separado por completo del periodístico: no entra al feed de noticias ni a la clasificación editorial. Solo datos reales provistos por cada comercio; un dato que no se tiene va en null y no se muestra (NUNCA inventar). Las imágenes son las provistas por los comercios (publicidad/entrada/). 'contacto' se arma solo: WhatsApp si hay, si no teléfono, si no Instagram/Facebook.",
+  "directorio_imagenes": "publicidad/entrada",
+  "comercios": [
+    {
+      "slug": "dosis-jeans",
+      "nombre": "DOSIS Jeans",
+      "rubro": null,
+      "logo": null,
+      "descripcion": null,
+      "imagenes": ["dosis_01.jpg", "dosis_02.jpg", "dosis_03.jpg"],
+      "direccion": "Tucumán 314",
+      "whatsapp": "3886576721",
+      "telefono": null,
+      "instagram": "@Dosis.jeans",
+      "facebook": null,
+      "horarios": "Lunes a sábado de 09:00 a 13:00 y de 18:00 a 22:00",
+      "promociones": [
+        "50% de descuento en zapatillas seleccionadas",
+        "Zapatillas desde $25.000",
+        "Financiación hasta 6 cuotas"
+      ]
+    },
+    {
+      "slug": "un-clasico",
+      "nombre": "Un Clásico",
+      "rubro": "Drugstore y librería",
+      "logo": null,
+      "descripcion": "Artículos escolares, golosinas, bebidas, recargas y productos de uso diario.",
+      "imagenes": ["un_clasico.jpg"],
+      "direccion": "Chile N.º 25, B° Arrieta, frente a la Escuela Raúl Galán",
+      "whatsapp": null,
+      "telefono": null,
+      "instagram": null,
+      "facebook": null,
+      "horarios": null,
+      "promociones": []
+    },
+    {
+      "slug": "internet-de-lumetto",
+      "nombre": "Internet de Lumetto",
+      "rubro": "Internet / conectividad local",
+      "logo": null,
+      "descripcion": "Expansión de la red de fibra óptica en el barrio Raúl Alfonsín.",
+      "imagenes": ["wifi_lumetto.jpg"],
+      "direccion": null,
+      "whatsapp": null,
+      "telefono": null,
+      "instagram": null,
+      "facebook": null,
+      "horarios": null,
+      "promociones": []
+    }
+  ]
+}

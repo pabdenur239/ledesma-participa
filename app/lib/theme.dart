@@ -1,17 +1,20 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// Paleta de marca de Ledesma Participa — misma que usa el sitio web
-/// (motor_noticias/meta/imagen.py y docs/assets/site.css). No se rediseña
-/// nada acá: se reutilizan los mismos colores para que la app se sienta
-/// consistente con la web y con las publicaciones de Meta.
+/// Identidad Versión C (Etapa 1) — la misma que la web y las placas de
+/// Meta (motor_noticias/meta/identidad_visual.py, docs/assets/site.css):
+/// carbón + dorado como marca, blanco para leer; ROJO solo para urgente y
+/// VERDE para servicios.
 class MarcaColores {
-  static const fondo = Color(0xFF141414);
-  static const marcaFondo = Color(0xFF1F1A10);
+  static const fondo = Color(0xFF111111);
+  static const marcaFondo = Color(0xFF1C1B18);
   static const marcaOro = Color(0xFFD4AF37);
-  static const marcaNaranja = Color(0xFFE8631C);
-  static const textoSuave = Color(0xFFDED4BB);
-  static const tarjeta = Color(0xFF1F1F1F);
+  static const textoSuave = Color(0xFFCFCAC0);
+  static const tarjeta = Color(0xFF1C1B18);
+  static const urgente = Color(0xFFC8102E);
+  static const servicio = Color(0xFF1E8E3E);
+  // Nombre anterior, conservado para no romper referencias.
+  static const marcaNaranja = urgente;
 }
 
 ThemeData construirTema() {
@@ -20,11 +23,12 @@ ThemeData construirTema() {
     scaffoldBackgroundColor: MarcaColores.fondo,
     colorScheme: base.colorScheme.copyWith(
       primary: MarcaColores.marcaOro,
-      secondary: MarcaColores.marcaNaranja,
+      secondary: MarcaColores.marcaOro,
       surface: MarcaColores.tarjeta,
+      error: MarcaColores.urgente,
     ),
     appBarTheme: const AppBarTheme(
-      backgroundColor: MarcaColores.marcaFondo,
+      backgroundColor: MarcaColores.fondo,
       foregroundColor: MarcaColores.marcaOro,
       elevation: 0,
       centerTitle: false,
@@ -42,9 +46,6 @@ ThemeData construirTema() {
         TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
       },
     ),
-    textTheme: base.textTheme.apply(
-      bodyColor: Colors.white,
-      displayColor: Colors.white,
-    ),
+    textTheme: base.textTheme.apply(bodyColor: Colors.white, displayColor: Colors.white),
   );
 }

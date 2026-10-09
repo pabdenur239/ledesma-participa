@@ -4,7 +4,7 @@ import unittest
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from motor_noticias.db import Database
 from motor_noticias.informe_diario import (
@@ -252,6 +252,16 @@ class BaseInformeDiarioTest(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db = Database(Path(self.tmpdir.name) / "test.db")
+        # Datos estructurados del informe y esperas entre reintentos: nunca
+        # en data/ real ni con sleeps reales durante los tests.
+        self.dir_datos = Path(self.tmpdir.name) / "informe_diario"
+        parches = [
+            patch("motor_noticias.informe_diario_datos.DIRECTORIO_DEFAULT", self.dir_datos),
+            patch("motor_noticias.informe_diario.time.sleep", lambda _s: None),
+        ]
+        for parche in parches:
+            parche.start()
+            self.addCleanup(parche.stop)
 
     def tearDown(self):
         self.db.close()
@@ -269,9 +279,10 @@ class TestCreacionDelInforme(BaseInformeDiarioTest):
         self.assertEqual(resultado.fecha_local, "2026-08-13")
 
         noticia = self.db.obtener(resultado.noticia_id)
-        self.assertIn("Libertador", noticia["titulo_preparado"])
-        self.assertIn("13/08/2026", noticia["titulo_preparado"])
-        self.assertIn("12.3", noticia["texto_preparado"])
+        self.assertEqual(noticia["titulo_preparado"], "Clima + Dólar | Informe de la mañana")
+        self.assertIn("Libertador General San Martín", noticia["texto_preparado"])
+        self.assertIn("13 de agosto", noticia["texto_preparado"])
+        self.assertIn("12°C", noticia["texto_preparado"])
         self.assertIn("1495", noticia["texto_preparado"])
         self.assertIn("1540", noticia["texto_preparado"])
 
@@ -295,7 +306,7 @@ class TestCreacionDelInforme(BaseInformeDiarioTest):
         resultado = generar_informe_diario(self.db, urlopen=_urlopen_fake())
         noticia = self.db.obtener(resultado.noticia_id)
         self.assertIn("Informe Diario", noticia["nombre_fuente"])
-        self.assertIn("generado automáticamente", noticia["texto_preparado"])
+        self.assertIn("Informe de servicio", noticia["texto_preparado"])
         self.assertIn("Open-Meteo", noticia["texto_preparado"])
         self.assertIn("DolarApi", noticia["texto_preparado"])
 
@@ -365,21 +376,28 @@ class TestIdempotenciaDiaria(BaseInformeDiarioTest):
         self.assertEqual(salud["noticias_nuevas"], 0)
 
 
-# 7/8/9. no crea informe incompleto/engañoso ante error de cualquiera de las dos fuentes
+# 7/8/9. Etapa 1: si una fuente falla, el informe sale con esa parte como
+# "No disponible" (nunca un valor inventado); sin ningún dato, no hay informe.
 class TestErroresNoCreanInformeIncompleto(BaseInformeDiarioTest):
-    def test_falla_clima_no_crea_ningun_informe(self):
+    def test_falla_clima_sale_con_clima_no_disponible(self):
         def _urlopen_clima_caido(peticion, timeout=None):
             if "open-meteo" in peticion.full_url:
                 raise urllib.error.URLError("conexión rechazada")
+            if "blue" in peticion.full_url:
+                return _respuesta_falsa(DOLAR_BLUE_VALIDO)
             return _respuesta_falsa(DOLAR_OFICIAL_VALIDO)
 
         resultado = generar_informe_diario(self.db, urlopen=_urlopen_clima_caido)
 
-        self.assertEqual(resultado.resultado, "error")
-        self.assertIsNotNone(resultado.mensaje_error)
-        self.assertEqual(self.db.listar(), [])
+        self.assertEqual(resultado.resultado, "preparada")
+        noticia = self.db.obtener(resultado.noticia_id)
+        self.assertIn("Clima en Libertador General San Martín: No disponible", noticia["texto_preparado"])
+        self.assertIn("compra $1495 / venta $1515", noticia["texto_preparado"])
+        datos = json.loads((self.dir_datos / f"{resultado.fecha_local}.json").read_text(encoding="utf-8"))
+        self.assertIsNone(datos["clima"])
+        self.assertEqual(datos["oficial"]["venta"], 1515)
 
-    def test_falla_dolar_no_crea_ningun_informe(self):
+    def test_falla_dolar_sale_con_dolar_no_disponible(self):
         def _urlopen_dolar_caido(peticion, timeout=None):
             if "open-meteo" in peticion.full_url:
                 return _respuesta_falsa(CLIMA_VALIDO)
@@ -387,8 +405,29 @@ class TestErroresNoCreanInformeIncompleto(BaseInformeDiarioTest):
 
         resultado = generar_informe_diario(self.db, urlopen=_urlopen_dolar_caido)
 
+        self.assertEqual(resultado.resultado, "preparada")
+        noticia = self.db.obtener(resultado.noticia_id)
+        self.assertIn("Dólar oficial: No disponible.", noticia["texto_preparado"])
+        self.assertIn("Dólar blue: No disponible.", noticia["texto_preparado"])
+        self.assertNotIn("$", noticia["texto_preparado"])
+
+    def test_sin_ningun_dato_no_crea_informe(self):
+        def _urlopen_todo_caido(peticion, timeout=None):
+            raise urllib.error.URLError("conexión rechazada")
+
+        resultado = generar_informe_diario(self.db, urlopen=_urlopen_todo_caido)
+
         self.assertEqual(resultado.resultado, "error")
         self.assertEqual(self.db.listar(), [])
+
+    def test_guarda_datos_estructurados_completos(self):
+        resultado = generar_informe_diario(self.db, urlopen=_urlopen_fake())
+        datos = json.loads((self.dir_datos / f"{resultado.fecha_local}.json").read_text(encoding="utf-8"))
+        self.assertEqual(datos["clima"]["temperatura_actual"], 12.3)
+        self.assertEqual(datos["clima"]["probabilidad_lluvia"], 10)
+        self.assertEqual(datos["oficial"], {"compra": 1495, "venta": 1515, "actualizado": "07:00"})
+        self.assertEqual(datos["blue"]["compra"], 1500)
+        self.assertEqual(datos["fuentes"], "Open-Meteo / DolarApi")
 
     def test_error_permite_reintento_posterior_exitoso(self):
         def _urlopen_falla_siempre(peticion, timeout=None):

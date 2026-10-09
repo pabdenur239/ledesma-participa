@@ -192,8 +192,8 @@ class TestVistaPreviaFacebook(unittest.TestCase):
 
         self.assertEqual(resp.status, 200)
         self.assertIn("MODO PRUEBA — NO SE PUBLICARÁ NADA", cuerpo)
-        self.assertIn("Se inauguró la plaza del barrio", cuerpo)
-        self.assertIn("Fuente y nota completa: https://ejemplo.test/1", cuerpo)
+        self.assertIn("SE INAUGURÓ LA PLAZA DEL BARRIO", cuerpo)  # copy Etapa 1: [TERRITORIO] | TITULAR
+        self.assertIn("Nota original: https://ejemplo.test/1", cuerpo)  # sin nota propia todavía
         self.assertIn("Fuente: Ejemplo Noticias (prueba)", cuerpo)
         self.assertIn("#LedesmaParticipa", cuerpo)
         # sin imagen de origen: se generó y embebió una placa PNG

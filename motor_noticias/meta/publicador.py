@@ -132,7 +132,7 @@ def _publicar_en_facebook(db, prog_id, fila, cliente_fb, contenido):
     return ResultadoRed("facebook", "publicado", post_id), photo_id
 
 
-def _publicar_en_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia, photo_id):
+def _publicar_en_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia, photo_id, urgente=False):
     ahora_iso = datetime.now(timezone.utc).isoformat()
 
     if fila.get("meta_id"):
@@ -142,7 +142,7 @@ def _publicar_en_instagram(db, prog_id, fila, cliente_fb, cliente_ig, noticia, p
     else:
         try:
             imagen_url_publica = cliente_fb.obtener_url_publica_foto(photo_id)
-            caption = generar_caption_instagram(noticia)
+            caption = generar_caption_instagram(noticia, urgente=urgente)
             media_id = cliente_ig.publicar_instagram(caption, imagen_url_publica, dry_run=False)
         except ErrorClienteMeta as error:
             # Cubre tanto un fallo de publicar_instagram como el caso pedido
@@ -554,7 +554,9 @@ def _publicar_noticia_en_clave(
         )
     else:
         resultados_red.append(
-            _publicar_en_instagram(db, prog_id_ig, fila_ig, cliente_fb, cliente_ig, noticia, photo_id)
+            _publicar_en_instagram(
+                db, prog_id_ig, fila_ig, cliente_fb, cliente_ig, noticia, photo_id, urgente=clave.startswith("urgente-")
+            )
         )
 
     if any(r.estado == "publicado" for r in resultados_red):

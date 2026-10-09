@@ -35,3 +35,7 @@ data/reels/
 # guardan ahí como entregable local, no se versionan (pesan ~50 MB c/u).
 exports/android/*.apk
 exports/android/*.aab
+
+# Datos de runtime (Etapa 1): caché del sitio y datos del informe Clima + Dólar
+data/cache/
+data/informe_diario/

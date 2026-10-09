@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 
 from .db import Database
 from .dedupe import normalizar_url
+from .informe_diario_datos import guardar_datos
 from .models import Noticia
 from .motor_editorial import ZONA_JUJUY
 from .pipeline import normalizar_noticia, procesar_noticia
@@ -261,24 +262,72 @@ def _hora_legible(iso_o_fecha: str) -> str:
     return momento.strftime("%H:%M")
 
 
-def _construir_texto(clima: DatosClima, dolar_oficial: DatosDolar, dolar_blue: DatosDolar, fecha_local) -> Tuple[str, str]:
-    fecha_legible = fecha_local.strftime("%d/%m/%Y")
-    titulo = f"Clima y dólar en Libertador: informe del {fecha_legible}"
+DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+         "octubre", "noviembre", "diciembre")
+TITULO_INFORME = "Clima + Dólar | Informe de la mañana"
+NO_DISPONIBLE = "No disponible"
 
+
+def _fecha_legible(fecha_local) -> str:
+    return f"{DIAS_SEMANA[fecha_local.weekday()].capitalize()} {fecha_local.day} de {MESES[fecha_local.month - 1]}"
+
+
+def _texto_dolar(nombre: str, dolar: Optional[DatosDolar]) -> str:
+    if dolar is None:
+        return f"Dólar {nombre}: {NO_DISPONIBLE}."
+    return f"Dólar {nombre}: compra ${dolar.compra:.0f} / venta ${dolar.venta:.0f}."
+
+
+def _construir_texto(
+    clima: Optional[DatosClima], dolar_oficial: Optional[DatosDolar], dolar_blue: Optional[DatosDolar], fecha_local
+) -> Tuple[str, str]:
+    """Una sola publicación: CLIMA + DÓLAR | INFORME DE LA MAÑANA. Lo que
+    una fuente no entregó se informa como "No disponible" (nunca se
+    inventa ni se completa con un valor anterior)."""
+    if clima is not None:
+        parrafo_clima = (
+            f"Clima en Libertador General San Martín: {clima.temperatura_actual:.0f}°C ahora, "
+            f"{clima.descripcion}. Mínima de {clima.temperatura_minima:.0f}°C y máxima de "
+            f"{clima.temperatura_maxima:.0f}°C. Probabilidad de lluvia: {clima.probabilidad_lluvia_maxima:.0f}% "
+            f"(Open-Meteo, actualizado {_hora_legible(clima.actualizado_en)})."
+        )
+    else:
+        parrafo_clima = f"Clima en Libertador General San Martín: {NO_DISPONIBLE} (la fuente no respondió)."
+    actualizaciones = [d.actualizado_en for d in (dolar_oficial, dolar_blue) if d is not None]
+    parrafo_dolar = f"{_texto_dolar('oficial', dolar_oficial)} {_texto_dolar('blue', dolar_blue)}"
+    if actualizaciones:
+        parrafo_dolar += f" (DolarApi, actualizado {_hora_legible(max(actualizaciones))})."
     texto = (
-        f"Buen día. En Libertador General San Martín, la temperatura actual es de "
-        f"{clima.temperatura_actual:.1f}°C ({clima.descripcion}). Para hoy se espera una mínima de "
-        f"{clima.temperatura_minima:.1f}°C, una máxima de {clima.temperatura_maxima:.1f}°C y una "
-        f"probabilidad de lluvia de {clima.probabilidad_lluvia_maxima:.0f}% "
-        f"(Open-Meteo, actualizado {_hora_legible(clima.actualizado_en)}).\n\n"
-        f"Dólar oficial: compra ${dolar_oficial.compra:.0f} / venta ${dolar_oficial.venta:.0f} "
-        f"(DolarApi, actualizado {_hora_legible(dolar_oficial.actualizado_en)}).\n"
-        f"Dólar blue: compra ${dolar_blue.compra:.0f} / venta ${dolar_blue.venta:.0f} "
-        f"(DolarApi, actualizado {_hora_legible(dolar_blue.actualizado_en)}).\n\n"
-        "Informe de servicio generado automáticamente con datos de fuentes externas; "
-        "no reemplaza asesoramiento financiero ni meteorológico oficial."
+        f"Buen día. Informe de la mañana del {_fecha_legible(fecha_local).lower()}.\n\n"
+        f"{parrafo_clima}\n\n{parrafo_dolar}\n\n"
+        "Informe de servicio con datos de fuentes externas; no reemplaza asesoramiento financiero "
+        "ni meteorológico oficial."
     )
-    return titulo, texto
+    return TITULO_INFORME, texto
+
+
+def _datos_estructurados(clima, dolar_oficial, dolar_blue, ahora_local) -> dict:
+    def dolar(d):
+        return None if d is None else {"compra": d.compra, "venta": d.venta, "actualizado": _hora_legible(d.actualizado_en)}
+
+    return {
+        "fecha": ahora_local.date().isoformat(),
+        "fecha_legible": _fecha_legible(ahora_local.date()),
+        "generado_en": ahora_local.isoformat(),
+        "actualizado": ahora_local.strftime("%H:%M"),
+        "clima": None if clima is None else {
+            "temperatura_actual": clima.temperatura_actual,
+            "temperatura_minima": clima.temperatura_minima,
+            "temperatura_maxima": clima.temperatura_maxima,
+            "descripcion": clima.descripcion,
+            "probabilidad_lluvia": clima.probabilidad_lluvia_maxima,
+            "actualizado": _hora_legible(clima.actualizado_en),
+        },
+        "oficial": dolar(dolar_oficial),
+        "blue": dolar(dolar_blue),
+        "fuentes": "Open-Meteo / DolarApi",
+    }
 
 
 @dataclass
@@ -306,13 +355,17 @@ def generar_informe_diario(
     urlopen=urllib.request.urlopen,
     esperas_reintento=ESPERAS_REINTENTO_SEGUNDOS,
     dormir=None,
+    directorio_datos: Optional[Path] = None,
 ) -> ResultadoInformeDiario:
     """Genera (a lo sumo una vez por fecha local en America/Argentina/Jujuy)
     el informe diario de clima + dólar, y lo deja como noticia `preparada`/
     `pendiente`. Si el informe de hoy ya existe, termina limpiamente sin
-    duplicar. Si falta cualquiera de las dos fuentes o los datos esenciales
-    no son válidos, no guarda nada: termina con error para poder
-    reintentarse en la próxima ejecución de la tarea programada."""
+    duplicar. Si una fuente (clima, dólar oficial o blue) sigue fallando
+    después de los reintentos, el informe sale igual con esa parte como
+    "No disponible"; solo si no hay ningún dato válido no guarda nada y
+    termina con error para reintentarse en la próxima ejecución. Además
+    guarda los datos estructurados (`informe_diario_datos`) para la placa,
+    la web y la app."""
     config = _cargar_config(config_path)
     ahora_local = (ahora or datetime.now(ZONA_JUJUY)).astimezone(ZONA_JUJUY)
     fecha_local = ahora_local.date()
@@ -333,28 +386,47 @@ def generar_informe_diario(
 
     dormir = dormir or time.sleep
     intentos = len(esperas_reintento) + 1
+    # Cada fuente se reintenta por separado; si alguna sigue sin responder
+    # después del último intento, el informe sale igual con esa parte como
+    # "No disponible" (Etapa 1). Solo si no hay NINGÚN dato no hay informe.
+    obtenidos = {"clima": None, "oficial": None, "blue": None}
+    errores = {}
+    pedidos = {
+        "clima": lambda: obtener_clima(config, urlopen=urlopen),
+        "oficial": lambda: obtener_dolar("oficial", config, urlopen=urlopen),
+        "blue": lambda: obtener_dolar("blue", config, urlopen=urlopen),
+    }
     for intento in range(1, intentos + 1):
-        try:
-            clima = obtener_clima(config, urlopen=urlopen)
-            dolar_oficial = obtener_dolar("oficial", config, urlopen=urlopen)
-            dolar_blue = obtener_dolar("blue", config, urlopen=urlopen)
+        for clave, pedir in pedidos.items():
+            if obtenidos[clave] is None:
+                try:
+                    obtenidos[clave] = pedir()
+                    errores.pop(clave, None)
+                except ErrorInformeDiario as error:
+                    errores[clave] = str(error)
+        if not errores:
             break
-        except ErrorInformeDiario as error:
-            mensaje = str(error)
-            if intento < intentos:
-                espera = esperas_reintento[intento - 1]
-                logger.warning(
-                    "Informe diario: intento %s/%s falló (%s); reintento en %ss.", intento, intentos, mensaje, espera
-                )
-                dormir(espera)
-                continue
-            logger.error("Informe diario: fallaron los %s intentos (%s). Hoy no hay informe.", intentos, mensaje)
-            db.registrar_salud_fuente(NOMBRE_SALUD, "error", mensaje_error=f"{mensaje} (tras {intentos} intentos)")
-            return ResultadoInformeDiario(
-                resultado="error", noticia_id=None, fecha_local=fecha_iso, mensaje_error=mensaje
+        if intento < intentos:
+            espera = esperas_reintento[intento - 1]
+            logger.warning(
+                "Informe diario: intento %s/%s sin %s (%s); reintento en %ss.",
+                intento, intentos, ", ".join(errores), "; ".join(errores.values()), espera,
             )
+            dormir(espera)
 
+    if all(valor is None for valor in obtenidos.values()):
+        mensaje = "; ".join(errores.values())
+        logger.error("Informe diario: fallaron los %s intentos (%s). Hoy no hay informe.", intentos, mensaje)
+        db.registrar_salud_fuente(NOMBRE_SALUD, "error", mensaje_error=f"{mensaje} (tras {intentos} intentos)")
+        return ResultadoInformeDiario(
+            resultado="error", noticia_id=None, fecha_local=fecha_iso, mensaje_error=mensaje
+        )
+    if errores:
+        logger.warning("Informe diario: sale con datos parciales, no disponible: %s", ", ".join(errores))
+
+    clima, dolar_oficial, dolar_blue = obtenidos["clima"], obtenidos["oficial"], obtenidos["blue"]
     titulo, texto = _construir_texto(clima, dolar_oficial, dolar_blue, fecha_local)
+    guardar_datos(_datos_estructurados(clima, dolar_oficial, dolar_blue, ahora_local), directorio_datos)
 
     cruda = {
         "titulo": titulo,

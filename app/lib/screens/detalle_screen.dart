@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,7 +5,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/noticia.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
+import '../widgets/imagen_noticia.dart';
+import '../widgets/insignias.dart';
 
+/// Nota completa: insignias (urgente / territorio / categoría), titular,
+/// fecha y fuente, imagen real o placa editorial, texto y enlace a la nota
+/// original (requisito Google Play "News and Magazines").
 class DetalleScreen extends StatefulWidget {
   final int noticiaId;
   final Noticia? resumenPrevio;
@@ -60,31 +64,19 @@ class _Contenido extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (noticia.imagen != null)
-            CachedNetworkImage(
-              imageUrl: noticia.imagen!,
-              width: double.infinity,
-              height: 220,
-              fit: BoxFit.cover,
-              fadeInDuration: Duration.zero,
-              placeholder: (context, url) => Container(height: 220, color: MarcaColores.marcaFondo),
-              errorWidget: (context, url, error) => Container(height: 220, color: MarcaColores.marcaFondo),
-            ),
+          if (noticia.urgente) Container(height: 5, color: MarcaColores.urgente),
+          AspectRatio(aspectRatio: 16 / 10, child: ImagenNoticia(noticia: noticia)),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (noticia.urgente)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: Text('URGENTE', style: TextStyle(color: MarcaColores.marcaNaranja, fontWeight: FontWeight.bold)),
-                  ),
-                Text(noticia.titulo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Insignias(noticia: noticia),
+                const SizedBox(height: 8),
+                Text(noticia.titulo, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800, height: 1.2)),
                 const SizedBox(height: 8),
                 Text(
-                  [noticia.categoriaEtiqueta, if (noticia.localidad != null) noticia.localidad!, noticia.fechaLegible]
-                      .join(' · '),
+                  [noticia.fechaLegible, if ((noticia.fuenteNombre ?? '').isNotEmpty) noticia.fuenteNombre!].join(' · '),
                   style: const TextStyle(color: MarcaColores.textoSuave, fontSize: 12.5),
                 ),
                 const Divider(height: 28),
@@ -92,7 +84,7 @@ class _Contenido extends StatelessWidget {
                   ...noticia.textoParrafos!.map(
                     (p) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(p, style: const TextStyle(fontSize: 15, height: 1.4)),
+                      child: Text(p, style: const TextStyle(fontSize: 16, height: 1.5)),
                     ),
                   )
                 else if (cargandoCompleto)
@@ -101,18 +93,18 @@ class _Contenido extends StatelessWidget {
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else
-                  Text(noticia.bajada, style: const TextStyle(fontSize: 15, height: 1.4)),
-                if (noticia.fuenteNombre != null && noticia.fuenteNombre!.isNotEmpty) ...[
+                  Text(noticia.bajada, style: const TextStyle(fontSize: 16, height: 1.5)),
+                if ((noticia.fuenteNombre ?? '').isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text('Fuente: ${noticia.fuenteNombre}', style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic)),
+                  Text('Fuente: ${noticia.fuenteNombre}', style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic)),
                 ],
-                if (noticia.fuenteUrl != null && noticia.fuenteUrl!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                if ((noticia.fuenteUrl ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
                   InkWell(
                     onTap: () => launchUrl(Uri.parse(noticia.fuenteUrl!), mode: LaunchMode.externalApplication),
                     child: const Text(
                       'Ver nota original',
-                      style: TextStyle(fontSize: 13, color: MarcaColores.marcaOro, decoration: TextDecoration.underline),
+                      style: TextStyle(fontSize: 14, color: MarcaColores.marcaOro, decoration: TextDecoration.underline),
                     ),
                   ),
                 ],

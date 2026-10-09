@@ -7,7 +7,24 @@ from unittest.mock import patch
 
 from motor_noticias.db import Database
 from motor_noticias.models import Estado, Noticia, RevisionEstado
+from motor_noticias.sitio import generador as generador_mod
 from motor_noticias.sitio.generador import generar_sitio
+from motor_noticias.sitio.imagenes_web import ValidadorImagenes
+
+
+def _aislar(test, tmpdir):
+    """Cachés, datos del informe y validación de imágenes por red: nunca
+    contra data/ real ni contra Internet durante los tests."""
+    tmp = Path(tmpdir)
+    parches = [
+        patch.object(generador_mod, "CACHE_CLASIFICACION_DEFAULT", tmp / "clasificacion.json"),
+        patch.object(generador_mod, "ValidadorImagenes",
+                     lambda: ValidadorImagenes(cache_path=tmp / "imagenes.json", consultar=lambda url: True)),
+        patch("motor_noticias.informe_diario_datos.DIRECTORIO_DEFAULT", tmp / "informe_diario"),
+    ]
+    for parche in parches:
+        parche.start()
+        test.addCleanup(parche.stop)
 
 
 def _noticia(**overrides) -> Noticia:
@@ -37,6 +54,7 @@ class TestGenerarSitioWeb(unittest.TestCase):
         self.db_path = Path(self.tmpdir.name) / "test.db"
         self.salida_dir = Path(self.tmpdir.name) / "salida"
         self.db = Database(self.db_path)
+        _aislar(self, self.tmpdir.name)
 
     def tearDown(self):
         self.db.close()
@@ -58,17 +76,18 @@ class TestGenerarSitioWeb(unittest.TestCase):
         self.assertIn("Título preparado", index_html)
 
     def test_secciones_por_territorio(self):
-        self.db.guardar(_noticia(hash_contenido="local", territorio="local", titulo_preparado="Nota Libertador"))
-        self.db.guardar(_noticia(hash_contenido="depto", territorio="departamental", titulo_preparado="Nota Ledesma"))
-        self.db.guardar(_noticia(hash_contenido="prov", territorio="provincial", titulo_preparado="Nota Jujuy"))
-        self.db.guardar(_noticia(hash_contenido="nac", territorio="nacional", titulo_preparado="Nota Nacional"))
+        # El territorio se recalcula con la clasificación vigente (no se
+        # confía en el guardado): los títulos nombran el lugar real.
+        self.db.guardar(_noticia(hash_contenido="local", territorio="local", titulo_original="Obra en Libertador General San Martín"))
+        self.db.guardar(_noticia(hash_contenido="depto", territorio="departamental", titulo_original="Feria en Calilegua"))
+        self.db.guardar(_noticia(hash_contenido="prov", territorio="provincial", titulo_original="Obras en San Salvador de Jujuy"))
+        self.db.guardar(_noticia(hash_contenido="nac", territorio="nacional", titulo_original="Anuncio de la ANSES para toda la Argentina"))
 
         resultado = self._generar()
 
-        self.assertEqual(
-            resultado["secciones"],
-            {"libertador": 1, "ledesma": 1, "jujuy": 1, "nacionales": 1},
-        )
+        for slug in ("libertador", "ledesma", "jujuy", "nacionales"):
+            self.assertEqual(resultado["secciones"][slug], 1, slug)
+        self.assertEqual(resultado["secciones"]["ultimas"], 4)
         for slug in ("libertador", "ledesma", "jujuy", "nacionales", "entretenimiento"):
             self.assertTrue((self.salida_dir / "categoria" / slug / "index.html").exists())
 
@@ -123,7 +142,7 @@ class TestGenerarSitioWeb(unittest.TestCase):
         self._generar()
 
         self.assertTrue((self.salida_dir / "assets" / "img" / "placa_prueba.png").exists())
-        index_html = (self.salida_dir / "index.html").read_text(encoding="utf-8")
+        index_html = (self.salida_dir / "categoria" / "ultimas" / "index.html").read_text(encoding="utf-8")
         self.assertIn("assets/img/placa_prueba.png", index_html)
         self.assertIn("https://cdn.ejemplo.test/foto.jpg", index_html)
 
@@ -152,7 +171,8 @@ class TestGenerarSitioWeb(unittest.TestCase):
 
         self._generar()
 
-        index_html = (self.salida_dir / "index.html").read_text(encoding="utf-8")
+        # La portada muestra lo reciente; el histórico vive en las secciones.
+        index_html = (self.salida_dir / "categoria" / "ultimas" / "index.html").read_text(encoding="utf-8")
         self.assertLess(
             index_html.index("Nota de febrero"),
             index_html.index("Nota de enero"),
@@ -262,6 +282,7 @@ class TestApiJson(unittest.TestCase):
         self.db_path = Path(self.tmpdir.name) / "test.db"
         self.salida_dir = Path(self.tmpdir.name) / "salida"
         self.db = Database(self.db_path)
+        _aislar(self, self.tmpdir.name)
 
     def tearDown(self):
         self.db.close()
@@ -285,33 +306,37 @@ class TestApiJson(unittest.TestCase):
             self.assertIn(campo, item)
         self.assertTrue(item["url"].startswith("https://ledesmaparticipa.com.ar/"))
 
-    def test_feed_respeta_prioridad_local_antes_que_nacional_aunque_sea_mas_viejo(self):
+    def test_feed_es_cronologico_lo_mas_nuevo_primero(self):
+        # Etapa 1: "Últimas" es cronológico (antes una nota local de hace
+        # semanas quedaba por encima de lo de hoy).
         self.db.guardar(_noticia(
-            hash_contenido="nacional", territorio="nacional",
-            titulo_original="Nota nacional más nueva", fecha_recoleccion="2026-08-18T13:00:00+00:00",
+            hash_contenido="nacional", titulo_preparado="Nota nacional más nueva",
+            titulo_original="Anuncio de la ANSES en la Argentina", fecha_fuente="Tue, 18 Aug 2026 10:00:00 -0300",
         ))
         self.db.guardar(_noticia(
-            hash_contenido="local", territorio="local",
-            titulo_original="Nota local más vieja", fecha_recoleccion="2026-08-17T13:00:00+00:00",
+            hash_contenido="local", titulo_preparado="Nota local más vieja",
+            titulo_original="Obra en Libertador General San Martín", fecha_fuente="Mon, 17 Aug 2026 10:00:00 -0300",
         ))
         self._generar()
 
         feed = self._leer_json("feed.json")
-        self.assertEqual(feed[0]["titulo"], "Título preparado")  # ambas comparten titulo_preparado
-        self.assertEqual(feed[0]["categoria_slug"], "libertador")  # la local va primero
+        self.assertEqual([i["titulo"] for i in feed], ["Nota nacional más nueva", "Nota local más vieja"])
+        self.assertEqual(feed[1]["clasificacion"]["territorio"]["valor"], "libertador")
 
     def test_urgentes_solo_incluye_marcadas_urgentes(self):
         self.db.guardar(_noticia(hash_contenido="u1", urgente=True))
         self.db.guardar(_noticia(hash_contenido="u2", urgente=False))
-        self._generar()
+        # URGENTE lo confirma el scoring editorial único; acá se simula.
+        with patch.object(generador_mod, "urgente_confirmado", lambda n: bool(n.get("urgente"))):
+            self._generar()
 
         urgentes = self._leer_json("urgentes.json")
         self.assertEqual(len(urgentes), 1)
         self.assertTrue(urgentes[0]["urgente"])
 
     def test_categorias_reales_incluyen_tematica_y_las_vacias_quedan_vacias(self):
-        self.db.guardar(_noticia(hash_contenido="c1", territorio="local"))
-        self.db.guardar(_noticia(hash_contenido="c2", territorio="provincial"))
+        self.db.guardar(_noticia(hash_contenido="c1", territorio="local", titulo_original="Obra en Libertador General San Martín"))
+        self.db.guardar(_noticia(hash_contenido="c2", territorio="provincial", titulo_original="Obras en San Salvador de Jujuy"))
         self.db.guardar(_noticia(
             hash_contenido="c3", territorio="sin_clasificar", categoria_tematica="salud",
             titulo_original="Nota de salud", texto_original="Contenido sobre salud pública.",
@@ -328,11 +353,13 @@ class TestApiJson(unittest.TestCase):
 
         categorias = self._leer_json("categorias.json")
         slugs = {c["slug"] for c in categorias}
-        self.assertEqual(
-            slugs,
+        # Los slugs que usa la app publicada siguen existiendo…
+        self.assertTrue(
             {"locales", "provinciales", "nacionales", "internacionales", "policiales",
-             "espectaculos", "salud", "gastronomia", "deportes"},
+             "espectaculos", "salud", "gastronomia", "deportes"} <= slugs
         )
+        # …y se agregan los de la Etapa 1.
+        self.assertTrue({"ultimas", "libertador", "ledesma", "jujuy", "servicios", "general"} <= slugs)
 
     def test_imagen_externa_no_queda_rota_con_el_base_url_antepuesto(self):
         # Bug real detectado probando la API contra datos reales: una
@@ -403,3 +430,119 @@ class TestApiJson(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPortadaEtapa1(unittest.TestCase):
+    """Portada mobile-first, API de la app, Guía Comercial y Videos."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        self.salida_dir = Path(self.tmpdir.name) / "salida"
+        self.db = Database(self.db_path)
+        _aislar(self, self.tmpdir.name)
+        from datetime import datetime, timezone
+
+        self.ahora = datetime(2026, 10, 9, 15, 0, tzinfo=timezone.utc)
+
+    def tearDown(self):
+        self.db.close()
+        self.tmpdir.cleanup()
+
+    def _generar(self):
+        return generar_sitio(self.db_path, self.salida_dir, base_url="https://ledesmaparticipa.com.ar", ahora=self.ahora)
+
+    def _leer_json(self, *partes):
+        return json.loads((self.salida_dir / "api" / Path(*partes)).read_text(encoding="utf-8"))
+
+    def _nota(self, n, titulo, texto="Texto de la nota con información.", **extra):
+        self.db.guardar(_noticia(
+            hash_contenido=f"p{n}", titulo_original=titulo, titulo_preparado=titulo, texto_original=texto,
+            texto_preparado=texto, url_fuente=f"https://ejemplo.test/{n}", url_normalizada=f"https://ejemplo.test/{n}",
+            fecha_fuente="Fri, 09 Oct 2026 10:00:00 -0300", fecha_recoleccion="2026-10-09T13:00:00+00:00", **extra,
+        ))
+
+    def test_portada_secciones_separadas_y_sin_vacias(self):
+        self._nota(1, "Detuvieron a dos hombres por un robo en Libertador General San Martín",
+                   "La Policía allanó una vivienda y recuperó lo robado. Los detenidos quedaron en la comisaría.")
+        self._nota(2, "Corte de agua programado en Calilegua por obras en la red",
+                   "El suministro de agua potable se interrumpirá el martes. La empresa realizará mantenimiento.")
+        self._generar()
+        portada = self._leer_json("portada.json")
+        slugs = [s["slug"] for s in portada["secciones"]]
+        self.assertTrue(all(s["noticias"] for s in portada["secciones"]))  # nunca vacías
+        self.assertNotIn("salud", slugs)
+        self.assertNotIn("deportes", slugs)
+        index_html = (self.salida_dir / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("seccion-salud", index_html)
+        ids = [n["id"] for s in portada["secciones"] for n in s["noticias"]]
+        self.assertEqual(len(ids), len(set(ids)))  # ninguna nota repetida en la portada
+
+    def test_informes_de_clima_no_monopolizan_las_listas(self):
+        for dia in range(3):
+            self.db.guardar(_noticia(
+                hash_contenido=f"inf{dia}", titulo_original="Clima + Dólar | Informe de la mañana",
+                url_fuente=f"https://ledesma-participa.local/informe-diario/2026-10-0{7 + dia}",
+                url_normalizada=f"https://ledesma-participa.local/informe-diario/2026-10-0{7 + dia}",
+                fecha_recoleccion=f"2026-10-0{7 + dia}T10:30:00+00:00", origen_ingreso="automatico",
+            ))
+        self._nota(9, "Obra en Libertador General San Martín")
+        self._generar()
+        self.assertEqual([n["titulo"] for n in self._leer_json("feed.json")], ["Obra en Libertador General San Martín"])
+        self.assertEqual(self._leer_json("categoria", "servicios.json"), [])
+
+    def test_clima_dolar_en_api_y_portada(self):
+        from motor_noticias.informe_diario_datos import guardar_datos
+
+        guardar_datos({"fecha": "2026-10-09", "fecha_legible": "Viernes 9 de octubre", "actualizado": "07:30",
+                       "clima": None, "oficial": {"compra": 1400, "venta": 1450, "actualizado": "07:00"}, "blue": None,
+                       "fuentes": "Open-Meteo / DolarApi"})
+        self._generar()
+        self.assertEqual(self._leer_json("clima_dolar.json")["oficial"]["venta"], 1450)
+        index_html = (self.salida_dir / "index.html").read_text(encoding="utf-8")
+        self.assertIn("CLIMA + DÓLAR", index_html)
+        self.assertIn("No disponible", index_html)
+
+    def test_guia_comercial_paginas_y_api(self):
+        self._generar()
+        guia = self._leer_json("guia_comercial.json")
+        dosis = next(c for c in guia if c["slug"] == "dosis-jeans")
+        self.assertEqual(dosis["contacto"]["url"], "https://wa.me/5493886576721")
+        self.assertTrue(dosis["imagenes"][0].startswith("https://ledesmaparticipa.com.ar/assets/guia/"))
+        ficha = (self.salida_dir / "guia-comercial" / "un-clasico" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Drugstore y librería", ficha)
+        self.assertNotIn("WhatsApp</dt>", ficha)  # dato faltante: no se muestra
+        self.assertNotIn("Marketplace", ficha)
+        # Separado de las noticias: no entra al feed.
+        self.assertEqual(self._leer_json("feed.json"), [])
+
+    def test_videos_solo_validos_y_seccion_oculta_si_no_hay(self):
+        self._generar()
+        self.assertEqual(self._leer_json("videos.json"), [])
+        self.assertNotIn("seccion-videos", (self.salida_dir / "index.html").read_text(encoding="utf-8"))
+        video = {"id": "dQw4w9WgXcQ", "titulo": "Video", "fuente": "Canal", "fecha": "2026-10-09", "descripcion": None,
+                 "tipo": "video", "embed_url": "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ",
+                 "miniatura": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+                 "url_youtube": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}
+        with patch.object(generador_mod, "cargar_videos", return_value=[video]):
+            self._generar()
+        pagina = (self.salida_dir / "videos" / "dQw4w9WgXcQ" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"', pagina)
+        self.assertEqual(self._leer_json("videos.json")[0]["url"], "https://ledesmaparticipa.com.ar/videos/dQw4w9WgXcQ/")
+
+    def test_app_recibe_clasificacion_separada(self):
+        self._nota(1, "Detuvieron a dos hombres por un robo en Libertador General San Martín",
+                   "La Policía allanó una vivienda y recuperó lo robado. Los detenidos quedaron en la comisaría.")
+        self._generar()
+        item = self._leer_json("categoria", "policiales.json")[0]
+        self.assertEqual(item["clasificacion"]["territorio"]["valor"], "libertador")
+        self.assertEqual(item["clasificacion"]["categoria"]["valor"], "policiales")
+        self.assertIn("urgente", item["clasificacion"])
+        self.assertEqual(len(self._leer_json("categoria", "libertador.json")), 1)
+
+    def test_nota_sin_html_crudo(self):
+        self._nota(1, "Obra en Libertador General San Martín", "Primer párrafo.\n<p>Segundo párrafo con etiqueta.</p>\nFuente: Medio")
+        self._generar()
+        detalle = next((self.salida_dir / "api" / "noticia").glob("*.json"))
+        parrafos = json.loads(detalle.read_text(encoding="utf-8"))["texto_parrafos"]
+        self.assertEqual(parrafos, ["Primer párrafo.", "Segundo párrafo con etiqueta."])

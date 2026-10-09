@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS descarte_log (
     detalle TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_descarte_log_fecha ON descarte_log(fecha_hora);
+
+-- Selección diaria del portal web/app (Etapa 1, 9/10/2026): noticias
+-- válidas que se muestran en la web y la app además de las publicadas en
+-- redes (motor_noticias/portal.py). Persistida para que el histórico quede
+-- estable y cada regeneración del sitio solo complete el día en curso. No
+-- publica nada en Meta: redes siguen con su propia frecuencia.
+CREATE TABLE IF NOT EXISTS portal_seleccion (
+    noticia_id INTEGER PRIMARY KEY,
+    fecha TEXT NOT NULL,
+    puntaje INTEGER,
+    seleccionada_en TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_portal_seleccion_fecha ON portal_seleccion(fecha);
 """
 
 # Motivos normalizados de descarte (INFORMACIÓN LOCAL NO PUBLICADA): la
@@ -462,6 +475,66 @@ class Database:
         cur = self.conn.execute(
             "SELECT * FROM noticias WHERE estado = ? ORDER BY fecha_recoleccion DESC, id DESC",
             (Estado.PUBLICADA.value,),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def candidatas_portal(self, fecha_limite: str) -> list:
+        """Pool del portal web/app: `preparada` no rechazada, sin riesgo
+        editorial obligatorio, recolectada desde `fecha_limite` y todavía no
+        seleccionada. Mismas protecciones que `candidatos_editoriales`
+        (riesgo y rechazo siempre excluyen); la deduplicación ya la aplicó
+        el pipeline al ingresar."""
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE estado = ? AND revision_estado != ? AND fecha_recoleccion >= ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL) "
+            "AND (categoria_riesgo IS NULL OR categoria_riesgo = '') "
+            "AND id NOT IN (SELECT noticia_id FROM portal_seleccion) "
+            "ORDER BY fecha_recoleccion DESC",
+            (Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value, fecha_limite),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
+
+    def contar_usos_imagen(self, imagen_url: str, excluir_id: Optional[int] = None) -> int:
+        """Cuántas OTRAS noticias (títulos distintos) usan exactamente la
+        misma imagen: una foto de archivo que el medio reutiliza para notas
+        distintas no es la foto del hecho (ver `regla_imagenes`)."""
+        cur = self.conn.execute(
+            "SELECT COUNT(DISTINCT titulo_original) FROM noticias WHERE imagen_publicacion_ruta = ? AND id != ?",
+            (imagen_url, excluir_id if excluir_id is not None else -1),
+        )
+        return int(cur.fetchone()[0] or 0)
+
+    def portal_seleccion_por_fecha(self, fechas: list) -> dict:
+        """{fecha: [noticia_id, ...]} ya seleccionadas para esas fechas."""
+        if not fechas:
+            return {}
+        placeholders = ",".join("?" * len(fechas))
+        cur = self.conn.execute(
+            f"SELECT fecha, noticia_id FROM portal_seleccion WHERE fecha IN ({placeholders})", list(fechas)
+        )
+        resultado: dict = {}
+        for fila in cur.fetchall():
+            resultado.setdefault(fila["fecha"], []).append(fila["noticia_id"])
+        return resultado
+
+    def guardar_portal_seleccion(self, noticia_id: int, fecha: str, puntaje: int, seleccionada_en: str) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO portal_seleccion (noticia_id, fecha, puntaje, seleccionada_en) VALUES (?, ?, ?, ?)",
+            (noticia_id, fecha, puntaje, seleccionada_en),
+        )
+        self.conn.commit()
+
+    def listar_portal(self, fecha_limite: str) -> list:
+        """Noticias del portal web/app: las publicadas (en redes) más las
+        seleccionadas por `portal.py`, excluidas las rechazadas o con riesgo
+        editorial obligatorio que se hayan marcado después de
+        seleccionarlas, y siempre que no hayan sido descartadas."""
+        cur = self.conn.execute(
+            "SELECT * FROM noticias WHERE estado = ? OR (id IN (SELECT noticia_id FROM portal_seleccion WHERE fecha >= ?) "
+            "AND estado = ? AND revision_estado != ? "
+            "AND (requiere_revision_especial = 0 OR requiere_revision_especial IS NULL)) "
+            "ORDER BY fecha_recoleccion DESC, id DESC",
+            (Estado.PUBLICADA.value, fecha_limite[:10], Estado.PREPARADA.value, RevisionEstado.RECHAZADA.value),
         )
         return [dict(fila) for fila in cur.fetchall()]
 

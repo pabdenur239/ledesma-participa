@@ -56,7 +56,11 @@
     "El Carmen de Jujuy",
     "Volcán de Jujuy",
     "Santa Clara de Jujuy",
-    "San Pedro"
+    "San Pedro",
+    "Sadir",
+    "Carlos Sadir",
+    "Gimnasia de Jujuy",
+    "Talleres de Perico"
   ],
   "nacional": [
     "Gobierno nacional",
@@ -95,8 +99,49 @@
     "Corte Suprema",
     "dólar blue",
     "dólar oficial",
-    "convenios colectivos"
+    "convenios colectivos",
+    "AFA",
+    "Selección Argentina",
+    "selección nacional",
+    "Liga Profesional",
+    "Primera Nacional",
+    "Copa Argentina",
+    "Torneo Federal",
+    "Scaloni",
+    "Messi",
+    "Lionel Messi",
+    "Boca Juniors",
+    "River Plate",
+    "Los Pumas",
+    "Las Leonas",
+    "Dibu Martínez",
+    "Islas Malvinas",
+    "Causa Malvinas",
+    "Cancillería argentina",
+    "Cancillería",
+    "YPF",
+    "Vaca Muerta",
+    "Gobierno argentino"
   ],
+  "nacional_generico": {
+    "_descripcion": "Marcadores 'nacionales' que también usan otros países (Banco Central, inflación, Corte Suprema, 'de la Nación'...). Cuentan como nacionales, pero NO alcanzan para ganarle a un país extranjero nombrado en el título (bug real 9/10/2026: 'El banco central de Colombia aumenta la tasa... inflación' quedaba nacional). Agregado Etapa 1.",
+    "terminos": [
+      "Banco Central",
+      "inflación",
+      "inflación mayorista",
+      "IPC",
+      "Corte Suprema",
+      "Congreso Nacional",
+      "Congreso de la Nación",
+      "de la Nación",
+      "Gobierno nacional",
+      "Presidente de la Nación",
+      "Senado de la Nación",
+      "Cámara de Diputados de la Nación",
+      "Poder Judicial de la Nación",
+      "convenios colectivos"
+    ]
+  },
   "internacional": [
     "Estados Unidos",
     "EEUU",

@@ -164,3 +164,58 @@ def generar_video_reel(
     return ResultadoVideoReel(
         ruta=ruta_salida, ancho=ANCHO_REEL, alto=ALTO_REEL, duracion_segundos=duracion_real
     )
+
+
+# --- Reel por cuadros (Etapa 1, 9/10/2026) --------------------------------
+# Capacidad preparada, NO automatizada: no se genera un Reel para cada
+# noticia. `meta/identidad_visual.cuadros_reel` arma el guion visual
+# (0–2 s gancho, 2–10 s 2–3 datos, cierre + CTA) solo si el texto da al
+# menos 2 datos completos; esto lo compone en un MP4 vertical de 10–20 s.
+DURACION_MINIMA_REEL_CUADROS = 10.0
+DURACION_MAXIMA_REEL_CUADROS = 20.0
+
+
+def generar_reel_desde_cuadros(cuadros, ruta_salida: Path, directorio_temporal: Optional[Path] = None) -> ResultadoVideoReel:
+    """`cuadros`: lista de `identidad_visual.CuadroReel` (png + segundos).
+    Sin audio real (pista de silencio digital, nunca música externa)."""
+    _verificar_binarios_disponibles()
+    if not cuadros:
+        raise ErrorGeneracionVideo("No hay cuadros: esta noticia no tiene datos suficientes para un Reel.")
+    duracion_total = sum(c.segundos for c in cuadros)
+    if not (DURACION_MINIMA_REEL_CUADROS <= duracion_total <= DURACION_MAXIMA_REEL_CUADROS):
+        raise ErrorGeneracionVideo("La duración del Reel debe estar entre 10 y 20 segundos.")
+
+    ruta_salida = Path(ruta_salida)
+    ruta_salida.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(directorio_temporal) if directorio_temporal else ruta_salida.parent
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    rutas = []
+    args = ["ffmpeg", "-y"]
+    try:
+        for i, cuadro in enumerate(cuadros):
+            ruta = tmp / f"_reel_{ruta_salida.stem}_{i}.png"
+            ruta.write_bytes(cuadro.png)
+            rutas.append(ruta)
+            args += ["-loop", "1", "-t", f"{cuadro.segundos:.2f}", "-i", str(ruta)]
+        args += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+        escalas = "".join(
+            f"[{i}:v]scale={ANCHO_REEL}:{ALTO_REEL},fps={FPS_REEL},format=yuv420p[v{i}];" for i in range(len(cuadros))
+        )
+        concat = "".join(f"[v{i}]" for i in range(len(cuadros))) + f"concat=n={len(cuadros)}:v=1:a=0[vout]"
+        args += [
+            "-filter_complex", escalas + concat,
+            "-map", "[vout]", "-map", f"{len(cuadros)}:a",
+            "-t", f"{duracion_total:.2f}",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+            "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart",
+            str(ruta_salida),
+        ]
+        _correr_ffmpeg(args)
+    finally:
+        for ruta in rutas:
+            ruta.unlink(missing_ok=True)
+
+    return ResultadoVideoReel(
+        ruta=ruta_salida, ancho=ANCHO_REEL, alto=ALTO_REEL, duracion_segundos=_duracion_real_segundos(ruta_salida)
+    )

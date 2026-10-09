@@ -1,0 +1,6 @@
+{
+  "_descripcion": "Regla de imágenes (Etapa 1, 9/10/2026, motor_noticias/regla_imagenes.py). Orden obligatorio: 1) foto real del hecho; 2) foto oficial autorizada; 3) recurso claramente relacionado y permitido; 4) si no hay ninguna, PLACA EDITORIAL GRÁFICA (negro/dorado + titular + territorio + categoría). La foto que trae la nota de la fuente se usa solo si no es de un banco de stock, no es un archivo genérico (logo, placeholder…) y no es una foto de archivo que el medio reutiliza para notas distintas (la misma URL en más de 'maximo_otras_noticias_con_misma_imagen' noticias distintas). Ampliar solo con un caso real documentado.",
+  "dominios_stock": ["shutterstock", "istockphoto", "gettyimages", "freepik", "pexels", "unsplash", "pixabay", "depositphotos", "dreamstime", "123rf", "stock.adobe", "alamy", "canva.com", "vecteezy", "rawpixel"],
+  "prefijos_genericos": ["logo", "placeholder", "default", "noimage", "no-image", "sin-imagen", "sinimagen", "favicon", "avatar", "icono", "icon-", "generica", "generico", "stock"],
+  "maximo_otras_noticias_con_misma_imagen": 1
+}

@@ -2,11 +2,15 @@ from typing import List, Optional, Tuple
 
 from pathlib import Path
 
-from ..atribucion import etiqueta_fuente
 from ..db import Database
 from ..models import RevisionEstado
 from .contenido import ContenidoFacebook, _titulo_y_texto_finales, generar_contenido_facebook
-from .imagen import generar_placa, generar_placa_urgente, generar_story, normalizar_url_imagen, preparar_foto_publicable
+from .identidad_visual import DatosPieza, generar_pieza_clima_dolar, generar_pieza_feed, generar_story_pieza
+from . import imagen as _imagen
+from .imagen import _hash_contenido_placa, normalizar_url_imagen, preparar_foto_publicable
+from ..clasificacion import clasificar_noticia
+from ..informe_diario_datos import datos_informe_de_noticia
+from ..regla_imagenes import evaluar_imagen
 
 
 class ErrorPreparacionFacebook(RuntimeError):
@@ -17,9 +21,55 @@ def _es_url_remota(valor: str) -> bool:
     return valor.startswith("http://") or valor.startswith("https://")
 
 
+def datos_pieza(noticia: dict, tipo: Optional[str] = None) -> DatosPieza:
+    """Datos de la pieza Versión C: titular, territorio, categoría y tipo
+    (urgente rojo / servicio verde / institucional / noticia)."""
+    titulo, _ = _titulo_y_texto_finales(noticia)
+    clasificacion = clasificar_noticia(noticia, urgente=False)
+    categoria = clasificacion["categoria"]
+    etiqueta = categoria["etiqueta"] if categoria["valor"] not in (None, "general") else None
+    if tipo is None:
+        if noticia.get("territorio") == "institucional" or noticia.get("origen_ingreso") == "institucional":
+            tipo = "institucional"
+        elif categoria["valor"] == "servicios":
+            tipo = "servicio"
+        else:
+            tipo = "noticia"
+    return DatosPieza(titulo=titulo, territorio=clasificacion["territorio"]["valor"], categoria=etiqueta, tipo=tipo)
+
+
+def _guardar_pieza(prefijo: str, datos: DatosPieza, foto_ruta: Optional[str], generar) -> str:
+    """Archivo determinístico por contenido (se reutiliza en reintentos)."""
+    _imagen.DIRECTORIO_PLACAS_DEFAULT.mkdir(parents=True, exist_ok=True)
+    clave = _hash_contenido_placa(datos.titulo, f"{datos.territorio}|{datos.categoria}|{datos.tipo}", "", foto_ruta or "")
+    ruta = _imagen.DIRECTORIO_PLACAS_DEFAULT / f"{prefijo}_{clave}.png"
+    if not ruta.exists():
+        foto = Path(foto_ruta).read_bytes() if foto_ruta else None
+        try:
+            ruta.write_bytes(generar(datos, foto=foto))
+        except (OSError, ValueError):
+            if foto is None:
+                raise
+            ruta.write_bytes(generar(datos, foto=None))
+    return str(ruta)
+
+
 def _placa(noticia: dict) -> str:
-    titulo, texto = _titulo_y_texto_finales(noticia)
-    return str(generar_placa(titulo, texto, fuente=etiqueta_fuente(noticia), localidad=noticia.get("localidad")))
+    """PLACA EDITORIAL GRÁFICA (sin foto) o, para el informe de la
+    mañana, la pieza Clima + Dólar."""
+    datos_informe = datos_informe_de_noticia(noticia)
+    if datos_informe is not None:
+        _imagen.DIRECTORIO_PLACAS_DEFAULT.mkdir(parents=True, exist_ok=True)
+        ruta = _imagen.DIRECTORIO_PLACAS_DEFAULT / f"clima_dolar_{datos_informe.get('fecha', 'sin-fecha')}.png"
+        if not ruta.exists():
+            ruta.write_bytes(generar_pieza_clima_dolar(datos_informe))
+        return str(ruta)
+    return _guardar_pieza("pieza", datos_pieza(noticia), None, generar_pieza_feed)
+
+
+def _foto_apta(noticia: dict, url: str, db: Optional[Database]) -> bool:
+    usos = db.contar_usos_imagen(url, noticia.get("id")) if db is not None else 0
+    return evaluar_imagen(url, usos)[0]
 
 
 def _resolver_imagen(noticia: dict, db: Optional[Database]) -> Tuple[Optional[str], bool]:
@@ -35,13 +85,21 @@ def _resolver_imagen(noticia: dict, db: Optional[Database]) -> Tuple[Optional[st
     reintentos (nombre determinístico). Una placa nueva solo se persiste
     cuando la noticia no tenía ninguna imagen."""
     ruta_actual = noticia.get("imagen_publicacion_ruta")
+    if datos_informe_de_noticia(noticia) is not None:
+        return _placa(noticia), True
     if ruta_actual and _es_url_remota(ruta_actual):
-        foto = preparar_foto_publicable(ruta_actual)
+        # Regla de imágenes (Etapa 1): stock, genérica o de archivo
+        # reutilizada -> placa editorial gráfica, nunca la foto.
+        foto = preparar_foto_publicable(ruta_actual) if _foto_apta(noticia, ruta_actual, db) else None
         if foto is not None:
-            return str(foto), False
+            return _guardar_pieza("pieza", datos_pieza(noticia), str(foto), generar_pieza_feed), False
         return _placa(noticia), True
     if ruta_actual and Path(ruta_actual).is_file():
-        return ruta_actual, bool(noticia.get("imagen_generada_automaticamente"))
+        if noticia.get("imagen_generada_automaticamente") or noticia.get("origen_ingreso") == "institucional":
+            # Imagen propia ya configurada/persistida (institucional, placa
+            # ya generada): se usa tal cual, como siempre.
+            return ruta_actual, bool(noticia.get("imagen_generada_automaticamente"))
+        return _guardar_pieza("pieza", datos_pieza(noticia), ruta_actual, generar_pieza_feed), False
 
     ruta_texto = _placa(noticia)
     id_noticia = noticia.get("id")
@@ -59,10 +117,14 @@ def _resolver_imagen_urgente(noticia: dict) -> str:
     original de la noticia queda intacta."""
     ruta_actual = noticia.get("imagen_publicacion_ruta")
     foto = None if noticia.get("imagen_generada_automaticamente") else ruta_actual
-    titulo, _ = _titulo_y_texto_finales(noticia)
+    foto_local = None
     if foto and _es_url_remota(foto):
-        foto = normalizar_url_imagen(foto)
-    return str(generar_placa_urgente(titulo, fuente=etiqueta_fuente(noticia), imagen_original=foto))
+        if evaluar_imagen(foto)[0]:
+            preparada = preparar_foto_publicable(normalizar_url_imagen(foto))
+            foto_local = str(preparada) if preparada else None
+    elif foto and Path(foto).is_file():
+        foto_local = foto
+    return _guardar_pieza("urgente", datos_pieza(noticia, tipo="urgente"), foto_local, generar_pieza_feed)
 
 
 def preparar_publicacion(
@@ -106,7 +168,7 @@ def preparar_publicacion(
         )
 
     contenido = generar_contenido_facebook(
-        noticia, incluir_menciones=incluir_menciones, menciones=menciones
+        noticia, incluir_menciones=incluir_menciones, menciones=menciones, urgente=urgente
     )
 
     if urgente:
@@ -133,14 +195,7 @@ def _resolver_imagen_story(noticia: dict, db: Optional[Database]) -> str:
     if ruta_actual:
         return ruta_actual
 
-    titulo, texto = _titulo_y_texto_finales(noticia)
-    ruta_story = generar_story(
-        titulo,
-        texto,
-        fuente=noticia.get("nombre_fuente"),
-        localidad=noticia.get("localidad"),
-    )
-    ruta_texto = str(ruta_story)
+    ruta_texto = _guardar_pieza("story", datos_pieza(noticia), None, generar_story_pieza)
 
     id_noticia = noticia.get("id")
     if db is not None and id_noticia is not None:

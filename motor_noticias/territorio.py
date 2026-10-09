@@ -215,9 +215,37 @@ def _relevancia_confirmada(
     return None, clasificar_relevancia("", "", config=config)
 
 
-def _resultado(territorio: str, motivo: str, localidad: Optional[str], motivo_relevancia: Optional[str] = None) -> dict:
+# Confianza de cada camino de evidencia (Etapa 1, 9/10/2026): el
+# territorio lleva su propio confidence, independiente de la categoría. Los
+# valores reflejan qué tan directa es la evidencia: la localidad
+# institucional de la fuente o el lugar nombrado en el título son casi
+# seguros; una mención solo en el cuerpo o el fallback por tipo de medio,
+# bastante menos. Ver `motor_noticias/clasificacion.py`.
+CONFIANZA = {
+    "fuente": 0.98,
+    "titulo": 0.96,
+    "titulo_extranjero": 0.9,
+    "titulo_otra_provincia": 0.9,
+    "titulo_nacional": 0.88,
+    "cuerpo": 0.8,
+    "cuerpo_nacional": 0.78,
+    "medio_provincial": 0.72,
+    "medio_nacional": 0.7,
+    "internacional": 0.75,
+    "sin_clasificar": 0.0,
+}
+
+
+def _resultado(
+    territorio: str,
+    motivo: str,
+    localidad: Optional[str],
+    motivo_relevancia: Optional[str] = None,
+    confianza: float = 0.0,
+) -> dict:
     return {
         "territorio": territorio,
+        "confianza": confianza,
         "motivo_territorio": motivo,
         # `relevancia_local` conserva su significado: relación directa con
         # Libertador o el Departamento Ledesma.
@@ -261,7 +289,7 @@ def clasificar_territorio(
         por_fuente = clasificar_relevancia("", "", localidad=localidad_fuente, config=config)
         nivel = _nivel_desde_termino(por_fuente["localidad"], config)
         if nivel:
-            return _resultado(nivel, por_fuente["motivo"], por_fuente["localidad"])
+            return _resultado(nivel, por_fuente["motivo"], por_fuente["localidad"], confianza=CONFIANZA["fuente"])
 
     titulo_norm = _neutralizar_marcas(titulo, nombre_fuente, config)
     texto_norm = _neutralizar_marcas(texto, nombre_fuente, config)
@@ -269,32 +297,50 @@ def clasificar_territorio(
 
     nivel_titulo, por_titulo = _relevancia_confirmada(titulo_norm, "", nombre_fuente, config, contenido_norm)
     if nivel_titulo in ("local", "departamental"):
-        return _resultado(nivel_titulo, por_titulo["motivo"], por_titulo["localidad"])
+        return _resultado(nivel_titulo, por_titulo["motivo"], por_titulo["localidad"], confianza=CONFIANZA["titulo"])
 
     nacional_en_titulo = _contiene_alguna_palabra(titulo_norm, config.get("nacional", []))
+    genericos = {_sin_acentos(t) for t in config.get("nacional_generico", {}).get("terminos", [])}
+    nacional_fuerte_en_titulo = _contiene_alguna_palabra(
+        titulo_norm, [t for t in config.get("nacional", []) if _sin_acentos(t) not in genericos]
+    )
     if nivel_titulo is None:
         extranjero = _contiene_alguna_palabra(titulo_norm, config.get("internacional", []))
-        if extranjero and not nacional_en_titulo:
+        # Un marcador nacional genérico ("Banco Central", "inflación") no le
+        # gana a un país extranjero nombrado en el título; uno inequívoco
+        # (Argentina, Milei, AFA, ANSES…) sí.
+        if extranjero and not nacional_fuerte_en_titulo:
             return _resultado(
-                "internacional", f"El título ubica el hecho fuera de Argentina ('{extranjero}').", None
+                "internacional", f"El título ubica el hecho fuera de Argentina ('{extranjero}').", None,
+                confianza=CONFIANZA["titulo_extranjero"],
             )
         otra_provincia = _contiene_alguna_palabra(titulo_norm, config.get("otras_provincias", []))
         if otra_provincia:
             return _resultado(
-                "nacional", f"El título ubica el hecho en otra provincia ('{otra_provincia}').", None
+                "nacional", f"El título ubica el hecho en otra provincia ('{otra_provincia}').", None,
+                confianza=CONFIANZA["titulo_otra_provincia"],
             )
         if nacional_en_titulo:
             return _resultado(
-                "nacional", f"El título menciona '{nacional_en_titulo}' (alcance nacional).", None
+                "nacional", f"El título menciona '{nacional_en_titulo}' (alcance nacional).", None,
+                confianza=CONFIANZA["titulo_nacional"],
             )
 
     nivel, completo = _relevancia_confirmada(titulo_norm, texto_norm, nombre_fuente, config, contenido_norm)
     if nivel:
-        return _resultado(nivel, completo["motivo"], completo["localidad"])
+        # Jujuy en el título (incluido un protagonista jujeño como el
+        # gobernador Sadir, bug real: "Sadir desde París" quedaba
+        # internacional) sin localidad de Ledesma en el cuerpo: provincial
+        # con la confianza de la evidencia del título.
+        confianza = CONFIANZA["titulo"] if nivel == nivel_titulo else CONFIANZA["cuerpo"]
+        return _resultado(nivel, completo["motivo"], completo["localidad"], confianza=confianza)
 
     termino_nacional = _contiene_alguna_palabra(contenido_norm, config.get("nacional", []))
     if termino_nacional:
-        return _resultado("nacional", f"Menciona '{termino_nacional}' (alcance nacional).", None)
+        return _resultado(
+            "nacional", f"Menciona '{termino_nacional}' (alcance nacional).", None,
+            confianza=CONFIANZA["cuerpo_nacional"],
+        )
 
     evidencia_internacional = _evidencia_internacional(contenido_norm, categoria, url, config)
 
@@ -307,6 +353,7 @@ def clasificar_territorio(
                 "internacional y sin clasificación local/departamental/provincial: se asume "
                 "sección argentina/general del medio.",
                 None,
+                confianza=CONFIANZA["medio_nacional"],
             )
         if seccion_ambigua:
             return _resultado(
@@ -335,6 +382,7 @@ def clasificar_territorio(
             f"Medio jujeño configurado ('{nombre_fuente}') sin evidencia local, nacional, de otra "
             "provincia ni internacional: se asume alcance provincial.",
             "Jujuy",
+            confianza=CONFIANZA["medio_provincial"],
         )
 
     if evidencia_internacional:
@@ -342,6 +390,7 @@ def clasificar_territorio(
             "internacional",
             f"Contenido internacional ({evidencia_internacional}) sin impacto argentino explícito.",
             None,
+            confianza=CONFIANZA["internacional"],
         )
 
     return _resultado(

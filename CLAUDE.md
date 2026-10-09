@@ -81,28 +81,32 @@ referencia estable — no reinterpretar por criterio propio en cada tarea:
 - No publicar rumores, acusaciones sin confirmar, datos privados, contenido
   difamatorio, ni noticias sobre menores o tragedias usadas como
   entretenimiento.
-- **Toda noticia local (Libertador) o departamental (Ledesma) relevante y
-  verificada se publica de inmediato, sin esperar la siguiente franja
-  fija** — regla vigente desde 17/8/2026. `pipeline.procesar_noticia` marca
-  `urgente = True` automáticamente en cuanto la noticia llega a "preparada"
-  con `territorio` en `local`/`departamental` (`TERRITORIOS_SIEMPRE_ELEGIBLES`
-  en `motor_noticias/pipeline.py`), sea cual sea su origen (collector
-  automático o carga manual vía panel). No hace falta tildar "Urgente" a
-  mano para que se dispare: el tildado manual sigue existiendo solo para
-  casos donde un humano quiera marcar como urgente algo que la
-  clasificación territorial no detectó. A partir de ahí se reutiliza el
-  circuito ya existente sin cambios: `candidatos_urgentes` la propone (ya
-  excluye por su cuenta cualquier noticia con riesgo editorial obligatorio
-  o rechazada) y `publicar_urgentes` (`publicar_urgentes_meta.py`, corrida
-  cada 15 minutos) la publica sola en cuanto es apta — mismas reglas de
-  riesgo editorial y elegibilidad automática que cualquier franja fija.
-  Departamental/provincial/nacional en franja fija siguen exactamente con
-  el esquema programado existente; esta regla no los toca.
+- **Scoring editorial único (vigente desde 2/10/2026)** —
+  `motor_noticias/scoring_editorial.py` + `config/scoring_editorial.json`.
+  Una sola clasificación alimenta franjas, circuito inmediato y placa roja.
+  Base 0–100 = impacto (25) + urgencia (20) + magnitud (20) + relevancia
+  para nuestra audiencia (15) + actualidad (10) + interés (10); bonus
+  territorial aparte (Libertador +12, Ledesma +9, Jujuy +5, nacional 0).
+  Cada franja de cascada elige la candidata de mayor puntaje total: ser
+  local suma pero no garantiza ganar. **Inmediato (URGENTE)**: local/
+  departamental con base ≥ 70 (sin bonus) y urgencia real en el título;
+  provincial/nacional solo si es extraordinaria (base ≥ 80, urgencia ≥ 16,
+  relevancia para la audiencia ≥ 10). Ya NO se publica de inmediato una
+  local solo por ser local. El tildado manual "Urgente" del panel (carga
+  manual) se sigue respetando. `pipeline.procesar_noticia` marca
+  `urgente`, `resolver_urgentes` lo confirma con el mismo scoring y
+  `publicar_urgentes` (cada 15 min) publica con la identidad visual roja
+  (banda URGENTE sobre la foto, o placa roja sin foto). El rojo queda
+  reservado exclusivamente a URGENTES. Riesgo editorial, rechazo,
+  deduplicación y vigencia siguen excluyendo de todo circuito automático.
+  Ajustar señales/umbrales solo en el JSON, con caso real documentado.
 - Deduplicación, vigencia (`ANTIGUEDAD_MAXIMA_HORAS`), fuente verificable y
   filtros de riesgo siempre activos — no se eliminan ni se relajan.
-- Cada publicación real: imagen, texto autocontenido con "Fuente y nota
-  completa:" + URL original al final. Nunca usar ni prometer un primer
-  comentario.
+- Cada publicación real: imagen + texto autocontenido con el formato de
+  copy de la Etapa 1 (ver abajo): fuente siempre atribuida y enlace a la
+  nota propia en ledesmaparticipa.com.ar; si la nota propia todavía no
+  está generada, "Nota original:" + URL de la fuente. Nunca usar ni
+  prometer un primer comentario.
 - Verificar cada publicación con GET antes de marcarla como publicada. Si
   una red falla, no duplicar la publicación en la otra ni reiniciar el
   proceso completo.
@@ -110,3 +114,89 @@ referencia estable — no reinterpretar por criterio propio en cada tarea:
   una franja ya pasada.
 - Variables `META_*` de usuario ya configuradas: usarlas sin mostrarlas ni
   registrarlas nunca.
+
+## Etapa 1 — rediseño funcional, editorial y visual (implementada 9/10/2026)
+
+Producción: VPS Contabo (`/opt/ledesma-participa`, servicios `ledesma-*`).
+La notebook no publica. Frecuencia y horarios de Facebook/Instagram sin
+cambios: no todo lo que entra a web/app se publica en redes.
+
+- **Clasificación separada** (`motor_noticias/clasificacion.py`), nunca
+  mezclada:
+  - TERRITORIO con confianza propia (Libertador General San Martín,
+    Departamento Ledesma, Jujuy, Nacional, Internacional) —
+    `territorio.clasificar_territorio` (`CONFIANZA` por tipo de evidencia).
+    Marcadores nacionales genéricos (Banco Central, inflación, "de la
+    Nación"…: `nacional_generico` en `config/localidades.json`) no le
+    ganan a un país extranjero en el título; protagonistas jujeños (Sadir)
+    y deporte argentino (AFA, Selección, Messi…) ubican la nota.
+  - CATEGORÍA por tema principal con confianza (`categorias.clasificar_categoria`,
+    reglas en `config/categorias.json`): Policiales, Salud, Deportes,
+    Gastronomía, Espectáculos, Política, Servicios, Economía, Educación,
+    Cultura. > 0.85 automática; 0.50–0.85 → General / Últimas; < 0.50 sin
+    categoría (no aparece en grillas temáticas). Palabras débiles
+    ("partido", "hospital", "asado") nunca deciden solas; exclusiones por
+    título (banco/jubilados ≠ Gastronomía, hecho policial ≠ Salud).
+  - URGENTE (bool): no es categoría; lo decide el scoring editorial único
+    (`scoring_editorial.urgente_confirmado`).
+- **Volumen web/app** (`motor_noticias/portal.py`, tabla `portal_seleccion`):
+  15–25 noticias válidas por día + urgentes = lo publicado en redes + lo
+  agendado hoy + las preparadas de mayor puntaje, con topes por territorio
+  (Jujuy 10, nacional 8, internacional 2) y por categoría (6). Nunca
+  entran: riesgo editorial, rechazadas, descartadas, el mismo hecho de dos
+  medios, piezas periódicas de cotización/pronóstico. No se rellena. Web y
+  app leen la misma fuente (`sitio/generador.py` → `docs/` + `docs/api/`).
+- **Web mobile-first** (`sitio/plantillas.py`, `assets_fuente/site.css`):
+  portada Urgente → Clima + Dólar → principal (prioriza Libertador /
+  Ledesma / Jujuy) → Libertador → Ledesma → Jujuy → Policiales → Salud →
+  Deportes → Servicios → Videos → Guía Comercial → redes. Nunca secciones
+  vacías; los informes de clima no compiten como noticia. Histórico en
+  `/categoria/<slug>/`. API nueva: `portada.json`, `clima_dolar.json`,
+  `guia_comercial.json`, `videos.json`, `categoria/<slug>.json` nuevos;
+  los endpoints de la app publicada se mantienen (feed ahora cronológico).
+- **App Android** (`app/`, mismo package): Inicio con accesos (Últimas,
+  Libertador, Departamento Ledesma, Jujuy, Policiales, Salud, Deportes,
+  Servicios, Videos, Guía Comercial, Multimedia), listado, nota completa,
+  Guía Comercial. Consume `api/portada.json`.
+- **Identidad Versión C** (`meta/identidad_visual.py`, tipografía
+  Montserrat OFL en `meta/fuentes/`): carbón + dorado, blanco para leer;
+  ROJO solo urgente, VERDE servicios. Feed 1080x1350, titular dominante
+  (~10 palabras), territorio visible, logo discreto. Plantillas: noticia
+  con foto, placa editorial sin foto, urgente, servicio, institucional,
+  clima + dólar; Story 1080x1920; carrusel 3–5 placas; cuadros de Reel
+  10–20 s (`meta/video.generar_reel_desde_cuadros`). Carrusel y Reel están
+  preparados, NO automatizados. Canva queda como laboratorio manual.
+- **Regla de imágenes** (`regla_imagenes.py`, `config/imagenes.json`):
+  1) foto real del hecho, 2) oficial, 3) recurso relacionado permitido,
+  4) PLACA EDITORIAL GRÁFICA. Stock, archivos genéricos y fotos de archivo
+  reutilizadas en varias notas distintas → placa. Nunca párrafos en
+  miniatura.
+- **Copy** (`meta/contenido.py`): `[TERRITORIO] | TITULAR EN MAYÚSCULAS`,
+  párrafos con oraciones completas (máx. 4, nunca truncados), `Fuente:`,
+  CTA breve variable (estable por noticia), enlace a la nota propia en
+  ledesmaparticipa.com.ar (o "Nota original:" si aún no existe), dos
+  hashtags como máximo. Sin URLs externas dentro del cuerpo.
+- **Clima + Dólar** (`informe_diario.py`, `informe_diario_datos.py`): una
+  sola publicación "CLIMA + DÓLAR | INFORME DE LA MAÑANA" (07:30, sin
+  cambio de cantidad). Temperatura actual/mín/máx, condición, lluvia,
+  oficial y blue compra/venta, hora y fuentes. Si una fuente falla, esa
+  parte dice "No disponible"; sin ningún dato no hay informe.
+- **Guía Comercial Ledesma Participa** (nunca "Marketplace";
+  `config/guia_comercial.json`, `guia_comercial.py`): listado + ficha,
+  separada de las noticias. Solo datos reales; lo que falta va en null y
+  no se muestra.
+- **Videos** (`config/videos.json`, `videos.py`): YouTube con reproductor
+  oficial embebido; sin URL/ID válido no se muestra; sección oculta si no
+  hay videos. Estructura Multimedia preparada; entrevistas/podcast no.
+- **Push** (`push_notificaciones.py`): solo urgentes confirmados por el
+  scoring o cortes/servicios críticos e información pública inmediata en el
+  TÍTULO de una noticia local/departamental publicada.
+- **Métricas Meta**: la tabla de 10 publicaciones de Gemini está PENDIENTE
+  DE VERIFICACIÓN VISUAL; no se usa como verdad operativa ni para cambiar
+  reglas.
+
+### Etapa 2 (siguiente, NO implementada todavía): RADIOS EN VIVO
+Libertador, Departamento Ledesma, Jujuy y Argentina; solo streams
+oficiales; reproductor persistente que siga sonando mientras se navega;
+favoritos si es viable. El acceso "Multimedia" de la app es su lugar
+natural.

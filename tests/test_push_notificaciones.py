@@ -46,14 +46,36 @@ class TestEvaluarPush(unittest.TestCase):
         }
         self.assertIsNone(evaluar_push(noticia))
 
-    def test_califica_por_accidente_en_texto(self):
+    def test_accidente_no_urgente_no_genera_push(self):
+        # Etapa 1: un accidente o un hecho policial que no es urgente real
+        # ya no notifica (antes alcanzaba la palabra en el texto).
         noticia = {
             "titulo_preparado": "Se registró un hecho de tránsito en la ruta 34",
             "texto_preparado": "Un accidente entre dos vehículos dejó heridos leves.",
             "territorio": "local",
             "origen_ingreso": "automatico",
         }
-        self.assertEqual(evaluar_push(noticia), "accidente")
+        self.assertIsNone(evaluar_push(noticia))
+
+    def test_palabra_solo_en_el_texto_no_alcanza(self):
+        noticia = {
+            "titulo_preparado": "Reunión de vecinos en el barrio",
+            "texto_preparado": "También se habló del corte de luz de la semana pasada.",
+            "territorio": "local",
+            "origen_ingreso": "automatico",
+        }
+        self.assertIsNone(evaluar_push(noticia))
+
+    def test_urgente_confirmado_genera_push(self):
+        noticia = {
+            "titulo_preparado": "Choque en la ruta",
+            "texto_preparado": "Texto.",
+            "territorio": "local",
+            "origen_ingreso": "automatico",
+            "urgente": 1,
+        }
+        with patch("motor_noticias.push_notificaciones.urgente_confirmado", return_value=True):
+            self.assertEqual(evaluar_push(noticia), "urgente")
 
     def test_califica_en_territorio_departamental(self):
         noticia = {
@@ -156,8 +178,8 @@ class TestEnviarPushPendientes(unittest.TestCase):
     def test_error_de_fcm_no_marca_enviado_queda_disponible_para_reintentar(self):
         _noticia_publicada(
             self.db, 1,
-            titulo_original="Accidente de tránsito con heridos",
-            titulo_preparado="Accidente de tránsito con heridos",
+            titulo_original="Corte de luz en el barrio Alberdi",
+            titulo_preparado="Corte de luz en el barrio Alberdi",
         )
         with patch("motor_noticias.push_notificaciones._construir_app_firebase"), \
              patch("motor_noticias.push_notificaciones._enviar_mensaje_fcm", side_effect=RuntimeError("fallo simulado de FCM")):

@@ -1,0 +1,4 @@
+{
+  "_descripcion": "Sección VIDEOS (Etapa 1, 9/10/2026): solo videos de YouTube con el reproductor oficial embebido (youtube-nocookie.com/embed). Nunca se descargan ni se republican videos de terceros como propios: cada video lleva su canal/fuente. Un video sin URL/ID de YouTube válido no se muestra. Si la lista queda vacía, la sección no aparece. Formato de cada item: {\"titulo\": \"...\", \"url\": \"https://www.youtube.com/watch?v=XXXXXXXXXXX\" (o youtu.be / shorts / embed), \"fuente\": \"Canal\", \"fecha\": \"AAAA-MM-DD\", \"descripcion\": \"...\" (opcional), \"tipo\": \"video\"}. 'tipo' deja preparada la estructura Multimedia (entrevistas/podcast/radios: Etapa 2, no implementados).",
+  "videos": []
+}

@@ -46,6 +46,22 @@ DOLAR_BLUE_VALIDO = {
 }
 
 
+# Ningún test de este módulo escribe datos del informe en data/ real (bug
+# detectado en el deploy de la Etapa 1: un test dejó valores de fixture en
+# producción).
+_DIRECTORIO_DATOS_TESTS = tempfile.TemporaryDirectory()
+_PARCHE_DATOS = patch("motor_noticias.informe_diario_datos.DIRECTORIO_DEFAULT", Path(_DIRECTORIO_DATOS_TESTS.name))
+
+
+def setUpModule():
+    _PARCHE_DATOS.start()
+
+
+def tearDownModule():
+    _PARCHE_DATOS.stop()
+    _DIRECTORIO_DATOS_TESTS.cleanup()
+
+
 def _respuesta_falsa(data, status=200):
     respuesta = MagicMock()
     respuesta.status = status

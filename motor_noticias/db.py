@@ -110,6 +110,26 @@ CREATE TABLE IF NOT EXISTS descarte_log (
 );
 CREATE INDEX IF NOT EXISTS idx_descarte_log_fecha ON descarte_log(fecha_hora);
 
+-- Trazabilidad interna del canal rápido de noticias locales (panel →
+-- "Cargar noticia local", 9/10/2026): una fila por envío del operador,
+-- incluidos duplicados y rechazos. Nunca se muestra públicamente.
+CREATE TABLE IF NOT EXISTS ingreso_rapido_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_hora TEXT NOT NULL,
+    canal TEXT NOT NULL,
+    fuente TEXT NOT NULL,
+    fuente_en_padron INTEGER NOT NULL DEFAULT 0,
+    url_original TEXT,
+    origen_texto TEXT NOT NULL,
+    es_video INTEGER NOT NULL DEFAULT 0,
+    territorio_informado TEXT,
+    resultado TEXT NOT NULL,
+    duplicado_de INTEGER,
+    noticia_id INTEGER,
+    estado TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ingreso_rapido_fecha ON ingreso_rapido_log(fecha_hora);
+
 -- Selección diaria del portal web/app (Etapa 1, 9/10/2026): noticias
 -- válidas que se muestran en la web y la app además de las publicadas en
 -- redes (motor_noticias/portal.py). Persistida para que el histórico quede
@@ -330,6 +350,38 @@ class Database:
             ),
         )
         self.conn.commit()
+
+    def id_noticia_por_url(self, url_normalizada: str) -> Optional[int]:
+        cur = self.conn.execute(
+            "SELECT id FROM noticias WHERE url_normalizada = ? ORDER BY id LIMIT 1", (url_normalizada,)
+        )
+        fila = cur.fetchone()
+        return fila[0] if fila else None
+
+    def registrar_ingreso_rapido(self, **datos) -> None:
+        """Una fila de trazabilidad del canal rápido local (ver tabla
+        `ingreso_rapido_log`). Solo registro: nunca altera el circuito."""
+        columnas = (
+            "canal", "fuente", "fuente_en_padron", "url_original", "origen_texto", "es_video",
+            "territorio_informado", "resultado", "duplicado_de", "noticia_id", "estado",
+        )
+        valores = [datetime.now(timezone.utc).isoformat()] + [datos.get(c) for c in columnas]
+        self.conn.execute(
+            f"INSERT INTO ingreso_rapido_log (fecha_hora, {', '.join(columnas)}) "
+            f"VALUES ({', '.join('?' * (len(columnas) + 1))})",
+            valores,
+        )
+        self.conn.commit()
+
+    def noticias_ingresadas_desde(self, fecha_limite: str) -> list:
+        """Noticias recolectadas desde `fecha_limite` (cualquier estado salvo
+        descartada): base de la detección de "mismo hecho" del canal rápido."""
+        cur = self.conn.execute(
+            "SELECT id, titulo_original, texto_original, nombre_fuente, estado FROM noticias "
+            "WHERE fecha_recoleccion >= ? AND estado != ? ORDER BY fecha_recoleccion DESC",
+            (fecha_limite, Estado.DESCARTADA.value),
+        )
+        return [dict(fila) for fila in cur.fetchall()]
 
     def resumen_descartes(self, fecha_limite: str, territorios: Optional[tuple] = None) -> dict:
         """Totales por motivo desde `fecha_limite` (ISO UTC), opcionalmente

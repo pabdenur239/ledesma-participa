@@ -30,5 +30,12 @@
 
     {"nombre": "Noticias Jujuy (notijujuy.info)", "localidad": "Provincial", "tipo": "Página de alertas/viral", "clasificacion": "C", "enlace": "https://www.facebook.com/notijujuy.info/", "aporta": "Contenido viral/alertas de toda la provincia, no específico de Ledesma", "monitoreo_inmediato": false, "automatizable": false},
     {"nombre": "La Guía Fraile Pintado", "localidad": "Fraile Pintado", "tipo": "Página comunitaria", "clasificacion": "C", "enlace": "https://facebook.com/laguia.frailepintado/", "aporta": "Clima local, vida comunitaria, deportes, cultura y avisos del pueblo; mezcla contenido propio con entretenimiento", "monitoreo_inmediato": false, "automatizable": false}
+  ],
+  "_descripcion_pendientes": "Fuentes pedidas para el canal rápido local (9/10/2026) cuya página o URL NO se pudo verificar: se ofrecen por nombre en el panel ('Cargar noticia local'), sin enlace ni clasificación editorial hasta confirmarlas. No inventar URLs: completar 'enlace' solo con la dirección real verificada y pasarla a 'fuentes' con su clasificación.",
+  "pendientes_de_confirmar": [
+    {"nombre": "Canal 5 Cooperlib", "localidad": "Libertador General San Martín", "enlace": null, "motivo": "Sin resultados públicos verificables (búsqueda 9/10/2026)."},
+    {"nombre": "FM Imagen 92.5", "localidad": "Libertador General San Martín", "enlace": null, "motivo": "Sin resultados públicos verificables (búsqueda 9/10/2026)."},
+    {"nombre": "FM Bajando Caña", "localidad": "Libertador General San Martín", "enlace": null, "motivo": "La radio figura en directorios (101.5 FM); su página de Facebook no se verificó."},
+    {"nombre": "FM Orión", "localidad": "Libertador General San Martín", "enlace": null, "motivo": "Sin resultados públicos verificables (búsqueda 9/10/2026)."}
   ]
 }

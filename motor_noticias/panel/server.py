@@ -14,7 +14,14 @@ from ..alertas import NIVEL_ERROR, calcular_alertas
 from ..ciclo_continuo import NOMBRE_SALUD_AGENDA, agenda_automatica_habilitada
 from ..continuo_runner import LOCK_PATH_DEFAULT
 from ..db import Database
-from ..ingreso_manual import ErrorIngresoManual, ResultadoIngresoManual, cargar_noticia_manual
+from ..ingreso_manual import (
+    ErrorIngresoManual,
+    ResultadoIngresoLocal,
+    ResultadoIngresoManual,
+    cargar_noticia_local,
+    cargar_noticia_manual,
+    fuentes_canal_rapido,
+)
 from ..meta.imagen import DIRECTORIO_PLACAS_DEFAULT
 from ..meta.preparacion import ErrorPreparacionFacebook, preparar_publicacion
 from ..models import Estado, OrigenIngreso, RevisionEstado
@@ -112,7 +119,7 @@ label {{ display: block; margin-top: 0.75rem; font-weight: bold; }}
 </head>
 <body>
 <h1><a href="/" style="text-decoration:none;color:inherit;">Ledesma Participa — Panel de revisión</a></h1>
-<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a> | <a href="/cargar-noticia">Cargar noticia</a> | <a href="/crecimiento">Crecimiento</a></nav>
+<nav><a href="/">Noticias</a> | <a href="/estado">Estado del sistema</a> | <a href="/agenda">Agenda Editorial</a> | <a href="/cargar-noticia-local">Cargar noticia local</a> | <a href="/cargar-noticia">Cargar noticia</a> | <a href="/crecimiento">Crecimiento</a></nav>
 {cuerpo}
 </body>
 </html>"""
@@ -663,6 +670,129 @@ def _resultado_carga_manual_html(resultado: ResultadoIngresoManual) -> str:
     return _pagina("Cargar noticia — Ledesma Participa", cuerpo)
 
 
+CAMPOS_FORMULARIO_LOCAL = ("url", "fuente", "texto", "territorio", "imagen_url")
+
+# Territorios sugeridos en "Cargar noticia local" (los mismos nombres que
+# reconoce `config/localidades.json`); el campo acepta cualquier texto.
+TERRITORIOS_SUGERIDOS = (
+    "Libertador General San Martín", "Departamento Ledesma", "Fraile Pintado", "Calilegua",
+    "Caimancito", "Yuto", "El Talar", "Vinalito", "Valle Grande",
+)
+
+
+def _formulario_carga_local_html(
+    mensaje_error: Optional[str] = None,
+    valores: Optional[dict] = None,
+    resultado_previo: Optional[ResultadoIngresoLocal] = None,
+) -> str:
+    valores = valores or {}
+    v = {campo: _e(valores.get(campo, "")) for campo in CAMPOS_FORMULARIO_LOCAL}
+    urgente_marcado = "checked" if valores.get("urgente") else ""
+    aviso_error = f'<p class="error-formulario">{_e(mensaje_error)}</p>' if mensaje_error else ""
+    opciones_fuente = "".join(
+        f'<option value="{_e(f.nombre)}">' for f in fuentes_canal_rapido()
+    )
+    opciones_territorio = "".join(f'<option value="{_e(t)}">' for t in TERRITORIOS_SUGERIDOS)
+
+    aviso_duplicado = ""
+    casilla_forzar = ""
+    if resultado_previo is not None and resultado_previo.duplicado_de:
+        previa = resultado_previo.duplicado_de
+        if resultado_previo.resultado == "duplicado":
+            explicacion = "Esta publicación ya fue ingresada (misma URL)."
+        else:
+            explicacion = "Parece el mismo hecho que una noticia ya ingresada:"
+            casilla_forzar = (
+                '<label><input type="checkbox" name="forzar_no_duplicado" value="1"> '
+                "Confirmo que es un hecho distinto — procesar igual</label>"
+            )
+        aviso_duplicado = (
+            f'<div class="resultado-carga"><p class="error-formulario">{explicacion}</p>'
+            f'<p><a href="/noticia?id={previa["id"]}">#{previa["id"]} — {_e(previa.get("titulo"))}</a>'
+            f' ({_e(previa.get("fuente"))})</p></div>'
+        )
+
+    cuerpo = f"""
+<h2>Cargar noticia local</h2>
+<p>Canal rápido para publicaciones de Facebook, Instagram, radios o sitios
+locales que no se pueden automatizar. Alcanza con la URL y la fuente: si la
+URL es de un sitio web, el sistema lee el texto; si es de Facebook/Instagram
+(no se leen automáticamente) o el sitio no responde, pegá el texto. Se genera
+una redacción propia por el mismo circuito editorial (deduplicación,
+territorio, riesgo). Entra a la web/app según las reglas actuales; no se
+publica en redes por cargarla acá.</p>
+{aviso_error}
+{aviso_duplicado}
+<form method="post" action="/cargar-noticia-local">
+<label>URL de la publicación:<br>
+<input type="text" name="url" maxlength="2000" value="{v['url']}" placeholder="https://..."></label>
+
+<label>Fuente (obligatorio):<br>
+<input type="text" name="fuente" maxlength="150" value="{v['fuente']}" list="fuentes-locales" required></label>
+<datalist id="fuentes-locales">{opciones_fuente}</datalist>
+
+<label>Texto (opcional si la URL es de un sitio web):<br>
+<textarea name="texto" maxlength="20000">{v['texto']}</textarea></label>
+
+<label>Territorio (opcional):<br>
+<span class="ayuda-campo">Se usa solo si el texto no dice dónde ocurrió.</span><br>
+<input type="text" name="territorio" maxlength="150" value="{v['territorio']}" list="territorios-locales"></label>
+<datalist id="territorios-locales">{opciones_territorio}</datalist>
+
+<label>Imagen propia o autorizada — URL (opcional):<br>
+<span class="ayuda-campo">Nunca la foto de otro medio sin permiso. Sin imagen se usa la placa editorial.</span><br>
+<input type="text" name="imagen_url" maxlength="2000" value="{v['imagen_url']}"></label>
+
+<label><input type="checkbox" name="urgente" value="1" {urgente_marcado}> Urgente</label>
+{casilla_forzar}
+<br>
+<button type="submit">PROCESAR</button>
+</form>
+"""
+    return _pagina("Cargar noticia local — Ledesma Participa", cuerpo)
+
+
+def _resultado_carga_local_html(resultado: ResultadoIngresoLocal) -> str:
+    manual = resultado.manual
+    origen = "leído de la URL" if resultado.origen_texto == "url" else "pegado por el operador"
+    if resultado.fuente_padron is None:
+        fuente_txt = "fuera del padrón — corroborar antes de aprobar"
+    elif resultado.fuente_padron.clasificacion:
+        fuente_txt = f"padrón, clase {resultado.fuente_padron.clasificacion}"
+    else:
+        fuente_txt = "pendiente de confirmar en el padrón"
+
+    if manual.duplicado:
+        estado_legible = "duplicado — el mismo contenido ya estaba ingresado"
+    elif manual.estado == Estado.PREPARADA.value:
+        estado_legible = f"preparada — revisión: {_e(manual.revision_estado)}"
+    elif manual.estado == Estado.SOLO_PORTAL.value:
+        estado_legible = "solo web/app"
+    else:
+        estado_legible = "descartada (no elegible)"
+
+    if manual.requiere_revision_especial:
+        riesgo = f"SÍ — queda para revisión humana ({_e(manual.motivo_revision_especial)})"
+    else:
+        riesgo = "no"
+    ver = f'<a href="/noticia?id={manual.noticia_id}">Ver noticia</a>' if manual.noticia_id else ""
+    cuerpo = f"""
+<h2>Cargar noticia local — resultado</h2>
+<div class="resultado-carga">
+<p><strong>Título:</strong> {_e(manual.titulo_original)}</p>
+<p><strong>Fuente:</strong> {_e(manual.fuente)} ({fuente_txt})</p>
+<p><strong>Texto:</strong> {origen}</p>
+<p><strong>Territorio:</strong> {_e(manual.territorio)}{" (según lo informado)" if resultado.territorio_respaldo_usado else ""}</p>
+<p><strong>Estado:</strong> {estado_legible}</p>
+<p><strong>Riesgo editorial:</strong> {riesgo}</p>
+<p><strong>Urgente:</strong> {"sí" if manual.urgente else "no"}</p>
+{"<p><strong>Video:</strong> se conserva solo el enlace original.</p>" if resultado.es_video else ""}
+</div>
+<p class="acciones-resultado">{ver}<a href="/cargar-noticia-local">Cargar otra noticia local</a></p>
+"""
+    return _pagina("Cargar noticia local — Ledesma Participa", cuerpo)
+
+
 class PanelHandler(BaseHTTPRequestHandler):
     db_path = DB_PATH_DEFAULT
     lock_path = LOCK_PATH_DEFAULT
@@ -760,6 +890,10 @@ class PanelHandler(BaseHTTPRequestHandler):
                 self._responder_html(_formulario_carga_manual_html())
                 return
 
+            if partes.path == "/cargar-noticia-local":
+                self._responder_html(_formulario_carga_local_html())
+                return
+
             if partes.path == "/facebook":
                 id_texto = query.get("id", [None])[0]
                 noticia = db.obtener(int(id_texto)) if id_texto and id_texto.isdigit() else None
@@ -787,6 +921,10 @@ class PanelHandler(BaseHTTPRequestHandler):
 
         if partes.path == "/cargar-noticia":
             self._post_cargar_noticia()
+            return
+
+        if partes.path == "/cargar-noticia-local":
+            self._post_cargar_noticia_local()
             return
 
         if partes.path != "/noticia":
@@ -876,6 +1014,57 @@ class PanelHandler(BaseHTTPRequestHandler):
                 return
 
             self._responder_html(_resultado_carga_manual_html(resultado))
+        finally:
+            db.close()
+
+    def _post_cargar_noticia_local(self) -> None:
+        longitud = int(self.headers.get("Content-Length", 0) or 0)
+        if longitud <= 0 or longitud > LONGITUD_MAXIMA_CUERPO_POST_CARGA:
+            self._responder_html(
+                _pagina("Error", "<p>Formulario inválido o demasiado grande.</p>"), status=413
+            )
+            return
+
+        datos = urllib.parse.parse_qs(self.rfile.read(longitud).decode("utf-8", errors="replace"))
+
+        def _campo(nombre: str) -> str:
+            return datos.get(nombre, [""])[0].strip()
+
+        valores = {campo: _campo(campo) for campo in CAMPOS_FORMULARIO_LOCAL}
+        valores["urgente"] = _campo("urgente") == "1"
+
+        db = self._db()
+        try:
+            try:
+                resultado = cargar_noticia_local(
+                    db,
+                    self.redactor,
+                    fuente=valores["fuente"],
+                    url=valores["url"] or None,
+                    texto=valores["texto"] or None,
+                    territorio_informado=valores["territorio"] or None,
+                    imagen_url=valores["imagen_url"] or None,
+                    urgente=valores["urgente"],
+                    forzar_no_duplicado=_campo("forzar_no_duplicado") == "1",
+                )
+            except ErrorIngresoManual as error:
+                self._responder_html(_formulario_carga_local_html(str(error), valores), status=400)
+                return
+            except Exception:  # redacción automática caída: nada se guardó
+                self._responder_html(
+                    _formulario_carga_local_html(
+                        "La redacción automática no está disponible en este momento y no se guardó "
+                        "nada (nunca se publica el texto original copiado). Reintentá en unos minutos.",
+                        valores,
+                    ),
+                    status=503,
+                )
+                return
+
+            if resultado.manual is None:
+                self._responder_html(_formulario_carga_local_html(None, valores, resultado), status=409)
+                return
+            self._responder_html(_resultado_carga_local_html(resultado))
         finally:
             db.close()
 

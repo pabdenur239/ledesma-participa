@@ -14,14 +14,32 @@ PARAMETROS_TRACKING = {
 }
 
 
+# Canal rápido local (9/10/2026): la misma publicación de Facebook/Instagram
+# llega con variantes de host (m., mbasic., web.) y parámetros de "compartir"
+# según desde dónde la copie el operador. Solo se limpian en esos hosts.
+PREFIJOS_HOST_RED_SOCIAL = ("m.", "mbasic.", "web.", "touch.", "mobile.")
+HOSTS_RED_SOCIAL = ("facebook.com", "instagram.com")
+PARAMETROS_TRACKING_RED_SOCIAL = {
+    "mibextid", "rdid", "share_url", "sfnsn", "ref", "__tn__", "__cft__[0]",
+    "igsh", "igshid", "img_index", "s", "app", "_rdr", "_rdc", "locale",
+}
+
+
 def normalizar_url(url: str) -> str:
     partes = urlsplit(url.strip())
     netloc = partes.netloc.lower()
     if netloc.startswith("www."):
         netloc = netloc[4:]
+    red_social = False
+    for prefijo in PREFIJOS_HOST_RED_SOCIAL:
+        if netloc.startswith(prefijo) and netloc[len(prefijo):] in HOSTS_RED_SOCIAL:
+            netloc = netloc[len(prefijo):]
+    if netloc in HOSTS_RED_SOCIAL:
+        red_social = True
     path = partes.path.rstrip("/")
     query = sorted(
-        (k, v) for k, v in parse_qsl(partes.query) if k not in PARAMETROS_TRACKING
+        (k, v) for k, v in parse_qsl(partes.query)
+        if k not in PARAMETROS_TRACKING and not (red_social and k in PARAMETROS_TRACKING_RED_SOCIAL)
     )
     return urlunsplit(("https", netloc, path, urlencode(query), partes.fragment))
 

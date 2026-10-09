@@ -1,15 +1,23 @@
+import json
 import logging
+import unicodedata
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import List, Optional
 from urllib.parse import urlsplit
 
 from .ciclo_continuo import NOMBRE_SALUD_AGENDA
 from .db import Database
+from .dedupe import es_mismo_contenido, normalizar_url, palabras_clave, refieren_a_hecho_distinto
 from .dedupe import hash_contenido as calcular_hash_contenido
+from .lectura_url import ErrorLecturaURL, es_enlace_video, leer_texto_url
 from .models import Estado, OrigenIngreso
 from .motor_editorial import generar_agenda
 from .pipeline import normalizar_noticia, procesar_noticia
+from .portal import PALABRAS_NOMBRE_CIUDAD
 from .redaccion.base import Redactor
+from .territorio import clasificar_territorio
 
 logger = logging.getLogger("motor_noticias.ingreso_manual")
 
@@ -110,6 +118,7 @@ def cargar_noticia_manual(
     imagen_url: Optional[str] = None,
     urgente: bool = False,
     observacion_interna: Optional[str] = None,
+    localidad_respaldo: Optional[str] = None,
 ) -> ResultadoIngresoManual:
     """Carga manual de una noticia local desde el panel (fuentes que hoy no
     se pueden automatizar: Ledesma Soy, FM Imagen, Canal 6, radios, Facebook,
@@ -151,6 +160,9 @@ def cargar_noticia_manual(
         "fuente": fuente,
         "fecha": fecha_origen or "",
         "imagen_url": imagen_url,
+        # Solo lo pasa el canal rápido cuando el contenido por sí solo no
+        # ubica el hecho en Libertador/Ledesma (ver `cargar_noticia_local`).
+        "localidad": localidad_respaldo,
     }
 
     noticia = normalizar_noticia(cruda)
@@ -197,4 +209,205 @@ def cargar_noticia_manual(
         titulo_original=titulo_final,
         agenda_actualizada=agenda_actualizada,
         agenda_mensaje_error=agenda_mensaje_error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Canal rápido de noticias locales (9/10/2026): "Cargar noticia local" en el
+# panel. El operador ve una publicación (casi siempre en Facebook) y manda
+# solo URL + fuente (+ texto, territorio y urgente opcionales). Reutiliza
+# `cargar_noticia_manual` — mismo circuito editorial, sin camino paralelo —
+# y agrega: lectura del texto de sitios web abiertos (nunca redes sociales),
+# detección del mismo hecho ya ingresado, territorio informado como respaldo
+# y trazabilidad interna (`ingreso_rapido_log`).
+# ---------------------------------------------------------------------------
+
+CANAL_PANEL = "panel"
+PADRON_FUENTES_PATH = Path(__file__).resolve().parent.parent / "config" / "fuentes_locales.json"
+# Ventana de comparación del "mismo hecho": igual que la recuperación local
+# del portal (`portal.HORAS_RECUPERACION_LOCAL`).
+HORAS_VENTANA_MISMO_HECHO = 48
+
+
+@dataclass
+class FuentePadron:
+    nombre: str
+    clasificacion: Optional[str]  # A / B / C, None = pendiente de confirmar
+    monitoreo_inmediato: bool
+
+
+@dataclass
+class ResultadoIngresoLocal:
+    resultado: str  # "preparada" | "descartada" | "solo_portal" | "duplicado" | "mismo_hecho"
+    origen_texto: str  # "url" | "manual"
+    es_video: bool
+    fuente_padron: Optional[FuentePadron]
+    duplicado_de: Optional[dict]  # {"id", "titulo", "fuente"} de la noticia que ya existía
+    territorio_respaldo_usado: bool
+    manual: Optional[ResultadoIngresoManual]  # None si se cortó antes del circuito
+
+
+def _sin_acentos(texto: str) -> str:
+    descompuesto = unicodedata.normalize("NFKD", (texto or "").lower())
+    return "".join(c for c in descompuesto if not unicodedata.combining(c)).strip()
+
+
+def fuentes_canal_rapido(path: Optional[Path] = None) -> List[FuentePadron]:
+    """Fuentes ofrecidas en el formulario: el padrón aprobado más las
+    pendientes de confirmar (sin URL verificada). Si el archivo no se puede
+    leer, lista vacía: el campo sigue aceptando texto libre."""
+    try:
+        with open(path or PADRON_FUENTES_PATH, encoding="utf-8") as archivo:
+            padron = json.load(archivo)
+    except (OSError, json.JSONDecodeError):
+        return []
+    fuentes = [
+        FuentePadron(f["nombre"], f.get("clasificacion"), bool(f.get("monitoreo_inmediato")))
+        for f in padron.get("fuentes", []) if f.get("nombre")
+    ]
+    fuentes += [
+        FuentePadron(f["nombre"], None, False)
+        for f in padron.get("pendientes_de_confirmar", []) if f.get("nombre")
+    ]
+    return fuentes
+
+
+def buscar_fuente_padron(nombre: str, fuentes: List[FuentePadron]) -> Optional[FuentePadron]:
+    buscado = _sin_acentos(nombre)
+    for fuente in fuentes:
+        if _sin_acentos(fuente.nombre) == buscado:
+            return fuente
+    return None
+
+
+def _huella_titulo(titulo: str) -> frozenset:
+    return palabras_clave(titulo) - PALABRAS_NOMBRE_CIUDAD
+
+
+def buscar_mismo_hecho(db: Database, titulo: str, ahora: Optional[datetime] = None) -> Optional[dict]:
+    """Noticia ya ingresada (últimas 48 h, no descartada) que cuenta el mismo
+    hecho con otro título — mismo criterio que la deduplicación del portal
+    (huella de palabras clave; localidades o fechas distintas desempatan)."""
+    huella = _huella_titulo(titulo)
+    if not huella:
+        return None
+    limite = ((ahora or datetime.now(timezone.utc)) - timedelta(hours=HORAS_VENTANA_MISMO_HECHO)).isoformat()
+    for otra in db.noticias_ingresadas_desde(limite):
+        otro_titulo = otra.get("titulo_original") or ""
+        if es_mismo_contenido(huella, _huella_titulo(otro_titulo)) and not refieren_a_hecho_distinto(titulo, otro_titulo):
+            return {"id": otra["id"], "titulo": otro_titulo, "fuente": otra.get("nombre_fuente")}
+    return None
+
+
+def _territorio_de_localidad(localidad: str) -> Optional[str]:
+    resultado = clasificar_territorio("", "", localidad_fuente=localidad)
+    return resultado["territorio"] if resultado["territorio"] in ("local", "departamental") else None
+
+
+def _contenido_ubica_en_ledesma(titulo: str, texto: str, fuente: str, url: Optional[str]) -> bool:
+    clasificacion = clasificar_territorio(titulo, texto, nombre_fuente=fuente, url=url)
+    return clasificacion["territorio"] in ("local", "departamental")
+
+
+def cargar_noticia_local(
+    db: Database,
+    redactor: Redactor,
+    *,
+    fuente: str,
+    url: Optional[str] = None,
+    texto: Optional[str] = None,
+    territorio_informado: Optional[str] = None,
+    imagen_url: Optional[str] = None,
+    urgente: bool = False,
+    forzar_no_duplicado: bool = False,
+    canal: str = CANAL_PANEL,
+    leer_url=leer_texto_url,
+) -> ResultadoIngresoLocal:
+    """Entrada mínima: URL + fuente. El texto es obligatorio solo si la URL
+    no se puede leer (redes sociales, sitio caído). Nunca se toma la imagen
+    ni el video de la publicación original: la imagen solo entra si el
+    operador carga una propia/autorizada (si no, placa editorial) y el video
+    queda como enlace de referencia. No publica nada por sí mismo: la
+    noticia queda en el mismo circuito que cualquier otra (web/app por el
+    portal; redes solo si la eligen las franjas, el circuito urgente o una
+    persona)."""
+    fuente = _validar_obligatorio(fuente, "La fuente", LONGITUD_MAXIMA_FUENTE)
+    url = _validar_url_opcional(url, "La URL de la publicación")
+    texto = _validar_opcional(texto, "El texto", LONGITUD_MAXIMA_TEXTO)
+    territorio_informado = _validar_opcional(
+        territorio_informado, "El territorio", LONGITUD_MAXIMA_LOCALIDAD_INFORMADA
+    )
+    if not url and not texto:
+        raise ErrorIngresoManual("Ingresá la URL de la publicación o pegá el texto.")
+
+    titulo = None
+    origen_texto = "manual"
+    if not texto:
+        try:
+            leido = leer_url(url)
+        except ErrorLecturaURL as error:
+            raise ErrorIngresoManual(
+                f"No se pudo leer la URL automáticamente ({error}) Pegá el texto de la publicación."
+            ) from error
+        titulo, texto, origen_texto = leido.titulo, leido.texto, "url"
+        if titulo and len(titulo) > LONGITUD_MAXIMA_TITULO:
+            titulo = None
+
+    fuente_padron = buscar_fuente_padron(fuente, fuentes_canal_rapido())
+    es_video = bool(url) and es_enlace_video(url)
+    titulo_final = _titulo_o_recorte_literal(titulo, texto)
+    traza = {
+        "canal": canal, "fuente": fuente, "fuente_en_padron": int(fuente_padron is not None),
+        "url_original": url, "origen_texto": origen_texto, "es_video": int(es_video),
+        "territorio_informado": territorio_informado,
+    }
+
+    # 1) La misma publicación ya ingresada (URL normalizada, incluidas las
+    #    variantes m./web. y los parámetros de compartir de Facebook).
+    if url:
+        existente = db.id_noticia_por_url(normalizar_url(url))
+        if existente is not None:
+            previa = db.obtener(existente) or {}
+            duplicado_de = {"id": existente, "titulo": previa.get("titulo_original"), "fuente": previa.get("nombre_fuente")}
+            db.registrar_ingreso_rapido(**traza, resultado="duplicado", duplicado_de=existente)
+            return ResultadoIngresoLocal("duplicado", origen_texto, es_video, fuente_padron, duplicado_de, False, None)
+
+    # 2) El mismo hecho desde otra página/medio con otro título: se consolida
+    #    en la noticia existente, salvo que el operador confirme que es otro.
+    if not forzar_no_duplicado:
+        mismo = buscar_mismo_hecho(db, titulo_final)
+        if mismo is not None:
+            db.registrar_ingreso_rapido(**traza, resultado="mismo_hecho", duplicado_de=mismo["id"])
+            return ResultadoIngresoLocal("mismo_hecho", origen_texto, es_video, fuente_padron, mismo, False, None)
+
+    # 3) Territorio informado: solo respaldo cuando el contenido por sí solo
+    #    no ubica el hecho en Libertador/Ledesma (lo que dice el texto manda).
+    localidad_respaldo = None
+    if territorio_informado and _territorio_de_localidad(territorio_informado):
+        if not _contenido_ubica_en_ledesma(titulo_final, texto, fuente, url):
+            localidad_respaldo = territorio_informado
+
+    notas = [f"Canal rápido ({canal}): texto {'leído de la URL' if origen_texto == 'url' else 'pegado por el operador'}."]
+    if es_video:
+        notas.append("Publicación con video: se conserva solo el enlace original (no se descarga).")
+    if fuente_padron is None:
+        notas.append("Fuente fuera del padrón: corroborar antes de aprobar.")
+    elif fuente_padron.clasificacion == "C":
+        notas.append("Fuente clase C: nunca única base, corroborar con A o B.")
+    elif fuente_padron.clasificacion is None:
+        notas.append("Fuente pendiente de confirmar en el padrón.")
+
+    manual = cargar_noticia_manual(
+        db, redactor,
+        fuente=fuente, texto=texto, url=url, titulo=titulo,
+        localidad_informada=territorio_informado, imagen_url=imagen_url,
+        urgente=urgente, observacion_interna=" ".join(notas),
+        localidad_respaldo=localidad_respaldo,
+    )
+    db.registrar_ingreso_rapido(
+        **traza, resultado=manual.resultado_pipeline, noticia_id=manual.noticia_id, estado=manual.estado,
+    )
+    return ResultadoIngresoLocal(
+        manual.resultado_pipeline, origen_texto, es_video, fuente_padron, None,
+        localidad_respaldo is not None, manual,
     )

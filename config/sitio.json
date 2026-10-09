@@ -6,6 +6,6 @@
   "instagram_url": "https://www.instagram.com/ledesmaparticipa/",
   "base_url_produccion": "https://ledesmaparticipa.com.ar",
   "deploy_automatico": true,
-  "medicion_endpoint": "",
+  "medicion_endpoint": "https://medicion.ledesmaparticipa.com.ar/e",
   "_medicion": "Etapa 3: URL HTTPS pública del receptor propio (run_medicion.py, /e). Vacío = la web no envía medición."
 }

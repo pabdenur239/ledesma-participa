@@ -1,0 +1,13 @@
+[Unit]
+Description=Ledesma Participa - Tunel Cloudflare medicion (solo /e y /salud -> 127.0.0.1:8010)
+After=network-online.target ledesma-medicion.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel --config /etc/ledesma-medicion-tunnel/config.yml run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

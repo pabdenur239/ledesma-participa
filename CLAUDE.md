@@ -340,14 +340,14 @@ redes sin cambios.
   `config/sitio.json`): no hay endpoint HTTPS público de Ledesma en la
   infraestructura actual (sitio estático en GitHub Pages; en Contabo solo
   SSH es público, el proxy 80/443 y los túneles son de otros proyectos).
-  Autorizado (9/10/2026) un túnel propio `ledesma-medicion` →
-  `medicion.ledesmaparticipa.com.ar` → 127.0.0.1:8010; BLOQUEADO: la única
-  credencial de Cloudflare en el VPS (`/root/.cloudflared/cert.pem`) es de
-  la zona pabloabdenur.com.ar y no ve ledesmaparticipa.com.ar (usarla para
-  `route dns` crearía el registro en otra zona). Falta un login de
-  cloudflared en la cuenta/zona de ledesmaparticipa.com.ar, guardado aparte
-  (sin pisar ese cert.pem). El receptor `ledesma-medicion` (systemd) ya
-  está activo en 127.0.0.1:8010, probado sin PII. Con el endpoint cargado, la web lo usa
+  **ACTIVA desde 9/10/2026**: `https://medicion.ledesmaparticipa.com.ar/e`
+  (`medicion_endpoint`). Túnel Cloudflare propio `ledesma-medicion`
+  (id cd0dc903-01ac-49b8-968f-a8e451542794, servicio systemd
+  `ledesma-medicion-tunnel`, config `/etc/ledesma-medicion-tunnel/config.yml`,
+  credenciales en `/root/ledesma-cf/`, separadas del cert.pem de otros
+  proyectos). El ingress expone SOLO `/e` y `/salud` → 127.0.0.1:8010; todo
+  lo demás 404. Sin puertos públicos. Receptor: servicio `ledesma-medicion`.
+  Copias de referencia en `deploy/` (sin credenciales). Con el endpoint cargado, la web lo usa
   en la siguiente regeneración y la app lo lee de `api/medicion.json`
   (la app instrumentada sale con la próxima versión publicada).
 - **Informe interno CRECIMIENTO LEDESMA PARTICIPA**

@@ -1,0 +1,8 @@
+tunnel: cd0dc903-01ac-49b8-968f-a8e451542794
+credentials-file: /root/ledesma-cf/ledesma-medicion.json
+no-autoupdate: true
+ingress:
+  - hostname: medicion.ledesmaparticipa.com.ar
+    path: ^/(e|salud)$
+    service: http://127.0.0.1:8010
+  - service: http_status:404

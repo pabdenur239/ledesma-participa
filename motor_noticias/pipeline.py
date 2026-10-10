@@ -298,7 +298,12 @@ def procesar_noticia(
         noticia.motivo_revision_especial = "Control de calidad: " + "; ".join(calidad.problemas)
     if fallo_redaccion is not None:
         _marcar_sin_redaccion_propia(noticia, f"falló la redacción automática: {fallo_redaccion}")
-    elif es_copia_literal_extensa(noticia.texto_original, noticia.texto_preparado):
+    elif not getattr(redactor, "texto_propio", False) and es_copia_literal_extensa(
+        noticia.texto_original, noticia.texto_preparado
+    ):
+        # `texto_propio`: redactores identidad del informe diario y del
+        # contenido propio. Su "texto original" lo arma Ledesma Participa
+        # (no es de un tercero), así que repetirlo no es copia de la fuente.
         _marcar_sin_redaccion_propia(noticia, "el texto preparado repite literalmente el de la fuente")
     db.guardar(noticia)
     return noticia, "preparada"

@@ -94,6 +94,8 @@ class _RedactorIdentidad(Redactor):
     determinístico por construcción (no debe parafrasearse ni arriesgarse
     a que un LLM altere una cifra)."""
 
+    texto_propio = True  # pipeline: no es copia literal de un tercero
+
     def redactar(self, noticia: Noticia) -> Tuple[str, str]:
         return noticia.titulo_original, noticia.texto_original
 

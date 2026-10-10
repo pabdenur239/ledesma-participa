@@ -417,6 +417,19 @@ class TestSinRedaccionPropia(BaseCanalRapido):
         self.assertEqual(resultado, "preparada")
         self.assertEqual(self.db.obtener(noticia.id)["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
 
+    def test_informe_diario_y_contenido_propio_no_son_copia_literal(self):
+        # Caso real 10/10/2026: el informe Clima + Dólar (#80075) quedó
+        # retenido como "sin redacción propia" y no salió a las 07:30.
+        from motor_noticias.contenido_propio import _RedactorIdentidad as RedactorContenidoPropio
+        from motor_noticias.informe_diario import _RedactorIdentidad as RedactorInforme
+        from motor_noticias.pipeline import normalizar_noticia, procesar_noticia
+        for i, redactor in enumerate((RedactorInforme(), RedactorContenidoPropio())):
+            noticia = normalizar_noticia({"titulo": f"Clima + Dólar | Informe de la mañana {i}", "texto": TEXTO_LARGO + str(i),
+                                          "url": f"https://ledesmaparticipa.test/informe/{i}", "fuente": "Ledesma Participa"})
+            noticia, resultado = procesar_noticia(self.db, noticia, redactor)
+            self.assertEqual(resultado, "preparada")
+            self.assertNotEqual(self.db.obtener(noticia.id)["categoria_riesgo"], CATEGORIA_SIN_REDACCION_PROPIA)
+
     def test_reintento_libera_solo_con_redaccion_propia(self):
         r = cargar_noticia_local(self.db, RedactorCaido(), fuente="Ledesma Soy", url=URL_FB, texto=TEXTO_LARGO)
         id_noticia = r.manual.noticia_id

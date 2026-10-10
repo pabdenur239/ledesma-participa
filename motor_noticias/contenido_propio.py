@@ -163,6 +163,8 @@ class _RedactorIdentidad(Redactor):
     datos extraídos) — nunca debe pasar por un modelo de lenguaje que
     podría parafrasear o alterar una cifra o una fecha."""
 
+    texto_propio = True  # pipeline: no es copia literal de un tercero
+
     def redactar(self, noticia: Noticia) -> Tuple[str, str]:
         return noticia.titulo_original, noticia.texto_original
 

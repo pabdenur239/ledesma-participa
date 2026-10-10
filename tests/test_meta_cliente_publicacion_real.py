@@ -261,6 +261,7 @@ class TestPublicarInstagramStory(unittest.TestCase):
     def test_publicacion_real_manda_media_type_stories_y_nunca_caption(self):
         urlopen = MagicMock(side_effect=[
             _make_ctx({"id": "contenedor-story-1"}),
+            _make_ctx({"status_code": "FINISHED"}),
             _make_ctx({"id": "media-story-789"}),
         ])
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=urlopen)
@@ -268,10 +269,27 @@ class TestPublicarInstagramStory(unittest.TestCase):
         media_id = cliente.publicar_instagram_story("https://ejemplo.com/story.png", dry_run=False)
 
         self.assertEqual(media_id, "media-story-789")
-        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(urlopen.call_count, 3)
         peticion_media = urlopen.call_args_list[0][0][0]
         self.assertIn(b'name="media_type"\r\n\r\nSTORIES', peticion_media.data)
         self.assertNotIn(b'name="caption"', peticion_media.data)
+
+    @patch("motor_noticias.meta.cliente.time.sleep")
+    def test_espera_contenedor_finished_antes_del_publish(self, _sleep):
+        urlopen = MagicMock(side_effect=[
+            _make_ctx({"id": "contenedor-story-1"}),
+            _make_ctx({"status_code": "IN_PROGRESS"}),
+            _make_ctx({"status_code": "FINISHED"}),
+            _make_ctx({"id": "media-story-789"}),
+        ])
+        cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id="ig-1", urlopen=urlopen)
+
+        media_id = cliente.publicar_instagram_story("https://ejemplo.com/story.png", dry_run=False)
+
+        self.assertEqual(media_id, "media-story-789")
+        self.assertEqual(urlopen.call_count, 4)
+        self.assertIn("contenedor-story-1?", urlopen.call_args_list[1][0][0].full_url)
+        self.assertIn("media_publish", urlopen.call_args_list[3][0][0].full_url)
 
     def test_sin_ig_user_id_no_intenta_publicar(self):
         cliente = ClienteMetaGraphAPI(page_id="123", access_token="tok", ig_user_id=None, urlopen=MagicMock())

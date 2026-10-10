@@ -514,6 +514,9 @@ class ClienteMetaGraphAPI:
         creation_id = contenedor.get("id")
         if not creation_id:
             raise ErrorClienteMeta("Meta no devolvió un ID de contenedor de Instagram Story.")
+        # Misma causa del 9007/2207027 que el feed (falló el 9/10 12:00 y
+        # el 10/10 09:00): esperar el contenedor FINISHED antes del publish.
+        self._esperar_contenedor_imagen(creation_id)
 
         cuerpo_publish, tipo_publish = _multipart(
             {"creation_id": creation_id, "access_token": self._access_token}

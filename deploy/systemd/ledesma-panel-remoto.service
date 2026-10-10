@@ -1,0 +1,24 @@
+[Unit]
+StartLimitIntervalSec=0
+Description=Ledesma Participa - Panel remoto LIMITADO (canal rapido local, login + TOTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ledesma
+Group=ledesma
+WorkingDirectory=/opt/ledesma-participa
+# Solo las credenciales del panel remoto (root:root 600, fuera del repo).
+# No carga /opt/ledesma-participa/.env: no necesita variables META_*.
+EnvironmentFile=/etc/ledesma-panel-remoto.env
+ExecStart=/opt/ledesma-participa/.venv/bin/python -m motor_noticias.panel.remoto servir
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

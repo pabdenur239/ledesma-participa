@@ -168,6 +168,15 @@ cambios: no todo lo que entra a web/app se publica en redes.
   informado es solo respaldo y se pide si el texto nombra Libertador/Ledesma
   sin contexto. Las fuentes locales del padrón están en `medios_locales`
   (`config/localidades.json`): mantener ambas listas sincronizadas.
+  Acceso desde el celular: panel remoto LIMITADO aparte
+  (`panel/remoto.py`, servicio `ledesma-panel-remoto`, 127.0.0.1:8020,
+  `https://panel.ledesmaparticipa.com.ar/cargar-noticia-local` por el túnel
+  existente) con contraseña + TOTP propios (sin Cloudflare Access). Solo
+  cargar, ver y reintentar redacción; aprobar/rechazar y rutas
+  administrativas, nunca desde remoto. Credenciales en
+  `/etc/ledesma-panel-remoto.env` (600), se generan con
+  `python -m motor_noticias.panel.remoto configurar` en la terminal del
+  operador; nunca mostrarlas ni registrarlas.
 - **Web mobile-first** (`sitio/plantillas.py`, `assets_fuente/site.css`):
   portada Urgente → Clima + Dólar → principal (prioriza Libertador /
   Ledesma / Jujuy) → Libertador → Ledesma → Jujuy → Policiales → Salud →

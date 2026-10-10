@@ -5,4 +5,8 @@ ingress:
   - hostname: medicion.ledesmaparticipa.com.ar
     path: ^/(e|salud)$
     service: http://127.0.0.1:8010
+  # Panel remoto LIMITADO (login + TOTP propio); nunca el panel principal :8000.
+  - hostname: panel.ledesmaparticipa.com.ar
+    path: ^/(login|logout|cargar-noticia-local|noticia)$
+    service: http://127.0.0.1:8020
   - service: http_status:404

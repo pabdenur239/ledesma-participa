@@ -8,3 +8,8 @@ Pillow>=10.1.0
 # por cada publicación. Requiere la credencial de servicio en
 # /etc/ledesma-participa/firebase-adminsdk.json (fuera del repo, no en Git).
 firebase-admin>=7.0.0
+
+# QR del alta TOTP del panel remoto (motor_noticias/panel/remoto.py
+# configurar): se dibuja localmente en la terminal, sin servicios externos.
+# Pura Python, sin dependencias en Linux.
+qrcode==8.2

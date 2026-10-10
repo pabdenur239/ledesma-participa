@@ -18,7 +18,9 @@ Los logs nunca registran contraseña, código, cookies ni tokens.
 
 Uso:
   python -m motor_noticias.panel.remoto servir
-  python -m motor_noticias.panel.remoto configurar --archivo /etc/ledesma-panel-remoto.env
+  python -m motor_noticias.panel.remoto configurar [--archivo ...] [--qr-ascii] [--terminal-clara]
+El alta muestra un QR generado localmente (librería `qrcode`, ver
+requirements.txt); nunca se usa un servicio externo.
 """
 import argparse
 import base64
@@ -617,26 +619,100 @@ def iniciar_servidor_remoto(db_path=None, redactor=None) -> None:
         servidor.server_close()
 
 
-def configurar(archivo: str) -> int:
+TOTP_EMISOR = "Ledesma Participa"
+TOTP_CUENTA = "Panel"
+INTENTOS_CODIGO_ALTA = 3
+
+
+def uri_totp(secreto: str) -> str:
+    """URI de alta estándar (formato Key URI de Google Authenticator):
+    SHA1, 6 dígitos, 30 segundos — lo que implementa `verificar_totp`."""
+    etiqueta = urllib.parse.quote(f"{TOTP_EMISOR}:{TOTP_CUENTA}")
+    parametros = urllib.parse.urlencode(
+        {"secret": secreto, "issuer": TOTP_EMISOR, "algorithm": "SHA1",
+         "digits": TOTP_DIGITOS, "period": TOTP_PASO_SEGUNDOS},
+        quote_via=urllib.parse.quote,
+    )
+    return f"otpauth://totp/{etiqueta}?{parametros}"
+
+
+def matriz_qr(texto: str):
+    """Matriz QR (True = módulo oscuro, con zona de silencio de 4 módulos).
+    Se genera localmente con la librería `qrcode` (pura Python, sin
+    servicios externos)."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_M
+
+    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, border=4)
+    qr.add_data(texto)
+    qr.make(fit=True)
+    return qr.get_matrix()
+
+
+def qr_para_terminal(texto: str, terminal_oscura: bool = True, solo_ascii: bool = False) -> str:
+    """Dibuja el QR en la terminal. Con medios bloques Unicode (dos filas
+    por línea) o, con `solo_ascii`, con "##" (más grande). En una terminal
+    oscura el carácter dibujado es lo claro, así el QR queda oscuro sobre
+    claro, como lo esperan las apps lectoras."""
+    matriz = matriz_qr(texto)
+    if terminal_oscura:
+        matriz = [[not celda for celda in fila] for fila in matriz]
+    if solo_ascii:
+        return "\n".join("".join("##" if celda else "  " for celda in fila) for fila in matriz)
+    relleno = [terminal_oscura] * len(matriz[0])  # fila extra clara si es impar
+    filas = matriz + [relleno] if len(matriz) % 2 else matriz
+    caracteres = {(True, True): "\u2588", (True, False): "\u2580", (False, True): "\u2584", (False, False): " "}
+    return "\n".join(
+        "".join(caracteres[(arriba, abajo)] for arriba, abajo in zip(filas[y], filas[y + 1]))
+        for y in range(0, len(filas), 2)
+    )
+
+
+def _clave_legible(secreto: str) -> str:
+    return " ".join(secreto[i:i + 4] for i in range(0, len(secreto), 4))
+
+
+def configurar(
+    archivo: str,
+    terminal_oscura: bool = True,
+    solo_ascii: bool = False,
+    leer_oculto=getpass.getpass,
+    leer=input,
+    mostrar=print,
+    reloj=time.time,
+) -> int:
     """Interactivo, para que lo ejecute el operador en su propia terminal:
-    pide la contraseña (sin eco), genera la semilla TOTP, la muestra UNA vez
-    para cargarla en la app autenticadora, verifica un código y guarda el
-    archivo con permisos 600. Nada de esto queda en logs."""
-    password = getpass.getpass(f"Contraseña nueva (mínimo {LONGITUD_MINIMA_PASSWORD} caracteres): ")
+    pide la contraseña (sin eco) dos veces, genera la semilla TOTP, muestra
+    un QR local para escanear con la app autenticadora (y la clave manual
+    como alternativa), verifica un código y SOLO entonces guarda el archivo
+    con permisos 600. Si algo falla, no se guarda nada. Nada queda en logs."""
+    password = leer_oculto(f"Contraseña nueva (mínimo {LONGITUD_MINIMA_PASSWORD} caracteres): ")
     if len(password) < LONGITUD_MINIMA_PASSWORD:
-        print("Demasiado corta. No se guardó nada.")
+        mostrar("Demasiado corta. No se guardó nada.")
         return 1
-    if getpass.getpass("Repetila: ") != password:
-        print("No coinciden. No se guardó nada.")
+    if leer_oculto("Repetila: ") != password:
+        mostrar("No coinciden. No se guardó nada.")
         return 1
     secreto = generar_secreto_totp()
-    uri = "otpauth://totp/Ledesma%20Participa:panel?secret={}&issuer=Ledesma%20Participa".format(secreto)
-    print("\nCargá esta clave en Google Authenticator (o similar) como clave manual, tipo 'basada en tiempo':")
-    print(f"  {secreto}")
-    print(f"  ({uri})\n")
-    codigo = input("Código de 6 dígitos que muestra la app: ").strip()
-    if verificar_totp(secreto, codigo, time.time(), -1) is None:
-        print("Código incorrecto. No se guardó nada; volvé a ejecutar el comando.")
+    uri = uri_totp(secreto)
+    mostrar("\nEscaneá este QR con Google Authenticator ('+' > 'Escanear un código QR'):\n")
+    try:
+        mostrar(qr_para_terminal(uri, terminal_oscura=terminal_oscura, solo_ascii=solo_ascii))
+    except ImportError:
+        mostrar("(No está instalada la librería 'qrcode': usá la clave manual de abajo.)")
+    mostrar(
+        "\nSi el QR no se lee: probá --qr-ascii (o --terminal-clara si tu terminal tiene fondo claro)."
+        "\nAlternativa manual ('+' > 'Ingresar una clave de configuración', tipo 'Basada en el tiempo'):"
+        f"\n  Cuenta: {TOTP_CUENTA}\n  Clave:  {_clave_legible(secreto)}\n"
+    )
+    for intento in range(1, INTENTOS_CODIGO_ALTA + 1):
+        codigo = leer("Código de 6 dígitos que muestra la app: ").strip().replace(" ", "")
+        if verificar_totp(secreto, codigo, reloj(), -1) is not None:
+            break
+        restantes = INTENTOS_CODIGO_ALTA - intento
+        mostrar(f"Código incorrecto.{f' Quedan {restantes} intentos.' if restantes else ''}")
+    else:
+        mostrar("No se guardó nada; volvé a ejecutar el comando (y borrá la entrada creada en la app).")
         return 1
     contenido = (
         f"PANEL_REMOTO_PASSWORD_HASH={generar_hash_password(password)}\n"
@@ -646,7 +722,7 @@ def configurar(archivo: str) -> int:
     with os.fdopen(descriptor, "w") as salida:
         salida.write(contenido)
     os.chmod(archivo, 0o600)
-    print(f"Guardado en {archivo} (permisos 600). Reiniciá el servicio: systemctl restart ledesma-panel-remoto")
+    mostrar(f"Código correcto. Guardado en {archivo} (permisos 600).")
     return 0
 
 
@@ -656,9 +732,11 @@ def main(argv=None) -> int:
     sub.add_parser("servir")
     conf = sub.add_parser("configurar")
     conf.add_argument("--archivo", default="/etc/ledesma-panel-remoto.env")
+    conf.add_argument("--terminal-clara", action="store_true", help="la terminal tiene fondo claro")
+    conf.add_argument("--qr-ascii", action="store_true", help="dibujar el QR con '##' (sin Unicode)")
     args = parser.parse_args(argv)
     if args.comando == "configurar":
-        return configurar(args.archivo)
+        return configurar(args.archivo, terminal_oscura=not args.terminal_clara, solo_ascii=args.qr_ascii)
     iniciar_servidor_remoto()
     return 0
 

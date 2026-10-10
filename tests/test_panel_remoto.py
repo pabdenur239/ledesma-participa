@@ -62,6 +62,94 @@ class TestPrimitivas(unittest.TestCase):
         self.assertNotIn(PASSWORD, HASH)
 
 
+class TestAltaTOTP(unittest.TestCase):
+    SECRETO = generar_secreto_totp()
+
+    def test_secreto_base32_valido(self):
+        import base64
+        import re as _re
+        for _ in range(20):
+            secreto = generar_secreto_totp()
+            self.assertEqual(len(secreto), 32)
+            self.assertRegex(secreto, _re.compile(r"^[A-Z2-7]{32}$"))
+            self.assertEqual(len(base64.b32decode(secreto)), 20)  # 160 bits, sin relleno
+
+    def test_uri_otpauth_valida(self):
+        from urllib.parse import parse_qs, unquote, urlsplit
+        uri = remoto.uri_totp(self.SECRETO)
+        partes = urlsplit(uri)
+        self.assertEqual((partes.scheme, partes.netloc), ("otpauth", "totp"))
+        self.assertEqual(unquote(partes.path), "/Ledesma Participa:Panel")
+        q = {k: v[0] for k, v in parse_qs(partes.query).items()}
+        self.assertEqual(q, {"secret": self.SECRETO, "issuer": "Ledesma Participa",
+                             "algorithm": "SHA1", "digits": "6", "period": "30"})
+        self.assertNotIn(" ", uri)
+
+    def test_qr_generado_contiene_la_uri(self):
+        import qrcode
+        uri = remoto.uri_totp(self.SECRETO)
+        qr = qrcode.QRCode()
+        qr.add_data(uri)
+        self.assertEqual(b"".join(seg.data for seg in qr.data_list).decode(), uri)  # segmentos optimizados
+        matriz = remoto.matriz_qr(uri)
+        self.assertEqual(len(matriz), len(matriz[0]))
+        self.assertTrue(all(not c for c in matriz[0]))  # zona de silencio
+        dibujo = remoto.qr_para_terminal(uri)
+        self.assertEqual(len(dibujo.splitlines()), (len(matriz) + 1) // 2)
+        self.assertNotIn(self.SECRETO, dibujo)
+        ascii_ = remoto.qr_para_terminal(uri, solo_ascii=True)
+        self.assertTrue(set(ascii_) <= {"#", " ", "\n"})
+        self.assertEqual(len(ascii_.splitlines()), len(matriz))
+
+    def _alta(self, codigos, archivo, passwords=(PASSWORD, PASSWORD)):
+        salida = []
+        lecturas = iter(codigos)
+        ocultas = iter(passwords)
+        with patch.object(remoto, "generar_secreto_totp", return_value=self.SECRETO):
+            r = remoto.configurar(
+                str(archivo), leer_oculto=lambda _: next(ocultas), leer=lambda _: next(lecturas),
+                mostrar=lambda *a: salida.append(" ".join(map(str, a))), reloj=lambda: 1_800_000_000.0,
+            )
+        return r, "\n".join(salida)
+
+    def test_codigo_valido_guarda_configuracion(self):
+        with tempfile.TemporaryDirectory() as d:
+            archivo = Path(d) / "panel.env"
+            correcto = codigo_totp(self.SECRETO, 1_800_000_000 // 30)
+            r, salida = self._alta([correcto], archivo)
+            self.assertEqual(r, 0)
+            contenido = dict(l.split("=", 1) for l in archivo.read_text().splitlines())
+            self.assertEqual(contenido["PANEL_REMOTO_TOTP_SECRET"], self.SECRETO)
+            self.assertTrue(verificar_password(PASSWORD, contenido["PANEL_REMOTO_PASSWORD_HASH"]))
+            self.assertIn("\u2588", salida)  # se mostró el QR
+            self.assertNotIn(PASSWORD, salida)
+
+    def test_codigo_incorrecto_no_guarda_nada(self):
+        with tempfile.TemporaryDirectory() as d:
+            archivo = Path(d) / "panel.env"
+            correcto = codigo_totp(self.SECRETO, 1_800_000_000 // 30)
+            malos = [c for c in ("000000", "111111", "222222", "333333") if c != correcto][:3]
+            r, salida = self._alta(malos, archivo)
+            self.assertEqual(r, 1)
+            self.assertFalse(archivo.exists())
+            self.assertIn("No se guardó nada", salida)
+
+    def test_reintento_dentro_del_alta(self):
+        with tempfile.TemporaryDirectory() as d:
+            archivo = Path(d) / "panel.env"
+            correcto = codigo_totp(self.SECRETO, 1_800_000_000 // 30)
+            r, _ = self._alta(["000000" if correcto != "000000" else "111111", correcto], archivo)
+            self.assertEqual(r, 0)
+            self.assertTrue(archivo.exists())
+
+    def test_password_corta_o_distinta_no_guarda(self):
+        with tempfile.TemporaryDirectory() as d:
+            archivo = Path(d) / "panel.env"
+            self.assertEqual(self._alta([], archivo, passwords=("corta", "corta"))[0], 1)
+            self.assertEqual(self._alta([], archivo, passwords=(PASSWORD, PASSWORD + "x"))[0], 1)
+            self.assertFalse(archivo.exists())
+
+
 class TestPanelRemotoHTTP(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()

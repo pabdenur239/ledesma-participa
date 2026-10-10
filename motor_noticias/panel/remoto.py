@@ -79,7 +79,7 @@ ENCABEZADOS_SEGURIDAD = (
     ("Strict-Transport-Security", "max-age=31536000"),
     ("X-Frame-Options", "DENY"),
     ("X-Content-Type-Options", "nosniff"),
-    ("Referrer-Policy", "no-referrer"),
+    ("Referrer-Policy", "same-origin"),
     ("Cache-Control", "no-store"),
     (
         "Content-Security-Policy",
@@ -359,11 +359,45 @@ class PanelRemotoHandler(PanelHandler):
         self._responder_html(_pagina("Prohibido", "<p>Solicitud rechazada.</p>"), status=403)
 
     def _origen_valido(self) -> bool:
+        """Defensa CSRF por origen, compatible con navegadores reales.
+        - Host (y X-Forwarded-Host si viene) debe ser el hostname esperado.
+        - Sec-Fetch-Site, si viene, debe ser "same-origin".
+        - Origin, si viene con valor, debe ser exactamente el esperado.
+        - Si Origin es "null" o falta (los navegadores lo mandan así en
+          envíos de formulario según la política de referrer), se exige
+          Sec-Fetch-Site: same-origin (cabecera que fija el navegador y una
+          página ajena no puede falsificar) o un Referer del propio sitio.
+        Además, todo POST exige su token CSRF."""
+        esperado = urllib.parse.urlsplit(self.origen).netloc.lower()
+        if (self.headers.get("Host") or "").lower() != esperado:
+            return False
+        reenviado = self.headers.get("X-Forwarded-Host")
+        if reenviado is not None and reenviado.lower() != esperado:
+            return False
+        sitio = self.headers.get("Sec-Fetch-Site")
+        if sitio is not None and sitio != "same-origin":
+            return False
         origen = self.headers.get("Origin")
-        if origen:
+        if origen and origen != "null":
             return origen == self.origen
-        referer = self.headers.get("Referer") or ""
-        return referer.startswith(self.origen + "/")
+        if sitio == "same-origin":
+            return True
+        return (self.headers.get("Referer") or "").startswith(self.origen + "/")
+
+    def _cabeceras_para_log(self) -> str:
+        """Cabeceras de origen (no secretas) para diagnosticar un rechazo.
+        Del Referer solo el esquema y el host; nunca cookies ni cuerpo."""
+        def limpio(valor):
+            return re.sub(r"[^\x21-\x7e]", "?", valor)[:100] if valor is not None else "-"
+        referer = urllib.parse.urlsplit(self.headers.get("Referer") or "")
+        return "origin={} referer={} host={} xfh={} xfp={} sfs={}".format(
+            limpio(self.headers.get("Origin")),
+            limpio(f"{referer.scheme}://{referer.netloc}" if referer.netloc else None),
+            limpio(self.headers.get("Host")),
+            limpio(self.headers.get("X-Forwarded-Host")),
+            limpio(self.headers.get("X-Forwarded-Proto")),
+            limpio(self.headers.get("Sec-Fetch-Site")),
+        )
 
     def _leer_cuerpo(self, maximo: int) -> Optional[bytes]:
         try:
@@ -463,7 +497,7 @@ class PanelRemotoHandler(PanelHandler):
             self._no_encontrada()
             return
         if not self._origen_valido():
-            log.warning("POST rechazado por origen ip=%s ruta=%s", self._ip(), ruta)
+            log.warning("POST rechazado por origen ip=%s ruta=%s %s", self._ip(), ruta, self._cabeceras_para_log())
             self._descartar_cuerpo()
             self._prohibido()
             return

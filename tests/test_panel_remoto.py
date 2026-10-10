@@ -27,6 +27,10 @@ from tests.test_canal_rapido_local import TEXTO_LIBERTADOR, TEXTO_SENSIBLE, URL_
 
 PASSWORD = "clave-de-prueba-larga-123"
 ORIGEN = "https://panel.ledesmaparticipa.com.ar"
+HOSTNAME = "panel.ledesmaparticipa.com.ar"
+# Lo que mandó un Chrome Android real al enviar el formulario (capturado por
+# CDP contra producción, 9/10/2026): causó "Solicitud rechazada".
+NAVEGADOR_REAL = {"Origin": "null", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate"}
 HASH = generar_hash_password(PASSWORD)
 
 
@@ -88,11 +92,12 @@ class TestPanelRemotoHTTP(unittest.TestCase):
         self.tmpdir.cleanup()
 
     # -- utilidades
-    def _pedir(self, metodo, ruta, datos=None, cookies=None, origen=ORIGEN, ip="203.0.113.7"):
+    def _pedir(self, metodo, ruta, datos=None, cookies=None, origen=ORIGEN, ip="203.0.113.7", extra=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.puerto, timeout=10)
-        encabezados = {"Content-Type": "application/x-www-form-urlencoded", "CF-Connecting-IP": ip}
+        encabezados = {"Content-Type": "application/x-www-form-urlencoded", "CF-Connecting-IP": ip, "Host": HOSTNAME}
         if origen:
             encabezados["Origin"] = origen
+        encabezados.update(extra or {})
         if cookies:
             encabezados["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
         conn.request(metodo, ruta, body=urlencode(datos) if datos is not None else None, headers=encabezados)
@@ -111,13 +116,13 @@ class TestPanelRemotoHTTP(unittest.TestCase):
     def _codigo(self, desplazamiento=0):
         return codigo_totp(self.secreto, int(self.reloj() // 30) + desplazamiento)
 
-    def _login(self, password=PASSWORD, codigo=None, ip="203.0.113.7"):
+    def _login(self, password=PASSWORD, codigo=None, ip="203.0.113.7", origen=ORIGEN, extra=None):
         resp, _ = self._pedir("GET", "/login", ip=ip)
         prelogin = self._cookie(resp, COOKIE_PRELOGIN).split(";")[0].split("=", 1)[1]
         return self._pedir(
             "POST", "/login",
             {"prelogin": prelogin, "password": password, "codigo": codigo if codigo is not None else self._codigo()},
-            cookies={COOKIE_PRELOGIN: prelogin}, ip=ip,
+            cookies={COOKIE_PRELOGIN: prelogin}, ip=ip, origen=origen, extra=extra,
         )
 
     def _sesion(self):
@@ -291,6 +296,66 @@ class TestPanelRemotoHTTP(unittest.TestCase):
         for i in range(remoto.INTENTOS_GLOBALES):
             self._login(password="mala-mala-mala-mala", ip=f"192.0.2.{i}")
         self.assertEqual(self._login(ip="198.51.100.20")[0].status, 429)
+
+    # -- Origen (comportamiento real del navegador)
+    def test_navegador_real_origin_null_same_origin_aceptado(self):
+        self.reloj.t += 30
+        resp, _ = self._login(origen=None, extra=NAVEGADOR_REAL)
+        self.assertEqual(resp.status, 303)
+        cookies, csrf = self._sesion()
+        resp, _ = self._pedir("POST", "/cargar-noticia-local",
+                              {"csrf": csrf, "fuente": "Ledesma Soy", "url": URL_FB, "texto": TEXTO_LIBERTADOR},
+                              cookies=cookies, origen=None, extra=NAVEGADOR_REAL)
+        self.assertEqual(resp.status, 200)
+        # CSRF sigue obligatorio aunque el origen sea válido.
+        self.assertEqual(self._pedir("POST", "/cargar-noticia-local", {"fuente": "x"}, cookies=cookies,
+                                     origen=None, extra=NAVEGADOR_REAL)[0].status, 403)
+
+    def test_navegador_con_origin_real_aceptado(self):
+        self.reloj.t += 30
+        resp, _ = self._login(extra={"Sec-Fetch-Site": "same-origin"})
+        self.assertEqual(resp.status, 303)
+
+    def test_origin_null_con_referer_propio_aceptado(self):
+        self.reloj.t += 30
+        resp, _ = self._login(origen=None, extra={"Origin": "null", "Referer": ORIGEN + "/login"})
+        self.assertEqual(resp.status, 303)
+
+    def test_origenes_ajenos_rechazados(self):
+        casos = [
+            {"Origin": "null", "Sec-Fetch-Site": "cross-site"},           # iframe sandbox / data: ajeno
+            {"Origin": "https://atacante.test", "Sec-Fetch-Site": "cross-site"},
+            {"Origin": "https://atacante.test"},
+            {"Origin": ORIGEN, "Sec-Fetch-Site": "same-site"},            # otro subdominio
+            {"Origin": "null"},                                           # sin señal del navegador
+            {"Origin": "null", "Referer": "https://atacante.test/x"},
+            {"Origin": "https://panel.ledesmaparticipa.com.ar.atacante.test"},
+            {"Origin": ORIGEN, "Host": "otro.host"},                      # hostname inesperado
+            {"Origin": ORIGEN, "X-Forwarded-Host": "otro.host"},
+        ]
+        for extra in casos:
+            self.reloj.t += 30
+            resp, html = self._login(origen=None, extra=extra)
+            self.assertEqual(resp.status, 403, extra)
+            self.assertIn("Solicitud rechazada", html)
+            self.assertIsNone(self._cookie(resp, COOKIE_SESION))
+        self.assertFalse(self.auth.fallos_ip)  # rechazo previo a evaluar credenciales
+
+    def test_referrer_policy_conserva_origin(self):
+        resp, _ = self._pedir("GET", "/login")
+        self.assertEqual(resp.headers["Referrer-Policy"], "same-origin")
+
+    def test_log_de_rechazo_sin_secretos(self):
+        with self.assertLogs("panel_remoto", level="WARNING") as registro:
+            self._login(origen=None, extra={"Origin": "null", "Sec-Fetch-Site": "cross-site",
+                                            "Referer": "https://atacante.test/ruta?token=abc"})
+        texto = "\n".join(registro.output)
+        self.assertIn("origin=null", texto)
+        self.assertIn("sfs=cross-site", texto)
+        self.assertIn("host=" + HOSTNAME, texto)
+        self.assertNotIn("token=abc", texto)
+        self.assertNotIn(PASSWORD, texto)
+        self.assertNotIn(COOKIE_PRELOGIN, texto)
 
     # -- HTTPS
     def test_http_plano_redirige_a_https_sin_procesar(self):

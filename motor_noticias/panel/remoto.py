@@ -385,8 +385,25 @@ class PanelRemotoHandler(PanelHandler):
         self._csrf = None
         self._responder_html(_login_html(token, mensaje), status=status, cookies=(cookie,))
 
+    def _llego_por_http(self) -> bool:
+        """Cloudflare informa el esquema original del visitante. Si llegó por
+        http:// se redirige a https:// sin procesar nada (nunca se recibe una
+        contraseña sin cifrar)."""
+        visitante = (self.headers.get("CF-Visitor") or "").replace(" ", "")
+        proto = (self.headers.get("X-Forwarded-Proto") or "").lower()
+        return '"scheme":"http"' in visitante or proto == "http"
+
+    def _redirigir_a_https(self) -> None:
+        self.send_response(301)
+        self.send_header("Location", self.origen + urllib.parse.urlsplit(self.path).path)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     # -- GET
     def do_GET(self):
+        if self._llego_por_http():
+            self._redirigir_a_https()
+            return
         ruta = urllib.parse.urlsplit(self.path).path
         if ruta not in RUTAS_REMOTAS:
             self._no_encontrada()
@@ -435,6 +452,11 @@ class PanelRemotoHandler(PanelHandler):
             self.close_connection = True
 
     def do_POST(self):
+        if self._llego_por_http():
+            log.warning("POST por http rechazado ip=%s", self._ip())
+            self._descartar_cuerpo()
+            self._redirigir_a_https()
+            return
         ruta = urllib.parse.urlsplit(self.path).path
         if ruta not in RUTAS_REMOTAS:
             self._descartar_cuerpo()

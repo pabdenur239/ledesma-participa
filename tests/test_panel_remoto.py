@@ -292,6 +292,21 @@ class TestPanelRemotoHTTP(unittest.TestCase):
             self._login(password="mala-mala-mala-mala", ip=f"192.0.2.{i}")
         self.assertEqual(self._login(ip="198.51.100.20")[0].status, 429)
 
+    # -- HTTPS
+    def test_http_plano_redirige_a_https_sin_procesar(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.puerto, timeout=10)
+        conn.request("GET", "/login", headers={"CF-Visitor": '{"scheme":"http"}', "X-Forwarded-Proto": "http"})
+        resp = conn.getresponse(); resp.read(); conn.close()
+        self.assertEqual(resp.status, 301)
+        self.assertEqual(resp.headers["Location"], ORIGEN + "/login")
+        conn = http.client.HTTPConnection("127.0.0.1", self.puerto, timeout=10)
+        conn.request("POST", "/login", body=urlencode({"password": PASSWORD, "codigo": self._codigo()}),
+                     headers={"Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-Proto": "http", "Origin": ORIGEN})
+        resp = conn.getresponse(); resp.read(); conn.close()
+        self.assertEqual(resp.status, 301)
+        self.assertIsNone(self._cookie(resp, COOKIE_SESION))
+        self.assertEqual(self._pedir("GET", "/login")[0].status, 200)  # https (sin cabecera http) sigue normal
+
     # -- logs
     def test_logs_sin_secretos(self):
         with self.assertLogs("panel_remoto", level="INFO") as registro:

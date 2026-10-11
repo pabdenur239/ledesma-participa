@@ -274,9 +274,15 @@
       "interes": 7
     },
     "economia_inmediata": {
+      "_nota": "Formas verbales de 'devaluar', no la raíz 'devalua*': el adjetivo ('salarios ya devaluados') no es una devaluación en curso. Caso real 11/10/2026: nota de EFE sobre salarios en España salió URGENTE por 'devaluados'.",
       "terminos": [
         "devaluacion",
-        "devalua*",
+        "devalua",
+        "devaluo",
+        "devaluan",
+        "devaluaron",
+        "devaluara",
+        "devaluar",
         "cepo",
         "corralito",
         "feriado bancario",

@@ -163,8 +163,10 @@ def parrafos_web(texto: str) -> List[str]:
 
 
 def _titulo_y_texto(noticia: dict) -> tuple:
+    from ..redaccion.repeticiones import quitar_oraciones_repetidas
+
     texto = noticia.get("texto_revisado") or noticia.get("texto_preparado") or noticia.get("texto_original") or ""
-    return titulo_de(noticia), texto.strip()
+    return titulo_de(noticia), quitar_oraciones_repetidas(texto.strip())
 
 
 def _parsear_fecha(valor: Optional[str]) -> Optional[datetime]:
@@ -251,7 +253,7 @@ def _momento_publico(noticia: dict, publicada_en: Optional[str]) -> tuple:
 
 
 CACHE_CLASIFICACION_DEFAULT = RAIZ_PROYECTO / "data" / "cache" / "clasificacion_portal.json"
-VERSION_CACHE_CLASIFICACION = "etapa1-v1"  # subir si cambia la lógica de clasificación
+VERSION_CACHE_CLASIFICACION = "etapa1-v2"  # subir si cambia la lógica de clasificación
 CONFIGS_CLASIFICACION = ("categorias.json", "localidades.json", "scoring_editorial.json", "entretenimiento.json")
 
 
@@ -356,7 +358,9 @@ def _enriquecer(
         "tematicas": [categoria["valor"]] if categoria["valor"] not in (None, "general") else [],
         "urgente": urgente,
         "categoria_tematica": noticia.get("categoria_tematica"),
-        "localidad": noticia.get("localidad"),
+        # La localidad guardada solo vale si la clasificación vigente sigue
+        # ubicando la nota en Jujuy (bug real: "Sri Lanka… Yala").
+        "localidad": noticia.get("localidad") if territorio_interno in ("local", "departamental", "provincial") else None,
         "es_informe": es_informe_diario(noticia),
         "datos_informe": datos_informe_de_noticia(noticia),
         # Solo hace falta para elegir la noticia principal (últimas 72 h).

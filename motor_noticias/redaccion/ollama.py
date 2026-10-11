@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 from ..models import Noticia
 from .base import Redactor
+from .repeticiones import quitar_oraciones_repetidas
 
 CONFIG_PATH_DEFAULT = Path(__file__).resolve().parent.parent.parent / "config" / "redaccion.json"
 
@@ -224,7 +225,7 @@ class RedactorOllama(Redactor):
         if _respuesta_es_sospechosa(noticia, titulo_preparado, texto_preparado):
             return _fallback_seguro(noticia)
 
-        return titulo_preparado, texto_preparado
+        return titulo_preparado, quitar_oraciones_repetidas(texto_preparado)
 
     def _pedir_redaccion_al_modelo(self, noticia: Noticia) -> Tuple[str, str]:
         cuerpo = {

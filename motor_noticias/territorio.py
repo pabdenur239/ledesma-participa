@@ -70,6 +70,21 @@ def _evidencia_internacional(
     return None
 
 
+def _evidencia_extranjera_fuerte(
+    texto_norm: str, categoria: Optional[str], url: Optional[str], config: dict
+) -> Optional[str]:
+    """Evidencia de país extranjero más fuerte que una mención de pasada en
+    el cuerpo: la sección internacional/de otro país en la URL o la
+    categoría del medio, o una ciudad/país extranjero como data de agencia
+    al comienzo del texto ("Madrid, 11 oct (EFE).-")."""
+    seccion = _evidencia_internacional("", categoria, url, config)
+    if seccion:
+        return seccion
+    data = re.match(r"\s*([^,(]{2,40})\s*[,(]\s*\d{1,2}\s+\w{3}", texto_norm)
+    termino = _contiene_alguna_palabra(data.group(1), config.get("internacional", [])) if data else None
+    return f"data de agencia en '{termino}'" if termino else None
+
+
 def _seccion_ambigua(categoria: Optional[str], url: Optional[str], config: dict) -> Optional[str]:
     """Secciones como deportes/espectáculos suelen incluir contenido
     extranjero (clubes, selecciones, figuras de otros países) sin que el
@@ -189,22 +204,60 @@ def _localidad_confirmada(termino: str, contenido_norm: str, nombre_fuente: Opti
     return False
 
 
+def _jujuy_explicito(contenido_norm: str, config: dict) -> Optional[str]:
+    """Mención que ubica sin ambigüedad en Jujuy: la palabra Jujuy/jujeño,
+    una localidad que solo existe en Jujuy o un contexto jujeño (Ruta 34,
+    Ingenio Ledesma…). A diferencia de `_contexto_jujeno`, no incluye los
+    nombres de localidades jujeñas que también existen en otros lugares."""
+    terminos = [t for t in config.get("jujuy", []) if re.search(r"jujuy|juje", _sin_acentos(t))]
+    terminos += config.get("localidades_inequivocas", {}).get("terminos", [])
+    terminos += config.get("contexto_jujeno", {}).get("terminos", [])
+    return _contiene_alguna_palabra(contenido_norm, terminos)
+
+
+def _provincial_confirmada(
+    termino: str, titulo_norm: str, contenido_norm: str, nombre_fuente: Optional[str], config: dict,
+    evidencia_ajena: Optional[str],
+) -> bool:
+    """Un topónimo jujeño suelto ("Yala", "Perico", "San Pedro", "El
+    Carmen"…) también nombra lugares de otros países y provincias. Solo
+    ubica la nota en Jujuy si el propio término nombra Jujuy, la fuente es
+    regional, el contenido trae una mención explícita de Jujuy, o aparece en
+    el TÍTULO sin evidencia de otro país/provincia. Bug real (11/10/2026):
+    "Sri Lanka en sequía…" (Infobae, sección /america/) quedó "Jujuy · Yala"
+    por el Parque Nacional Yala de Sri Lanka mencionado en la bajada."""
+    if re.search(r"jujuy|juje", _sin_acentos(termino)):
+        return True
+    if _fuente_regional(nombre_fuente, config) or _jujuy_explicito(contenido_norm, config):
+        return True
+    en_titulo = _contiene_alguna_palabra(titulo_norm, [termino]) is not None
+    return en_titulo and evidencia_ajena is None
+
+
 def _relevancia_confirmada(
-    titulo_norm: str, texto_norm: str, nombre_fuente: Optional[str], config: dict, contexto_norm: str
+    titulo_norm: str, texto_norm: str, nombre_fuente: Optional[str], config: dict, contexto_norm: str,
+    evidencia_ajena: Optional[str] = None,
 ):
     """`clasificar_relevancia` + confirmación contextual: si el topónimo
-    local/departamental hallado no se confirma, se lo quita del texto y se
-    vuelve a buscar (otra localidad, Jujuy, o nada)."""
+    local/departamental/provincial hallado no se confirma, se lo quita del
+    texto y se vuelve a buscar (otra localidad, Jujuy, o nada)."""
     agrupados = {
         "local": config.get("maxima_prioridad", []),
         "departamental": config.get("prioridad_alta", []),
+        "provincial": config.get("jujuy", []),
     }
-    for _ in range(4):
+    titulo_original_norm = titulo_norm
+    for _ in range(6):
         resultado = clasificar_relevancia(titulo_norm, texto_norm, config=config)
         nivel = _nivel_desde_termino(resultado["localidad"], config)
-        if nivel not in ("local", "departamental"):
+        if nivel is None:
             return nivel, resultado
-        if _localidad_confirmada(resultado["localidad"], contexto_norm, nombre_fuente, config):
+        if nivel == "provincial":
+            if _provincial_confirmada(
+                resultado["localidad"], titulo_original_norm, contexto_norm, nombre_fuente, config, evidencia_ajena
+            ):
+                return nivel, resultado
+        elif _localidad_confirmada(resultado["localidad"], contexto_norm, nombre_fuente, config):
             return nivel, resultado
         termino = _sin_acentos(resultado["localidad"])
         variantes = [_sin_acentos(t) for t in agrupados[nivel] if termino in _sin_acentos(t) or _sin_acentos(t) in termino]
@@ -294,16 +347,29 @@ def clasificar_territorio(
     titulo_norm = _neutralizar_marcas(titulo, nombre_fuente, config)
     texto_norm = _neutralizar_marcas(texto, nombre_fuente, config)
     contenido_norm = f"{titulo_norm} {texto_norm}"
+    evidencia_ajena = _evidencia_internacional(contenido_norm, categoria, url, config) or _contiene_alguna_palabra(
+        contenido_norm, config.get("otras_provincias", [])
+    )
+    extranjero_fuerte = _evidencia_extranjera_fuerte(texto_norm, categoria, url, config)
 
-    nivel_titulo, por_titulo = _relevancia_confirmada(titulo_norm, "", nombre_fuente, config, contenido_norm)
+    nivel_titulo, por_titulo = _relevancia_confirmada(
+        titulo_norm, "", nombre_fuente, config, contenido_norm, evidencia_ajena
+    )
     if nivel_titulo in ("local", "departamental"):
         return _resultado(nivel_titulo, por_titulo["motivo"], por_titulo["localidad"], confianza=CONFIANZA["titulo"])
 
-    nacional_en_titulo = _contiene_alguna_palabra(titulo_norm, config.get("nacional", []))
     genericos = {_sin_acentos(t) for t in config.get("nacional_generico", {}).get("terminos", [])}
-    nacional_fuerte_en_titulo = _contiene_alguna_palabra(
-        titulo_norm, [t for t in config.get("nacional", []) if _sin_acentos(t) not in genericos]
-    )
+    nacionales_fuertes = [t for t in config.get("nacional", []) if _sin_acentos(t) not in genericos]
+    nacional_fuerte_en_titulo = _contiene_alguna_palabra(titulo_norm, nacionales_fuertes)
+    nacional_en_titulo = _contiene_alguna_palabra(titulo_norm, config.get("nacional", []))
+    if extranjero_fuerte and not nacional_fuerte_en_titulo:
+        # Un marcador genérico ("inflación", "Banco Central") tampoco ubica
+        # en Argentina una nota que el medio publica en su sección de otro
+        # país o cuya entradilla la sitúa afuera. Bug real (11/10/2026):
+        # "La inflación y la vivienda vuelven a lastrar… salarios" (EFE,
+        # infobae.com/espana/, "Madrid… salarios en España") salió como
+        # URGENTE | NACIONAL.
+        nacional_en_titulo = None
     if nivel_titulo is None:
         extranjero = _contiene_alguna_palabra(titulo_norm, config.get("internacional", []))
         # Un marcador nacional genérico ("Banco Central", "inflación") no le
@@ -326,7 +392,9 @@ def clasificar_territorio(
                 confianza=CONFIANZA["titulo_nacional"],
             )
 
-    nivel, completo = _relevancia_confirmada(titulo_norm, texto_norm, nombre_fuente, config, contenido_norm)
+    nivel, completo = _relevancia_confirmada(
+        titulo_norm, texto_norm, nombre_fuente, config, contenido_norm, evidencia_ajena
+    )
     if nivel:
         # Jujuy en el título (incluido un protagonista jujeño como el
         # gobernador Sadir, bug real: "Sadir desde París" quedaba
@@ -335,7 +403,9 @@ def clasificar_territorio(
         confianza = CONFIANZA["titulo"] if nivel == nivel_titulo else CONFIANZA["cuerpo"]
         return _resultado(nivel, completo["motivo"], completo["localidad"], confianza=confianza)
 
-    termino_nacional = _contiene_alguna_palabra(contenido_norm, config.get("nacional", []))
+    termino_nacional = _contiene_alguna_palabra(
+        contenido_norm, nacionales_fuertes if extranjero_fuerte else config.get("nacional", [])
+    )
     if termino_nacional:
         return _resultado(
             "nacional", f"Menciona '{termino_nacional}' (alcance nacional).", None,

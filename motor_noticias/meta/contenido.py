@@ -96,8 +96,10 @@ def _resena_breve(texto: str, longitud_maxima: int) -> str:
 
 def _titulo_y_texto_finales(noticia: dict):
     titulo = noticia.get("titulo_revisado") or noticia.get("titulo_preparado") or ""
+    from ..redaccion.repeticiones import quitar_oraciones_repetidas
+
     texto = noticia.get("texto_revisado") or noticia.get("texto_preparado") or ""
-    return titulo_publico(noticia, titulo), texto
+    return titulo_publico(noticia, titulo), quitar_oraciones_repetidas(texto)
 
 
 def parrafos_copy(texto: str) -> List[str]:

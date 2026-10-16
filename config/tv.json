@@ -1,0 +1,17 @@
+{
+  "_doc": "Señales de 'TV en vivo'. Solo señales oficiales con embed permitido. Para sumar una provincia o canal, agregar a 'regiones'/'canales' (sin tocar código). tipo: youtube (canal oficial, embed live_stream por ID de canal) | iframe (reproductor oficial del canal, URL https). Verificado 2026-10-16.",
+  "regiones": [
+    {"id": "jujuy", "etiqueta": "Jujuy"},
+    {"id": "nacionales", "etiqueta": "Nacionales"}
+  ],
+  "canales": [
+    {"id": "canal-7-jujuy", "nombre": "Canal 7 Jujuy", "region": "jujuy", "tipo": "iframe", "fuente": "https://arcast.com.ar/canal7jujuy/", "sitio": "https://www.somosjujuy.com.ar/servicios/envivo", "activa": true},
+    {"id": "tn", "nombre": "TN - Todo Noticias", "region": "nacionales", "tipo": "youtube", "fuente": "UCj6PcyLvpnIRT_2W_mwa9Aw", "activa": true},
+    {"id": "c5n", "nombre": "C5N", "region": "nacionales", "tipo": "youtube", "fuente": "UCFgk2Q2mVO1BklRQhSv6p0w", "activa": true},
+    {"id": "canal-26", "nombre": "Canal 26", "region": "nacionales", "tipo": "youtube", "fuente": "UCrpMfcQNog595v5gAS-oUsQ", "activa": true},
+    {"id": "a24", "nombre": "A24", "region": "nacionales", "tipo": "youtube", "fuente": "UCR9120YBAqMfntqgRTKmkjQ", "activa": true},
+    {"id": "cronica", "nombre": "Crónica TV", "region": "nacionales", "tipo": "youtube", "fuente": "UCT7KFGv6s2a-rh2Jq8ZdM1g", "activa": true},
+    {"id": "tv-publica", "nombre": "TV Pública", "region": "nacionales", "tipo": "youtube", "fuente": "UCs231K71Bnu5295_x0MB5Pg", "activa": true},
+    {"id": "telefe-noticias", "nombre": "Telefe Noticias", "region": "nacionales", "tipo": "youtube", "fuente": "UChxGASjdNEYHhVKpl667Huw", "activa": false, "motivo_inactiva": "El canal oficial deshabilitó la reproducción incrustada (playableInEmbed=false)."}
+  ]
+}

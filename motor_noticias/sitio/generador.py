@@ -43,7 +43,7 @@ from ..regla_imagenes import evaluar_imagen
 from ..scoring_editorial import evaluar_noticia, urgente_confirmado
 from ..videos import cargar_videos
 from .. import radios as modulo_radios
-from . import plantillas
+from . import plantillas, tv as modulo_tv
 from .imagenes_web import ValidadorImagenes
 from .urls import RAIZ_PROYECTO, SALIDA_DEFAULT, slugify, titulo_de  # noqa: F401 (slugify: API pública)
 
@@ -825,6 +825,9 @@ def generar_sitio(
         extras_nav.append(("videos", "Videos", "videos/"))
     if radios:
         extras_nav.append(("radios", "Radios en vivo", "radios/"))
+    grupos_tv = modulo_tv.cargar_canales()
+    if grupos_tv:
+        extras_nav.append(("tv", "TV en vivo", "tv/"))
     extras_nav.append(("multimedia", "Multimedia", "multimedia/"))
     if comercios:
         extras_nav.append(("guia-comercial", "Guía Comercial", "guia-comercial/"))
@@ -835,6 +838,17 @@ def generar_sitio(
     portada = armar_portada(noticias, ahora, videos, comercios, clima_dolar)
     portada["url_informe"] = url_informe
     portada["cantidad_radios"] = len(radios)
+    # Accesos principales de la portada (solo los que tienen contenido).
+    portada["accesos"] = [
+        (ruta, icono, titulo, detalle)
+        for ruta, icono, titulo, detalle, visible in (
+            ("radios/", "📻", "Radio en vivo", "Escuchá las radios", bool(radios)),
+            ("tv/", "📺", "TV en vivo", "Señales oficiales", bool(grupos_tv)),
+            ("multimedia/", "🎬", "Multimedia", "Videos y radios", True),
+            ("guia-comercial/", "🛍️", "Guía Comercial", "Comercios de la región", bool(comercios)),
+        )
+        if visible
+    ]
     _escribir(
         salida_dir / "index.html",
         plantillas.pagina_index(
@@ -908,8 +922,16 @@ def generar_sitio(
     _escribir(
         salida_dir / "multimedia" / "index.html",
         plantillas.pagina_multimedia(hay_videos=bool(videos), cantidad_radios=len(radios), ruta_raiz="../",
-                                     config_sitio=config_sitio, url_base=base_url + "multimedia/", **kw_nav),
+                                     config_sitio=config_sitio, url_base=base_url + "multimedia/",
+                                     cantidad_tv=modulo_tv.cantidad_canales(grupos_tv), **kw_nav),
     )
+    if grupos_tv:
+        _escribir(
+            salida_dir / "tv" / "index.html",
+            modulo_tv.pagina_tv(grupos=grupos_tv, ruta_raiz="../", config_sitio=config_sitio,
+                                url_base=base_url + "tv/", **kw_nav),
+        )
+        urls_sitemap.append(base_url + "tv/")
     _escribir(
         salida_dir / "radios" / "index.html",
         plantillas.pagina_radios(radios=radios, ruta_raiz="../", config_sitio=config_sitio,

@@ -60,7 +60,11 @@ class TestDatosRadios(unittest.TestCase):
         datos = json.loads((RAIZ / "config" / "radios.json").read_text(encoding="utf-8"))
         for crudo in datos["radios"]:
             self.assertFalse(crudo.get("demo"), crudo["id"])
-            self.assertTrue((crudo.get("fuente_autorizacion") or "").strip(), crudo["id"])
+            if crudo.get("activa"):
+                self.assertTrue((crudo.get("fuente_autorizacion") or "").strip(), crudo["id"])
+            else:
+                # Padrón registrado pero inactivo: debe documentar el motivo.
+                self.assertTrue((crudo.get("motivo_inactiva") or "").strip(), crudo["id"])
             self.assertNotIn(".invalid", json.dumps(crudo), crudo["id"])
         cargadas = radios.cargar_radios(incluir_demo=False)
         self.assertEqual(len(cargadas), len([c for c in datos["radios"] if c.get("activa") and c.get("estado") == "activa"]))

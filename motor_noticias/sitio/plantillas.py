@@ -393,6 +393,19 @@ def bloque_seguinos(config_sitio: dict) -> str:
 </section>"""
 
 
+def bloque_accesos(accesos: Sequence[Tuple[str, str, str, str]], *, ruta_raiz: str = "") -> str:
+    """Accesos principales (Radio, TV, Multimedia, Guía Comercial) de la
+    portada; ruta relativa a la raíz del sitio (la portada vive en la raíz)."""
+    if not accesos:
+        return ""
+    items = "".join(
+        f'<a class="acceso" href="{ruta_raiz}{escapar(ruta)}"><span class="acceso-icono" aria-hidden="true">{icono}</span>'
+        f'<span class="acceso-texto"><strong>{escapar(titulo)}</strong><small>{escapar(detalle)}</small></span></a>'
+        for ruta, icono, titulo, detalle in accesos
+    )
+    return f'<nav class="accesos" aria-label="Accesos principales">{items}</nav>'
+
+
 def bloque_radios_portada(cantidad_radios: int, *, ruta_raiz: str) -> str:
     if not cantidad_radios:
         return ""
@@ -442,6 +455,7 @@ def pagina_index(
         if portada.get("principal"):
             partes.append('<section class="seccion-principal" aria-label="Noticia principal">'
                           + tarjeta_noticia(portada["principal"], ruta_raiz=ruta_raiz, variante="principal") + "</section>")
+        partes.append(bloque_accesos(portada.get("accesos", [])))
         for slug, etiqueta, noticias in portada.get("secciones", []):
             partes.append(seccion_portada(slug, etiqueta, noticias, ruta_raiz=ruta_raiz))
         partes.append(bloque_videos(portada.get("videos", []), ruta_raiz=ruta_raiz))
@@ -809,7 +823,7 @@ def pagina_radios(*, radios: List[dict], ruta_raiz: str, config_sitio: dict, url
 
 
 def pagina_multimedia(*, hay_videos: bool, cantidad_radios: int, ruta_raiz: str, config_sitio: dict, url_base: str,
-                      nav=None, extras_nav=()) -> str:
+                      nav=None, extras_nav=(), cantidad_tv: int = 0) -> str:
     """Multimedia: Videos, Radios en vivo y, como próximamente (sin
     enlace), Entrevistas y Podcast."""
     def item(titulo: str, detalle: str, ruta: Optional[str]) -> str:
@@ -829,6 +843,7 @@ def pagina_multimedia(*, hay_videos: bool, cantidad_radios: int, ruta_raiz: str,
   <ul class="lista-multimedia">
     {item("Videos", "Reproductor oficial de YouTube" if hay_videos else "Todavía no hay videos", "videos/")}
     {item("Radios en vivo", radios_detalle, "radios/")}
+    {item("TV en vivo", f"{cantidad_tv} señales oficiales de Jujuy y Argentina", "tv/") if cantidad_tv else ""}
     {item("Entrevistas", "Próximamente", None)}
     {item("Podcast", "Próximamente", None)}
   </ul>

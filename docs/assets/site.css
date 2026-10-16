@@ -315,3 +315,37 @@ body.con-reproductor { padding-bottom: 76px; }
 .tv-marco { position: relative; aspect-ratio: 16 / 9; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
 .tv-marco iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 [hidden] { display: none !important; }
+
+/* Navegación agrupada: En vivo / Servicios / Más (un nivel de submenú) */
+.nav { position: relative; }
+.nav-pista { overflow: visible; flex-wrap: wrap; row-gap: 2px; }
+.nav-grupo { position: relative; flex: 0 0 auto; }
+.nav-grupo > summary {
+  list-style: none; cursor: pointer; color: #e8e4d8; font-size: .88rem; font-weight: 600;
+  padding: 6px 12px; border-radius: 999px; white-space: nowrap; user-select: none;
+}
+.nav-grupo > summary::-webkit-details-marker { display: none; }
+.nav-grupo > summary::after { content: " \25BE"; font-size: .7em; }
+.nav-grupo > summary:hover, .nav-grupo > summary.activa, .nav-grupo[open] > summary { background: var(--dorado); color: var(--carbon); }
+.nav-grupo > summary:focus-visible, .nav a:focus-visible { outline: 2px solid var(--dorado); outline-offset: 2px; }
+.nav-menu {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 20; min-width: 200px;
+  background: var(--carbon); border: 1px solid #3a372f; border-radius: 10px; padding: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35); display: flex; flex-direction: column; gap: 2px;
+}
+.nav-menu a { border-radius: 8px; padding: 9px 12px; white-space: nowrap; }
+.nav-mas .nav-menu { left: auto; right: 0; }
+.solo-movil { display: none; }
+@media (max-width: 720px) {
+  .nav-pista { padding: 6px 8px; gap: 2px; }
+  .nav a, .nav-grupo > summary { font-size: .84rem; padding: 6px 9px; }
+  .solo-escritorio { display: none !important; }
+  .solo-movil { display: block; }
+  .nav-grupo { position: static; }
+  .nav-menu {
+    left: 8px; right: 8px; top: 100%; min-width: 0; max-height: 70vh; overflow-y: auto;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+  }
+  .nav-mas .nav-menu { left: 8px; right: 8px; }
+  .nav-menu a { white-space: normal; }
+}

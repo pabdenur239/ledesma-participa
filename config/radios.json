@@ -1,0 +1,383 @@
+{
+ "_doc": "Padrón de radios de 'Radio en vivo'. Para agregar una radio, sumar un objeto a 'radios' (sin tocar código). ambito: localidad|departamento|provincia|nacional. tipo: audio (URL https directa de stream, la propia emisora la publica) | youtube (ID de canal oficial, embed live_stream). Si 'activa' es false, no se muestra en la web y 'motivo_inactiva' documenta por qué. Verificado 2026-10-16.",
+ "ambitos": [
+  {
+   "id": "localidad",
+   "etiqueta": "Localidad"
+  },
+  {
+   "id": "departamento",
+   "etiqueta": "Departamento"
+  },
+  {
+   "id": "provincia",
+   "etiqueta": "Provincia"
+  },
+  {
+   "id": "nacional",
+   "etiqueta": "Nacionales"
+  }
+ ],
+ "radios": [
+  {
+   "id": "fm-orion-106-3",
+   "nombre": "FM Orión",
+   "frecuencia": "FM 106.3",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://fmorion.com.ar/",
+   "activa": true,
+   "tipo": "audio",
+   "fuente": "https://tolkien.republicahosting.net:1656/live"
+  },
+  {
+   "id": "fm-imagen-92-5",
+   "nombre": "FM Imagen",
+   "frecuencia": "FM 92.5",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://www.fmimagen925.com/",
+   "activa": false,
+   "motivo_inactiva": "Su sitio oficial no expone un reproductor ni URL de stream utilizable fuera de su propia web/app."
+  },
+  {
+   "id": "radio-ciudad-101-9",
+   "nombre": "Radio Ciudad",
+   "frecuencia": "FM 101.9",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://www.ivoox.com/podcast-un-nuevo-dia_sq_f1731584_1.html",
+   "activa": false,
+   "motivo_inactiva": "Solo se verificó un podcast en iVoox; no hay señal en vivo oficial."
+  },
+  {
+   "id": "fm-bajando-cana-101-5",
+   "nombre": "FM Bajando Caña",
+   "frecuencia": "FM 101.5",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://www.facebook.com/elbajando",
+   "activa": false,
+   "motivo_inactiva": "Solo Facebook; no hay stream propio y no se integra Facebook sin acceso oficial."
+  },
+  {
+   "id": "radio-municipal-libertador-88-3",
+   "nombre": "Radio Municipal FM Libertador",
+   "frecuencia": "FM 88.3",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://municipiolgsmjujuy.gob.ar/",
+   "activa": false,
+   "motivo_inactiva": "El sitio municipal lista la emisora pero no publica reproductor ni stream."
+  },
+  {
+   "id": "radio-del-valle-99-1",
+   "nombre": "Radio del Valle",
+   "frecuencia": "FM 99.1",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://radioarg.com/del-valle/",
+   "activa": false,
+   "motivo_inactiva": "Stream solo vía directorio de terceros (radioarg/instant.audio, responde 403 a uso externo); sin fuente oficial."
+  },
+  {
+   "id": "fm-activa-96-9",
+   "nombre": "FM Activa",
+   "frecuencia": "FM 96.9",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "fm-ledesma-105-1",
+   "nombre": "FM Ledesma",
+   "frecuencia": "FM 105.1",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "fm-sinfonia",
+   "nombre": "FM Sinfonía",
+   "frecuencia": "",
+   "localidad": "Ledesma (por validar)",
+   "ambito": "departamento",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "radio-ciudad-87-9",
+   "nombre": "Radio Ciudad",
+   "frecuencia": "FM 87.9",
+   "localidad": "Fraile Pintado",
+   "ambito": "departamento",
+   "sitio": "https://www.facebook.com/fmciudadfrailepintado/",
+   "activa": false,
+   "motivo_inactiva": "Solo Facebook; sin stream propio verificable."
+  },
+  {
+   "id": "fm-speed-96-7",
+   "nombre": "FM Speed",
+   "frecuencia": "FM 96.7 (a confirmar)",
+   "localidad": "Fraile Pintado",
+   "ambito": "departamento",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "radio-24-de-mayo-92-7",
+   "nombre": "Radio 24 de Mayo",
+   "frecuencia": "FM 92.7",
+   "localidad": "Fraile Pintado",
+   "ambito": "departamento",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "fm-estacion-100-1",
+   "nombre": "FM Estación",
+   "frecuencia": "FM 100.1",
+   "localidad": "Yuto",
+   "ambito": "departamento",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "radio-vida-105-9",
+   "nombre": "Radio Vida",
+   "frecuencia": "FM 105.9",
+   "localidad": "Yuto",
+   "ambito": "departamento",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "fm-tropico-97-7",
+   "nombre": "FM Trópico",
+   "frecuencia": "FM 97.7",
+   "localidad": "San Salvador de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://www.somosjujuy.com.ar/servicios/envivo",
+   "activa": true,
+   "tipo": "audio",
+   "fuente": "https://radio.arcast.cloud:1300/stream"
+  },
+  {
+   "id": "lw8-am-630",
+   "nombre": "LW8 Radio Jujuy",
+   "frecuencia": "AM 630",
+   "localidad": "San Salvador de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://www.somosjujuy.com.ar/servicios/envivo",
+   "activa": true,
+   "tipo": "audio",
+   "fuente": "https://radio.arcast.cloud:1280/stream"
+  },
+  {
+   "id": "radio-jujuy-104-5",
+   "nombre": "Radio Jujuy",
+   "frecuencia": "FM 104.5",
+   "localidad": "San Pedro de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://radiojujuy.com.ar/",
+   "activa": true,
+   "tipo": "audio",
+   "fuente": "https://stream.djroquesalazar.com.ar/8938/stream"
+  },
+  {
+   "id": "la-radio-san-pedro-92-3",
+   "nombre": "La Radio San Pedro",
+   "frecuencia": "FM 92.3",
+   "localidad": "San Pedro de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://www.laradiosanpedro.com.ar/",
+   "activa": true,
+   "tipo": "audio",
+   "fuente": "https://server.streamcasthd.com/8154/stream"
+  },
+  {
+   "id": "lra22-radio-nacional-jujuy",
+   "nombre": "LRA 22 Radio Nacional Jujuy",
+   "frecuencia": "AM 790 / FM 94.1",
+   "localidad": "San Salvador de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://www.radionacional.com.ar/",
+   "activa": false,
+   "motivo_inactiva": "Radio Nacional solo expone la señal de la red nacional (LRA1); no hay stream local verificable."
+  },
+  {
+   "id": "lra16-radio-nacional-la-quiaca",
+   "nombre": "LRA 16 Radio Nacional La Quiaca",
+   "frecuencia": "AM 560 / FM 92.5",
+   "localidad": "La Quiaca",
+   "ambito": "provincia",
+   "sitio": "https://www.radionacional.com.ar/",
+   "activa": false,
+   "motivo_inactiva": "Player local por confirmar; sin stream verificable."
+  },
+  {
+   "id": "municipal-fm-san-pedro-97-5",
+   "nombre": "Municipal FM San Pedro",
+   "frecuencia": "FM 97.5",
+   "localidad": "San Pedro de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://sanpedrodejujuy.gob.ar/municipal-fm-97-5-en-vivo/",
+   "activa": false,
+   "motivo_inactiva": "La página oficial no expone una URL de stream utilizable."
+  },
+  {
+   "id": "radio-2-jujuy-105-5",
+   "nombre": "Radio 2 Jujuy",
+   "frecuencia": "FM 105.5",
+   "localidad": "San Salvador de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "radio-provincia-jujuy-107-9",
+   "nombre": "Radio Provincia Jujuy",
+   "frecuencia": "FM 107.9",
+   "localidad": "San Salvador de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "radio-satelite-90-7",
+   "nombre": "Radio Satélite",
+   "frecuencia": "FM 90.7",
+   "localidad": "San Pedro de Jujuy",
+   "ambito": "provincia",
+   "sitio": "https://radioarg.com/satelite-90-7/",
+   "activa": false,
+   "motivo_inactiva": "Stream solo vía directorio de terceros (responde 403 a uso externo); sin fuente oficial."
+  },
+  {
+   "id": "radio-municipal-humahuaca-99-9",
+   "nombre": "Radio Municipal Humahuaca",
+   "frecuencia": "FM 99.9",
+   "localidad": "Humahuaca",
+   "ambito": "provincia",
+   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "activa": false,
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+  },
+  {
+   "id": "radio-10",
+   "nombre": "Radio 10",
+   "frecuencia": "AM 710",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://www.radio10.com.ar/",
+   "activa": true,
+   "tipo": "youtube",
+   "fuente": "UCJozD5RVug7EZdTjqkGISYQ"
+  },
+  {
+   "id": "radio-continental",
+   "nombre": "Radio Continental",
+   "frecuencia": "AM 590",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://www.continental.com.ar/",
+   "activa": true,
+   "tipo": "youtube",
+   "fuente": "UC7fedBVCaVPhMNI_axwg69w"
+  },
+  {
+   "id": "radio-nacional",
+   "nombre": "Radio Nacional",
+   "frecuencia": "AM 870",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://www.radionacional.com.ar/",
+   "activa": true,
+   "tipo": "youtube",
+   "fuente": "UCgcUYL6ODQniPuwD4N-Tlvg"
+  },
+  {
+   "id": "radio-la-red",
+   "nombre": "Radio La Red",
+   "frecuencia": "AM 910",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://www.lared.am/",
+   "activa": true,
+   "tipo": "youtube",
+   "fuente": "UCs1U5lRXvUJHn0CgXI6oXAw"
+  },
+  {
+   "id": "splendid-am-990",
+   "nombre": "Splendid AM 990",
+   "frecuencia": "AM 990",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://splendidam990.com/",
+   "activa": true,
+   "tipo": "youtube",
+   "fuente": "UC8_LjUd3lB3pr64NDs8o4tA"
+  },
+  {
+   "id": "radio-mitre",
+   "nombre": "Radio Mitre",
+   "frecuencia": "AM 790",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://radiomitre.cienradios.com/",
+   "activa": false,
+   "motivo_inactiva": "Su player es propietario; sin stream ni canal de YouTube en vivo oficial verificable."
+  },
+  {
+   "id": "radio-rivadavia",
+   "nombre": "Radio Rivadavia",
+   "frecuencia": "AM 630",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://rivadavia.com.ar/",
+   "activa": false,
+   "motivo_inactiva": "Sin stream ni embed oficial verificable en su sitio."
+  },
+  {
+   "id": "cnn-radio-argentina",
+   "nombre": "CNN Radio Argentina",
+   "frecuencia": "AM 950",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://cnnradio.com.ar/",
+   "activa": false,
+   "motivo_inactiva": "El sitio oficial devuelve 404; player vigente no confirmado."
+  },
+  {
+   "id": "am-750",
+   "nombre": "AM 750",
+   "frecuencia": "AM 750",
+   "localidad": "Buenos Aires",
+   "ambito": "nacional",
+   "sitio": "https://750.am/",
+   "activa": false,
+   "motivo_inactiva": "Sin stream ni embed oficial verificable en su sitio."
+  },
+  {
+   "id": "cadena-3",
+   "nombre": "Cadena 3",
+   "frecuencia": "AM 700",
+   "localidad": "Córdoba",
+   "ambito": "nacional",
+   "sitio": "https://www.cadena3.com/",
+   "activa": false,
+   "motivo_inactiva": "Sin stream ni canal de YouTube en vivo oficial verificable."
+  }
+ ]
+}

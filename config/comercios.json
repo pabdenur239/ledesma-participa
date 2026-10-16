@@ -1,0 +1,28 @@
+{
+  "_doc": "Guía Comercial: una ficha (mini página) por comercio en /guia/<id>/. Para sumar un comercio, agregar un objeto a 'comercios' (sin tocar código). Campos opcionales: se muestran solo si tienen valor. 'imagenes' y 'logo': nombres de archivo dentro de 'directorio_imagenes' o URLs https. 'whatsapp' solo dígitos con código de área (se antepone 54 9). 'lat'/'lng' habilitan el enlace de mapa. 'activo': false oculta la ficha. 'destacado' y 'plan' quedan reservados para el producto publicitario futuro.",
+  "directorio_imagenes": "publicidad/entrada",
+  "comercios": [
+    {
+      "id": "dosis-jeans",
+      "activo": true,
+      "nombre": "DOSIS Jeans",
+      "rubro": "Indumentaria y calzado",
+      "localidad": "Libertador General San Martín",
+      "direccion": "Tucumán 314",
+      "descripcion": "Jeans, indumentaria y calzado en Libertador General San Martín.",
+      "whatsapp": "3886576721",
+      "telefono": "",
+      "horarios": "Lunes a sábado 09:00-13:00 y 18:00-22:00",
+      "instagram": "https://www.instagram.com/dosis.jeans",
+      "facebook": "",
+      "sitio_web": "",
+      "logo": "",
+      "imagenes": ["dosis_01.jpg", "dosis_02.jpg", "dosis_03.jpg"],
+      "promociones": ["50% de descuento en zapatillas seleccionadas. Zapatillas desde $25.000. Financiación de hasta 6 cuotas."],
+      "lat": null,
+      "lng": null,
+      "destacado": false,
+      "plan": "gratuito"
+    }
+  ]
+}

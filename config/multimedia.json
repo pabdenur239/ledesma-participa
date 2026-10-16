@@ -1,0 +1,12 @@
+{
+  "_doc": "Multimedia. Para agregar contenido, sumar un objeto a 'items' (sin tocar código). tipo: video | entrevista | produccion | reel. Fuente: 'youtube' (ID de video) o 'archivo' (ruta relativa a docs/, p. ej. reels/x.mp4).",
+  "secciones": [
+    {"id": "video", "etiqueta": "Videos"},
+    {"id": "entrevista", "etiqueta": "Entrevistas"},
+    {"id": "produccion", "etiqueta": "Producciones propias"},
+    {"id": "reel", "etiqueta": "Reels y clips"}
+  ],
+  "items": [
+    {"tipo": "reel", "titulo": "Ledesma Participa — reel", "archivo": "reels/sCks1eDmSmfvRbKQO0ISD3T0iovIL7V4.mp4"}
+  ]
+}

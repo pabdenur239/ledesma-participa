@@ -102,11 +102,22 @@ SECCIONES_NAV = (
 )
 
 
+# Navegación principal simplificada: las secciones territoriales (Libertador,
+# Ledesma, Jujuy, Nacionales…) se eligen con el filtro geográfico de la
+# portada; sus URLs /categoria/<slug>/ siguen existiendo.
+NAV_PRINCIPAL = (
+    ("radio", "Radio en vivo", "radio/"),
+    ("tv", "TV en vivo", "tv/"),
+    ("multimedia", "Multimedia", "multimedia/"),
+    ("guia", "Guía Comercial", "guia/"),
+)
+
+
 def encabezado_html(*, ruta_raiz: str, seccion_activa: Optional[str] = None) -> str:
     items_nav = []
-    for slug, etiqueta in SECCIONES_NAV:
+    for slug, etiqueta, ruta in NAV_PRINCIPAL:
         activa = ' class="activa"' if slug == seccion_activa else ""
-        items_nav.append(f'<a href="{ruta_raiz}categoria/{slug}/"{activa}>{etiqueta}</a>')
+        items_nav.append(f'<a href="{ruta_raiz}{ruta}"{activa}>{etiqueta}</a>')
     nav = "\n      ".join(items_nav)
     return f"""<header class="cabecera">
   <div class="ancho cabecera-fila">
@@ -129,7 +140,7 @@ def tarjeta_noticia(n: dict, *, ruta_raiz: str, destacada: bool = False) -> str:
         media = f'<img src="{escapar(n["imagen_web"])}" alt="" loading="lazy" width="600" height="600">'
     else:
         media = '<div class="tarjeta-sin-imagen" aria-hidden="true">LP</div>'
-    return f"""<article class="{clase}">
+    return f"""<article class="{clase}" data-geo="{escapar(n.get('geo', ''))}" data-tema="{escapar(n.get('tema', ''))}">
   <a class="tarjeta-enlace" href="{ruta_raiz}{n['url_relativa']}">
     <div class="tarjeta-media">{media}<span class="etiqueta-seccion">{escapar(n['seccion_etiqueta'])}</span></div>
     <div class="tarjeta-cuerpo">
@@ -146,11 +157,50 @@ def grilla_noticias(noticias: Iterable[dict], *, ruta_raiz: str) -> str:
     return "\n".join(tarjeta_noticia(n, ruta_raiz=ruta_raiz) for n in noticias)
 
 
-def pagina_index(*, destacadas: List[dict], ultimas: List[dict], ruta_raiz: str, config_sitio: dict, url_base: str) -> str:
-    cuerpo_destacadas = "\n".join(
-        tarjeta_noticia(n, ruta_raiz=ruta_raiz, destacada=(i == 0)) for i, n in enumerate(destacadas)
+ACCESOS_PRINCIPALES = (
+    ("radio/", "📻", "Radio en vivo", "Escuchá las radios"),
+    ("tv/", "📺", "TV en vivo", "Señales oficiales"),
+    ("multimedia/", "🎬", "Multimedia", "Videos y entrevistas"),
+    ("guia/", "🛍️", "Guía Comercial", "Comercios de la región"),
+)
+
+
+def _chips(items: list, atributo: str, etiqueta_todos: str) -> str:
+    chips = [f'<button type="button" class="chip activo" data-{atributo}="">{etiqueta_todos}</button>']
+    chips += [f'<button type="button" class="chip" data-{atributo}="{escapar(i["id"])}">{escapar(i["etiqueta"])}</button>' for i in items]
+    return "".join(chips)
+
+
+def pagina_index(
+    *, destacadas: List[dict], ultimas: List[dict], ruta_raiz: str, config_sitio: dict, url_base: str, navegacion: Optional[dict] = None
+) -> str:
+    navegacion = navegacion or {}
+    # Portada: una sola lista (destacadas primero) que los filtros geográfico
+    # y temático acotan en el cliente.
+    todas = list(destacadas) + list(ultimas)
+    ids_destacadas = {n["id"] for n in destacadas}
+    cuerpo_noticias = "\n".join(
+        tarjeta_noticia(n, ruta_raiz=ruta_raiz, destacada=(i == 0 and n["id"] in ids_destacadas)) for i, n in enumerate(todas)
     )
-    cuerpo_ultimas = grilla_noticias(ultimas, ruta_raiz=ruta_raiz)
+    accesos = "".join(
+        f'<a class="acceso" href="{ruta_raiz}{ruta}"><span class="acceso-icono" aria-hidden="true">{icono}</span>'
+        f'<span class="acceso-texto"><strong>{titulo}</strong><small>{detalle}</small></span></a>'
+        for ruta, icono, titulo, detalle in ACCESOS_PRINCIPALES
+    )
+    # Estructura lista para personalizar por ciudad del usuario: hoy siempre
+    # se usa `perfil_activo` (sin geolocalización ni permisos).
+    perfil = (navegacion.get("perfiles") or {}).get(navegacion.get("perfil_activo"), {})
+    geografia_total = navegacion.get("geografia", [])
+    niveles = perfil.get("niveles") or [g["id"] for g in geografia_total]
+    geografia = [g for nivel in niveles for g in geografia_total if g["id"] == nivel]
+    filtros = ""
+    if geografia:
+        filtros += f'<div class="filtro" role="group" aria-label="Lugar" data-filtro="geo">{_chips(geografia, "geo", "Todo")}</div>'
+    if navegacion.get("temas"):
+        filtros += (
+            f'<div class="filtro filtro-tema" role="group" aria-label="Tema" data-filtro="tema">'
+            f'{_chips(navegacion["temas"], "tema", "Todos los temas")}</div>'
+        )
     partes = [
         cabecera_html(
             titulo_pagina="Ledesma Participa — Noticias de Libertador Gral. San Martín y Ledesma",
@@ -160,16 +210,17 @@ def pagina_index(*, destacadas: List[dict], ultimas: List[dict], ruta_raiz: str,
         ),
         encabezado_html(ruta_raiz=ruta_raiz),
         '<main class="ancho">',
+        '<section class="seccion-ultimas"><h1 class="titulo-seccion">Últimas noticias</h1>',
+        f'<div class="filtros">{filtros}</div>',
+        f'<nav class="accesos" aria-label="Accesos principales">{accesos}</nav>',
     ]
-    if destacadas:
-        partes.append('<section class="seccion-destacadas"><h1 class="titulo-seccion">Destacadas</h1>')
-        partes.append(f'<div class="grilla grilla-destacadas">{cuerpo_destacadas}</div></section>')
-    partes.append('<section class="seccion-ultimas"><h2 class="titulo-seccion">Últimas noticias</h2>')
-    if ultimas:
-        partes.append(f'<div class="grilla">{cuerpo_ultimas}</div>')
+    if todas:
+        partes.append(f'<div class="grilla" id="grilla-noticias">{cuerpo_noticias}</div>')
+        partes.append('<p id="filtro-vacio" class="vacio" hidden>No hay noticias con ese filtro todavía. Probá con otra opción.</p>')
     else:
         partes.append('<p class="vacio">Todavía no hay noticias publicadas.</p>')
     partes.append("</section></main>")
+    partes.append(f'<script src="{ruta_raiz}assets/medios.js" data-base="{ruta_raiz}"></script>')
     partes.append(cierre_html(ruta_raiz=ruta_raiz, config_sitio=config_sitio))
     return "\n".join(partes)
 

@@ -21,7 +21,7 @@ from ..entretenimiento import es_entretenimiento_o_curiosidad
 from ..meta.imagen import COLOR_FONDO, COLOR_MARCA, COLOR_MARCA_TEXTO, COLOR_FOOTER_TEXTO
 from ..motor_editorial import ZONA_JUJUY
 from ..scoring_editorial import urgente_confirmado
-from . import plantillas
+from . import plantillas, secciones
 
 RAIZ_PROYECTO = Path(__file__).resolve().parent.parent.parent
 CONFIG_SITIO_PATH_DEFAULT = RAIZ_PROYECTO / "config" / "sitio.json"
@@ -177,6 +177,39 @@ def _resolver_imagen(ruta_original: Optional[str], salida_dir: Path, base_url: s
     return relativa, base_url.rstrip("/") + "/" + relativa
 
 
+GEO_POR_TERRITORIO = {"local": "libertador", "departamental": "ledesma", "provincial": "jujuy", "nacional": "argentina"}
+
+
+def _cargar_navegacion() -> dict:
+    try:
+        with open(RAIZ_PROYECTO / "config" / "navegacion.json", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _geo_de(noticia: dict) -> str:
+    if noticia.get("categoria_tematica") == "internacional":
+        return "internacional"
+    return GEO_POR_TERRITORIO.get(noticia.get("territorio"), "")
+
+
+def _tema_de(noticia: dict, titulo: str, texto: str) -> str:
+    """Tema para el filtro de la portada: reutiliza `categoria_tematica` si
+    coincide con un tema del sitio; si no, lo infiere por palabras clave
+    (solo presentación, no interviene en la selección editorial)."""
+    temas = _cargar_navegacion().get("temas", [])
+    ids = {t["id"] for t in temas}
+    categoria = _sin_acentos(noticia.get("categoria_tematica") or "")
+    if categoria in ids:
+        return categoria
+    contenido = _sin_acentos(f"{titulo} {texto[:600]}")
+    for t in temas:
+        if any(p in contenido for p in t.get("palabras", [])):
+            return t["id"]
+    return "sociedad" if "sociedad" in ids else ""
+
+
 def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
     titulo, texto = _titulo_y_texto(noticia)
     seccion_slug, seccion_etiqueta = seccion_de(noticia, titulo, texto)
@@ -216,6 +249,9 @@ def _enriquecer(noticia: dict, salida_dir: Path, base_url: str) -> dict:
         "urgente": urgente_confirmado(noticia),
         "categoria_tematica": noticia.get("categoria_tematica"),
         "localidad": noticia.get("localidad"),
+        # Solo para los filtros de la portada (config/navegacion.json).
+        "geo": _geo_de(noticia),
+        "tema": _tema_de(noticia, titulo, texto),
     }
 
 
@@ -461,7 +497,8 @@ def generar_sitio(
     _escribir(
         salida_dir / "index.html",
         plantillas.pagina_index(
-            destacadas=destacadas, ultimas=ultimas, ruta_raiz="", config_sitio=config_sitio, url_base=base_url
+            destacadas=destacadas, ultimas=ultimas, ruta_raiz="", config_sitio=config_sitio, url_base=base_url,
+            navegacion=_cargar_navegacion(),
         ),
     )
 
@@ -524,6 +561,32 @@ def generar_sitio(
         plantillas.pagina_contacto(ruta_raiz="../", config_sitio=config_sitio, url_base=base_url + "contacto/"),
     )
     urls_sitemap.append(base_url + "contacto/")
+
+    # Secciones de servicio: Radio, TV, Multimedia y Guía Comercial.
+    for ruta, funcion in (("radio", secciones.pagina_radio), ("tv", secciones.pagina_tv), ("multimedia", secciones.pagina_multimedia)):
+        _escribir(
+            salida_dir / ruta / "index.html",
+            funcion(ruta_raiz="../", config_sitio=config_sitio, url_base=f"{base_url}{ruta}/"),
+        )
+        urls_sitemap.append(f"{base_url}{ruta}/")
+    comercios = secciones.comercios_activos()
+    imagenes_comercios = {c["id"]: secciones.copiar_imagenes_comercio(salida_dir, c) for c in comercios}
+    _escribir(
+        salida_dir / "guia" / "index.html",
+        secciones.pagina_guia(
+            comercios=comercios, imagenes=imagenes_comercios, ruta_raiz="../", config_sitio=config_sitio, url_base=f"{base_url}guia/"
+        ),
+    )
+    urls_sitemap.append(f"{base_url}guia/")
+    for c in comercios:
+        slug_c = secciones._slug_seguro(c["id"])
+        _escribir(
+            salida_dir / "guia" / slug_c / "index.html",
+            secciones.pagina_comercio(
+                c=c, imgs=imagenes_comercios[c["id"]], ruta_raiz="../../", config_sitio=config_sitio, url_base=f"{base_url}guia/{slug_c}/"
+            ),
+        )
+        urls_sitemap.append(f"{base_url}guia/{slug_c}/")
 
     # API JSON de solo lectura (app móvil).
     _escribir_api_json(salida_dir, noticias, base_url)

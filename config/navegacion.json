@@ -1,0 +1,26 @@
+{
+  "_doc": "Filtros de la portada. 'geografia' define los niveles (id = valor de data-geo de cada noticia); 'perfiles' prepara la personalización futura por ciudad del usuario (NO activa: hoy siempre se usa 'perfil_activo'). 'temas' reutiliza categoria_tematica cuando existe; si no, se infiere por palabras clave solo para mostrar (no afecta la lógica editorial).",
+  "perfil_activo": "libertador",
+  "geografia": [
+    {"id": "libertador", "etiqueta": "Libertador"},
+    {"id": "ledesma", "etiqueta": "Dpto. Ledesma"},
+    {"id": "jujuy", "etiqueta": "Jujuy"},
+    {"id": "argentina", "etiqueta": "Argentina"},
+    {"id": "internacional", "etiqueta": "Internacional"}
+  ],
+  "perfiles": {
+    "libertador": {"etiqueta": "Libertador General San Martín", "niveles": ["libertador", "ledesma", "jujuy", "argentina", "internacional"]}
+  },
+  "temas": [
+    {"id": "policiales", "etiqueta": "Policiales", "palabras": ["policia", "policial", "detenid", "robo", "choque", "accidente", "incendio", "homicidio", "delito"]},
+    {"id": "politica", "etiqueta": "Política", "palabras": ["gobernador", "intendente", "concejal", "legislat", "diputad", "senador", "eleccion", "gobierno", "municipalidad"]},
+    {"id": "economia", "etiqueta": "Economía", "palabras": ["dolar", "inflacion", "precio", "salario", "empleo", "economia", "impuesto", "tarifa", "azucar", "zafra"]},
+    {"id": "salud", "etiqueta": "Salud", "palabras": ["salud", "hospital", "vacun", "dengue", "sanitari", "medic"]},
+    {"id": "cultura", "etiqueta": "Cultura", "palabras": ["cultura", "museo", "festival", "teatro", "muestra", "artesan", "biblioteca"]},
+    {"id": "deportes", "etiqueta": "Deportes", "palabras": ["futbol", "deporte", "torneo", "campeonato", "partido", "club", "atleta"]},
+    {"id": "espectaculos", "etiqueta": "Espectáculos", "palabras": ["espectaculo", "cantante", "actor", "actriz", "recital", "show", "famos"]},
+    {"id": "servicios", "etiqueta": "Servicios", "palabras": ["corte de", "cronograma", "tramite", "horario", "vencimiento", "servicio", "transito", "clima", "alerta"]},
+    {"id": "gastronomia", "etiqueta": "Gastronomía", "palabras": ["gastronom", "receta", "restaurante", "comida", "cocina"]},
+    {"id": "sociedad", "etiqueta": "Sociedad", "palabras": []}
+  ]
+}

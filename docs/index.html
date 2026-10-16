@@ -25,11 +25,10 @@
     <input type="checkbox" id="menu-toggle" class="menu-toggle">
     <label for="menu-toggle" class="menu-boton" aria-label="Abrir menú">☰</label>
     <nav class="nav">
-      <a href="categoria/libertador/">Libertador</a>
-      <a href="categoria/ledesma/">Ledesma</a>
-      <a href="categoria/jujuy/">Jujuy</a>
-      <a href="categoria/nacionales/">Nacionales</a>
-      <a href="categoria/entretenimiento/">Entretenimiento</a>
+      <a href="radio/">Radio en vivo</a>
+      <a href="tv/">TV en vivo</a>
+      <a href="multimedia/">Multimedia</a>
+      <a href="guia/">Guía Comercial</a>
       <a href="buscar/">Buscar</a>
       <a href="contacto/">Contacto</a>
     </nav>
@@ -37,8 +36,10 @@
 </header>
 
 <main class="ancho">
-<section class="seccion-destacadas"><h1 class="titulo-seccion">Destacadas</h1>
-<div class="grilla grilla-destacadas"><article class="tarjeta tarjeta-destacada">
+<section class="seccion-ultimas"><h1 class="titulo-seccion">Últimas noticias</h1>
+<div class="filtros"><div class="filtro" role="group" aria-label="Lugar" data-filtro="geo"><button type="button" class="chip activo" data-geo="">Todo</button><button type="button" class="chip" data-geo="libertador">Libertador</button><button type="button" class="chip" data-geo="ledesma">Dpto. Ledesma</button><button type="button" class="chip" data-geo="jujuy">Jujuy</button><button type="button" class="chip" data-geo="argentina">Argentina</button><button type="button" class="chip" data-geo="internacional">Internacional</button></div><div class="filtro filtro-tema" role="group" aria-label="Tema" data-filtro="tema"><button type="button" class="chip activo" data-tema="">Todos los temas</button><button type="button" class="chip" data-tema="policiales">Policiales</button><button type="button" class="chip" data-tema="politica">Política</button><button type="button" class="chip" data-tema="economia">Economía</button><button type="button" class="chip" data-tema="salud">Salud</button><button type="button" class="chip" data-tema="cultura">Cultura</button><button type="button" class="chip" data-tema="deportes">Deportes</button><button type="button" class="chip" data-tema="espectaculos">Espectáculos</button><button type="button" class="chip" data-tema="servicios">Servicios</button><button type="button" class="chip" data-tema="gastronomia">Gastronomía</button><button type="button" class="chip" data-tema="sociedad">Sociedad</button></div></div>
+<nav class="accesos" aria-label="Accesos principales"><a class="acceso" href="radio/"><span class="acceso-icono" aria-hidden="true">📻</span><span class="acceso-texto"><strong>Radio en vivo</strong><small>Escuchá las radios</small></span></a><a class="acceso" href="tv/"><span class="acceso-icono" aria-hidden="true">📺</span><span class="acceso-texto"><strong>TV en vivo</strong><small>Señales oficiales</small></span></a><a class="acceso" href="multimedia/"><span class="acceso-icono" aria-hidden="true">🎬</span><span class="acceso-texto"><strong>Multimedia</strong><small>Videos y entrevistas</small></span></a><a class="acceso" href="guia/"><span class="acceso-icono" aria-hidden="true">🛍️</span><span class="acceso-texto"><strong>Guía Comercial</strong><small>Comercios de la región</small></span></a></nav>
+<div class="grilla" id="grilla-noticias"><article class="tarjeta tarjeta-destacada" data-geo="libertador" data-tema="deportes">
   <a class="tarjeta-enlace" href="noticias/5720-partidos-de-hoy-jueves-20-de-agosto-de-2026-programacion-canales-tv-y/">
     <div class="tarjeta-media"><img src="https://www.infobae.com/resizer/v2/V553JKBPFRHLPBQUM3RYUAZQ5Y.jpg?auth=d15104f026bb7dbb05e7fa38a6d9d54430d622972aed1ad0d22eddf9750b18da&amp;smart=true&amp;width=1201&amp;height=629" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Libertador Gral. San Martín</span></div>
     <div class="tarjeta-cuerpo">
@@ -49,7 +50,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="libertador" data-tema="servicios">
   <a class="tarjeta-enlace" href="noticias/5471-corinthians-vs-rosario-central-por-la-copa-libertadores-2026-donde-ver/">
     <div class="tarjeta-media"><img src="https://statics.somosjujuy.com.ar/2026/08/6a8625af182c4.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Libertador Gral. San Martín</span></div>
     <div class="tarjeta-cuerpo">
@@ -60,7 +61,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="libertador" data-tema="espectaculos">
   <a class="tarjeta-enlace" href="noticias/5276-flamengo-le-gano-a-cruzeiro-2-1-y-lo-elimino-de-la-copa-libertadores-c/">
     <div class="tarjeta-media"><img src="https://resizer.glanacion.com/resizer/v2/WHMQ3LAXCBENNGD35Q5DW6GKHM.JPG?auth=50c347527186c41d6ff789d272537d56ad9445002c28c11a0867b70535789794&amp;smart=true&amp;width=8256&amp;height=5504" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Libertador Gral. San Martín</span></div>
     <div class="tarjeta-cuerpo">
@@ -70,9 +71,8 @@
     </div>
   </a>
 </article>
-</div></section>
-<section class="seccion-ultimas"><h2 class="titulo-seccion">Últimas noticias</h2>
-<div class="grilla"><article class="tarjeta">
+
+<article class="tarjeta" data-geo="ledesma" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/7208-ofrecimiento-de-cargos-docentes-de-educacion-superior/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/05/sala-superior.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Departamento Ledesma</span></div>
     <div class="tarjeta-cuerpo">
@@ -83,7 +83,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="cultura">
   <a class="tarjeta-enlace" href="noticias/7206-bienvenida-primavera-jujuy-dio-inicio-a-la-edicion-75-de-la-fiesta-nac/">
     <div class="tarjeta-media"><img src="https://media.todojujuy.com/p/2b64059501bf9a038d706c769758dfa8/adjuntos/227/imagenes/003/483/0003483916/1200x675/smart/fne-2026-desfile-bienvenida-primavera.png" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -94,7 +94,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="cultura">
   <a class="tarjeta-enlace" href="noticias/6941-gliptodonte-del-xibi-xibi-presentan-las-esculturas-de-un-gigante-magni/">
     <div class="tarjeta-media"><img src="https://jujuygrafico.com.ar/wp-content/uploads/2026/09/Gliptodonte-del-Xibi-Xibi-presentan-las-esculturas-de-un-gigante-de-63-millones-de-anos-16.jpg?v=1788733404" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -105,7 +105,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="" data-tema="servicios">
   <a class="tarjeta-enlace" href="noticias/6173-conoce-ledesma-participa/">
     <div class="tarjeta-media"><img src="assets/img/placa_803d3d59d1c0ed94.png" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Otras noticias</span></div>
     <div class="tarjeta-cuerpo">
@@ -116,7 +116,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/5545-familias-de-localidades-punenas-recibiran-unidades-alimentarias/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2025/11/comer-en-casa1.webp" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -127,7 +127,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/5512-jujuy-hombre-fue-victima-de-estafa-virtual-y-perdio-mas-de-5-millones/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2024/09/hmbre-estafado-virtual.jpeg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -138,7 +138,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="salud">
   <a class="tarjeta-enlace" href="noticias/5473-descacharrado-hoy-en-jujuy/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/04/descacharrado.webp" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -149,7 +149,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="servicios">
   <a class="tarjeta-enlace" href="noticias/5472-hoy-en-lozano-la-oficina-movil-para-personas-con-discapacidad/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/oficina-movil-2.webp" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -160,7 +160,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="policiales">
   <a class="tarjeta-enlace" href="noticias/5513-jujuy-una-de-las-heridas-del-siniestro-en-la-cuesta-de-lipan-sufrio-mu/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/FB_IMG_1786937839097.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -171,7 +171,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/5354-de-la-ropa-a-los-fideos-cuales-fueron-los-productos-importados-que-gan/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2024/11/Super-inflacion-2-1.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -182,7 +182,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="ledesma" data-tema="politica">
   <a class="tarjeta-enlace" href="noticias/5235-valle-grande-ya-tiene-a-su-representante/">
     <div class="tarjeta-media"><img src="https://uscdn.eltribunodejujuy.com/082026/1787198321463.webp?cw=344&amp;ch=192&amp;extw=jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Departamento Ledesma</span></div>
     <div class="tarjeta-cuerpo">
@@ -193,7 +193,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="libertador" data-tema="deportes">
   <a class="tarjeta-enlace" href="noticias/5197-flamengo-se-impone-por-2-1-a-cruzeiro-en-maracana-y-avanza-a-cuartos-d/">
     <div class="tarjeta-media"><img src="assets/img/placa_e227515c18312364.png" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Libertador Gral. San Martín</span></div>
     <div class="tarjeta-cuerpo">
@@ -204,7 +204,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="libertador" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/5181-agenda-de-tv-y-streaming-del-jueves-central-en-la-copa-libertadores-lo/">
     <div class="tarjeta-media"><img src="https://resizer.glanacion.com/resizer/v2/TQHSO4K5FJA23NOQ5G7VHQVKWU.jpg?auth=9435da655c5d268fabd2d679c0e9b50aae3c28e3c5554675672d9027bcb9a272&amp;smart=true&amp;width=2000&amp;height=1334" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Libertador Gral. San Martín</span></div>
     <div class="tarjeta-cuerpo">
@@ -215,7 +215,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="cultura">
   <a class="tarjeta-enlace" href="noticias/5023-muestras-talleres-y-ceremonias-la-agenda-de-los-centros-culturales-has/">
     <div class="tarjeta-media"><img src="https://statics.somosjujuy.com.ar/2026/08/6a86443b151fd.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -226,7 +226,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/5542-fallo-historico-por-acoso-escolar-en-jujuy-la-justicia-dicto-medidas-d/">
     <div class="tarjeta-media"><img src="https://media.todojujuy.com/p/1fe6c19ed26a22d60e8c24e38a279671/adjuntos/227/imagenes/003/480/0003480206/1200x675/smart/acoso-escolar-foto-ilustrativa.png" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -237,7 +237,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="economia">
   <a class="tarjeta-enlace" href="noticias/4878-jujuy-consolida-politicas-de-prevencion-y-erradicacion-de-la-violencia/">
     <div class="tarjeta-media"><img src="assets/img/placa_0be3ba90dd64c6d5.png" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -248,7 +248,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="salud">
   <a class="tarjeta-enlace" href="noticias/4795-trece-espacios-de-preparacion-integral-para-el-nacimiento-acompanan-a/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/1-33.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -259,7 +259,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/5543-fne-2026-alumnos-de-la-eet-1-de-palpala-llevan-el-voto-electronico-a-d/">
     <div class="tarjeta-media"><img src="https://media.todojujuy.com/p/130e1858fea7aa66272efe1e381cfc30/adjuntos/227/imagenes/003/480/0003480194/1200x675/smart/voto-electronico-alumnos-eet-1-palpala.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -270,7 +270,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/4633-el-sindrome-uremico-hemolitico-se-puede-prevenir-antes-de-sentarse-a-l/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/1-31.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -281,7 +281,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="deportes">
   <a class="tarjeta-enlace" href="noticias/4556-fan-fest-jujuy-prepara-una-jornada-especial-para-vivir-el-partido-de-l/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/redes-pumas-14.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -292,7 +292,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="politica">
   <a class="tarjeta-enlace" href="noticias/4520-ordenamiento-territorial-concreto-entregas-de-regularizacion-dominial/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/ordenamiento-territorial-y-habitat-santa-catalina-01.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -303,7 +303,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="sociedad">
   <a class="tarjeta-enlace" href="noticias/4709-paso-de-jama-cerrado-y-camioneros-varados-en-jujuy-tenemos-provisiones/">
     <div class="tarjeta-media"><img src="https://media.todojujuy.com/p/fc332d0057f99d0e1a638b6eda352b3d/adjuntos/227/imagenes/003/480/0003480130/1200x675/smart/camiones-varados-palpala.png" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -314,7 +314,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="jujuy" data-tema="servicios">
   <a class="tarjeta-enlace" href="noticias/4442-ofrecimiento-de-cargos-docentes-de-la-modalidad-de-educacion-en-contex/">
     <div class="tarjeta-media"><img src="https://www.jujuyaldia.com.ar/wp-content/uploads/2026/08/FB_IMG_1787099567599.jpg" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Jujuy</span></div>
     <div class="tarjeta-cuerpo">
@@ -325,7 +325,7 @@
   </a>
 </article>
 
-<article class="tarjeta">
+<article class="tarjeta" data-geo="libertador" data-tema="policiales">
   <a class="tarjeta-enlace" href="noticias/4322-suspenden-las-licencias-de-policias-uruguayos-para-noviembre-por-llega/">
     <div class="tarjeta-media"><img src="https://www.infobae.com/resizer/v2/GILUOFBWIVDNXL7EVE7FZ6VTQA.jpg?auth=47eb74c5599839dcc225f5ff3308a52599495baf524e276b83cdd071482058c8&amp;smart=true&amp;width=1920&amp;height=1080" alt="" loading="lazy" width="600" height="600"><span class="etiqueta-seccion">Libertador Gral. San Martín</span></div>
     <div class="tarjeta-cuerpo">
@@ -336,7 +336,9 @@
   </a>
 </article>
 </div>
+<p id="filtro-vacio" class="vacio" hidden>No hay noticias con ese filtro todavía. Probá con otra opción.</p>
 </section></main>
+<script src="assets/medios.js" data-base=""></script>
 
 <footer class="pie">
   <div class="ancho">

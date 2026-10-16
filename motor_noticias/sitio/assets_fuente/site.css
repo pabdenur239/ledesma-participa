@@ -227,3 +227,73 @@ img { max-width: 100%; display: block; }
 .pie-enlaces a:hover { color: var(--marca-naranja); }
 
 .pie-nota { color: #8d8267; margin-top: 12px; }
+
+
+/* Portada: filtros y accesos principales */
+.filtros { margin: 0 0 14px; }
+.filtro { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.chip {
+  flex: 0 0 auto; border: 1px solid var(--borde); background: #fff; color: var(--texto);
+  padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 0.9rem; cursor: pointer; min-height: 40px;
+}
+.chip:hover { border-color: var(--marca-naranja); }
+.chip.activo { background: var(--marca-fondo); color: var(--marca-oro); border-color: var(--marca-fondo); font-weight: 700; }
+.chip:focus-visible, .acceso:focus-visible, .boton-radio:focus-visible, .boton-tv:focus-visible, .boton-contacto:focus-visible { outline: 3px solid var(--marca-naranja); outline-offset: 2px; }
+.filtro-tema .chip { font-size: 0.85rem; padding: 6px 12px; min-height: 36px; }
+.accesos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 6px 0 22px; }
+.acceso {
+  display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 10px;
+  background: var(--marca-fondo); color: #f2e6c9; border: 1px solid #352c1a; min-height: 56px;
+}
+.acceso:hover { border-color: var(--marca-oro); }
+.acceso-icono { font-size: 1.5rem; }
+.acceso-texto { display: flex; flex-direction: column; line-height: 1.2; }
+.acceso-texto strong { color: var(--marca-oro); font-size: 0.95rem; }
+.acceso-texto small { color: #cfc4a8; font-size: 0.75rem; }
+@media (max-width: 720px) {
+  .accesos { grid-template-columns: repeat(2, 1fr); }
+  .acceso-texto small { display: none; }
+}
+[hidden] { display: none !important; }
+
+/* Secciones de servicio (Radio, TV, Multimedia, Guía) */
+.bajada { color: var(--texto-suave); margin: 0 0 16px; }
+.subtitulo { font-size: 1.1rem; margin: 26px 0 10px; border-left: 4px solid var(--marca-naranja); padding-left: 10px; }
+.atajos { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.atajos a { background: #fff; border: 1px solid var(--borde); border-radius: 999px; padding: 6px 14px; font-size: 0.9rem; }
+.lista-radios { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.radio { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; padding: 12px 14px; }
+.radio h3 { margin: 0; font-size: 1rem; }
+.radio p { margin: 2px 0 0; font-size: 0.8rem; color: var(--texto-suave); }
+.radio.sonando { border-color: var(--marca-naranja); box-shadow: 0 0 0 2px rgba(232, 99, 28, 0.25); }
+.boton-radio, .boton-tv, .boton-contacto {
+  background: var(--marca-naranja); color: #fff; border: 0; border-radius: 8px; padding: 10px 14px;
+  font: inherit; font-weight: 700; cursor: pointer; min-height: 44px; display: inline-block;
+}
+.boton-tv { background: #fff; color: var(--texto); border: 1px solid var(--borde); }
+.boton-tv.activo { background: var(--marca-fondo); color: var(--marca-oro); }
+.reproductor-radio, .reproductor-tv { position: sticky; top: 0; z-index: 5; background: var(--marca-fondo); color: #f2e6c9; border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+.reproductor-radio audio { width: 100%; }
+.radio-sonando { margin: 0 0 8px; font-weight: 700; color: var(--marca-oro); }
+.lista-tv { display: flex; flex-wrap: wrap; gap: 8px; }
+.tv-marco, .video-16-9 { position: relative; aspect-ratio: 16 / 9; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
+.tv-marco iframe, .video-16-9 iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+#radio-youtube iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; margin-top: 8px; }
+.grilla-multimedia { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.multimedia-item video { width: 100%; border-radius: 8px; background: #000; max-height: 480px; }
+.multimedia-item h3 { font-size: 1rem; margin: 8px 0 0; }
+
+/* Guía Comercial */
+.etiqueta-promo { position: absolute; left: 10px; top: 10px; background: var(--marca-naranja); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+.nota-guia { margin-top: 28px; color: var(--texto-suave); font-size: 0.9rem; }
+.nota-guia a { color: var(--marca-naranja); font-weight: 600; }
+.comercio-ficha { max-width: 760px; }
+.comercio-cab { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.comercio-cab .titulo-seccion { margin: 0; }
+.comercio-logo { width: 72px; height: 72px; object-fit: contain; border-radius: 10px; background: #fff; border: 1px solid var(--borde); }
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 18px 0; }
+.galeria img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 8px; }
+.promos { background: #fff7e8; border: 1px solid var(--marca-oro); border-radius: 10px; padding: 4px 16px 12px; margin: 18px 0; }
+.comercio-datos { list-style: none; padding: 0; margin: 18px 0; }
+.comercio-datos li { padding: 8px 0; border-bottom: 1px solid var(--borde); }
+.comercio-datos a { color: var(--marca-naranja); font-weight: 600; }

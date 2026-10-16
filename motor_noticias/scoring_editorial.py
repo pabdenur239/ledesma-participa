@@ -234,6 +234,14 @@ def evaluar_noticia(noticia: dict, ahora: Optional[datetime] = None, config: Opt
     componentes["actualidad"] = _actualidad(noticia.get("fecha_recoleccion"), ahora_utc)
     componentes = {k: min(v, MAXIMOS[k]) for k, v in componentes.items()}
 
+    # Clima rutinario (pronóstico, estado del tiempo): nunca es candidata. Solo es
+    # noticia el clima con alerta/impacto concreto en el título.
+    clima = config.get("clima_rutinario") or {}
+    clima_rutinario = bool(clima) and _menciona_alguno(titulo_norm, clima.get("terminos", ())) and not any(
+        s in en_titulo for s in clima.get("senales_que_lo_vuelven_noticia", ())
+    )
+    temas = _temas_de(en_titulo, titulo_norm, config)
+
     base = sum(componentes.values())
     bonus = config["bonus_territorial"].get(territorio, 0)
     clasificacion, motivo = _clasificar(noticia, territorio, base, componentes, fuertes, es_rutina, config)
@@ -243,6 +251,8 @@ def evaluar_noticia(noticia: dict, ahora: Optional[datetime] = None, config: Opt
         "territorio": territorio,
         "senales": senales_detectadas,
         "rutina": es_rutina and not fuertes,
+        "clima_rutinario": clima_rutinario,
+        "temas": temas,
         "tematica": tematica,
         "base": base,
         "bonus_territorial": bonus,
@@ -324,3 +334,97 @@ def urgente_confirmado(noticia: dict) -> bool:
 
 def es_urgente(noticia: dict, ahora: Optional[datetime] = None) -> bool:
     return evaluar_noticia(noticia, ahora)["clasificacion"] == CLASIFICACION_URGENTE
+
+
+# ---------------------------------------------------------------------------
+# Publicación inmediata NO urgente (16/10/2026) y repetición temática.
+#
+# URGENTE (rojo) sigue siendo la clasificación de `_clasificar`. La
+# publicación inmediata es un escalón menor: una noticia local/departamental
+# relevante, o una provincial/nacional/internacional muy importante, sale de
+# inmediato (sin esperar la franja) con la identidad visual normal, no roja.
+# ---------------------------------------------------------------------------
+
+
+def _temas_de(en_titulo: list, titulo_norm: str, config: dict) -> List[str]:
+    """Temas editoriales (corte, búsqueda de persona, bancario…) de una
+    noticia, por señales o términos del TÍTULO: sirven para penalizar la
+    repetición temática reciente."""
+    temas = []
+    for nombre, regla in (config.get("repeticion") or {}).get("temas", {}).items():
+        if any(s in en_titulo for s in regla.get("senales", ())) or _menciona_alguno(
+            titulo_norm, regla.get("terminos", ())
+        ):
+            temas.append(nombre)
+    return temas
+
+
+def es_inmediata(noticia: dict, evaluacion: dict, config: Optional[dict] = None) -> bool:
+    """¿Corresponde publicarla de inmediato (sin esperar franja)? Local/
+    departamental: base >= `inmediata_local`. Provincial/nacional/
+    internacional: base >= `inmediata_extraordinaria` con urgencia mínima
+    (y, si es provincial, con Jujuy en el título: mismo resguardo que el
+    URGENTE). El bonus territorial no cuenta. Rutina y clima rutinario no."""
+    config = config or cargar_config()
+    u = config["umbrales"]
+    if evaluacion.get("clima_rutinario") or evaluacion.get("rutina"):
+        return False
+    territorio = evaluacion["territorio"]
+    if territorio in TERRITORIOS_LOCALES:
+        return evaluacion["base"] >= u["inmediata_local"]
+    if territorio == "provincial" and not _titulo_en_jujuy(noticia):
+        return False
+    return (
+        evaluacion["base"] >= u["inmediata_extraordinaria"]
+        and evaluacion["urgencia"] >= u["urgencia_minima_inmediata_extraordinaria"]
+    )
+
+
+def _tokens_titulo(noticia: dict) -> set:
+    titulo = _sin_acentos(noticia.get("titulo_original") or noticia.get("titulo_preparado") or "")
+    return {t for t in re.findall(r"[a-z0-9]{4,}", titulo)}
+
+
+def penalizacion_repeticion(
+    noticia: dict, evaluacion: dict, recientes: List[dict], ahora: Optional[datetime] = None,
+    config: Optional[dict] = None, cache: Optional[dict] = None,
+) -> int:
+    """Puntos a restar al total por repetir tema (o ser casi igual a una nota
+    de la misma fuente) respecto de lo ya publicado/agendado dentro de
+    `ventana_horas`. Temporal y acotada (`tope_penalizacion`); una noticia
+    con base >= `exenta_desde_base` no se penaliza: relevancia alta nunca se
+    bloquea por repetición."""
+    config = config or cargar_config()
+    regla = config.get("repeticion") or {}
+    if not regla or evaluacion["base"] >= regla.get("exenta_desde_base", 80):
+        return 0
+    ahora_utc = (ahora or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    limite_horas = regla.get("ventana_horas", 8)
+    cache = cache if cache is not None else {}
+    mis_temas = set(evaluacion.get("temas") or ())
+    mis_tokens = _tokens_titulo(noticia)
+    coincidencias = 0
+    for reciente in recientes:
+        if reciente.get("id") == noticia.get("id"):
+            continue
+        try:
+            fecha = datetime.fromisoformat(reciente.get("fecha_recoleccion") or "")
+            if fecha.tzinfo is None:
+                fecha = fecha.replace(tzinfo=timezone.utc)
+            if (ahora_utc - fecha).total_seconds() / 3600 > limite_horas:
+                continue
+        except ValueError:
+            continue
+        rid = reciente.get("id")
+        if rid not in cache:
+            cache[rid] = set(evaluar_noticia(reciente, ahora_utc, config).get("temas") or ())
+        if mis_temas & cache[rid]:
+            coincidencias += 1
+            continue
+        misma_fuente = (reciente.get("nombre_fuente") or "") == (noticia.get("nombre_fuente") or "") != ""
+        if misma_fuente and mis_tokens:
+            otros = _tokens_titulo(reciente)
+            union = mis_tokens | otros
+            if union and len(mis_tokens & otros) / len(union) >= regla.get("similitud_titulo_misma_fuente", 0.5):
+                coincidencias += 1
+    return min(regla.get("tope_penalizacion", 20), coincidencias * regla.get("penalizacion_por_coincidencia", 10))

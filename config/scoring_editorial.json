@@ -6,7 +6,10 @@
     "urgencia_minima_local": 14,
     "urgencia_minima_extraordinaria": 16,
     "importante": 55,
-    "relevancia_minima_extraordinaria": 10
+    "relevancia_minima_extraordinaria": 10,
+    "inmediata_local": 68,
+    "inmediata_extraordinaria": 74,
+    "urgencia_minima_inmediata_extraordinaria": 14
   },
   "bonus_territorial": {
     "local": 12,
@@ -182,10 +185,10 @@
         "despisto",
         "atropell*"
       ],
-      "impacto": 8,
-      "urgencia": 12,
-      "magnitud": 9,
-      "interes": 7
+      "impacto": 10,
+      "urgencia": 13,
+      "magnitud": 10,
+      "interes": 8
     },
     "gravedad": {
       "terminos": [
@@ -427,6 +430,57 @@
       "urgencia": 2,
       "magnitud": 3,
       "interes": 5
+    },
+    "policial_relevante": {
+      "_nota": "Hechos policiales relevantes (aumento de peso 16/10/2026): no incluye 'robo'/'asalto' comunes, que siguen en 'seguridad'.",
+      "impacto": 15,
+      "urgencia": 13,
+      "magnitud": 13,
+      "interes": 9,
+      "terminos": [
+        "homicidio",
+        "asesinato",
+        "asesinaron",
+        "crimen",
+        "secuestro",
+        "balacera",
+        "tiroteo",
+        "apunalad*",
+        "narcotrafico",
+        "allanamiento",
+        "persecucion policial",
+        "operativo policial",
+        "rescataron",
+        "rescate",
+        "incautaron",
+        "estafa millonaria",
+        "fuga de presos"
+      ]
+    },
+    "temperatura_extrema": {
+      "_nota": "Clima que es noticia real (impacto concreto): no es fuerte, compite en franja/inmediata por puntaje.",
+      "impacto": 16,
+      "urgencia": 14,
+      "magnitud": 11,
+      "interes": 8,
+      "terminos": [
+        "ola de calor",
+        "temperaturas extremas",
+        "temperatura extrema",
+        "frio extremo",
+        "ola polar",
+        "helada",
+        "heladas",
+        "vientos intensos",
+        "viento zonda",
+        "riesgo de inundacion",
+        "inundacion",
+        "inundaciones",
+        "crecida",
+        "tormenta fuerte",
+        "tormentas fuertes",
+        "lluvias intensas"
+      ]
     }
   },
   "rutina": {
@@ -763,5 +817,77 @@
     ],
     "tope_urgencia": 6,
     "tope_impacto": 10
+  },
+  "clima_rutinario": {
+    "_descripcion": "Pronóstico/estado del tiempo de rutina: no se publica. Solo es noticia el clima con alerta o impacto (alerta_meteorologica, alerta_severa, temperatura_extrema en el título).",
+    "terminos": [
+      "pronostico",
+      "como estara el tiempo",
+      "como estara el clima",
+      "el tiempo en",
+      "clima hoy",
+      "clima y dolar",
+      "tiempo para hoy",
+      "temperatura maxima de",
+      "temperatura minima de",
+      "cielo despejado",
+      "cielo parcialmente nublado",
+      "dia soleado",
+      "jornada soleada"
+    ],
+    "senales_que_lo_vuelven_noticia": [
+      "alerta_meteorologica",
+      "alerta_severa",
+      "temperatura_extrema"
+    ]
+  },
+  "repeticion": {
+    "_descripcion": "Penalización temporal al puntaje total por repetir tema o fuente/título casi igual. Una noticia con base >= 'exenta_desde_base' no se penaliza (relevancia alta nunca se bloquea).",
+    "ventana_horas": 8,
+    "penalizacion_por_coincidencia": 10,
+    "tope_penalizacion": 20,
+    "exenta_desde_base": 72,
+    "similitud_titulo_misma_fuente": 0.5,
+    "temas": {
+      "corte": {
+        "senales": [
+          "corte_servicio",
+          "corte_ruta"
+        ]
+      },
+      "busqueda_persona": {
+        "senales": [
+          "busqueda_persona"
+        ]
+      },
+      "accidente": {
+        "senales": [
+          "accidente"
+        ]
+      },
+      "policial": {
+        "senales": [
+          "policial_relevante"
+        ]
+      },
+      "bancario": {
+        "terminos": [
+          "banco",
+          "bancos",
+          "bancario",
+          "bancaria",
+          "bancarios",
+          "cajero",
+          "cajeros"
+        ]
+      },
+      "clima": {
+        "senales": [
+          "alerta_meteorologica",
+          "alerta_severa",
+          "temperatura_extrema"
+        ]
+      }
+    }
   }
 }

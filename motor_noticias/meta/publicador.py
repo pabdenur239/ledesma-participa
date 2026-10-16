@@ -22,7 +22,7 @@ from ..dedupe import es_mismo_contenido, normalizar_url, palabras_clave, refiere
 from ..eventos import buscar_relacion, ventana_desde
 from ..informe_diario_datos import PREFIJO_URL as PREFIJO_URL_INFORME
 from ..models import Estado, OrigenIngreso, RevisionEstado
-from ..motor_editorial import HORA_INFORME_DIARIO, ZONA_JUJUY
+from ..motor_editorial import HORA_INFORME_DIARIO, ZONA_JUJUY, informe_diario_en_meta_habilitado
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
 from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
@@ -634,7 +634,7 @@ def publicar_franja(
     cliente_fb = cliente_fb or ClienteMetaGraphAPI()
     cliente_ig = cliente_ig or ClienteMetaGraphAPI()
 
-    if hora == HORA_INFORME_DIARIO:
+    if hora == HORA_INFORME_DIARIO and informe_diario_en_meta_habilitado():
         asegurar_informe_diario_en_franja(db, fecha, ahora_utc)
 
     item = db.obtener_agenda_item(fecha, hora)
@@ -709,9 +709,11 @@ def publicar_urgentes(
     resultados = []
     publicadas_nuevas = 0
     for item in db.listar_agenda(fecha):
-        if item["tipo"] != "urgente" or not item.get("noticia_id"):
+        if item["tipo"] not in ("urgente", "inmediata") or not item.get("noticia_id"):
             continue
-        clave = f"urgente-{item['id']}"
+        # "urgente-<id>" = identidad roja; "inmediata-<id>" = salida sin esperar
+        # franja con la identidad visual normal.
+        clave = f"{item['tipo']}-{item['id']}"
         ya_resuelta = _urgente_sin_trabajo_pendiente(db, fecha, clave)
         if not ya_resuelta and max_pendientes is not None and publicadas_nuevas >= max_pendientes:
             continue  # deja esta pendiente para la próxima corrida
@@ -757,8 +759,8 @@ def reintentar_publicaciones(
 
     resultados = []
     for fecha, clave in claves:
-        if clave.startswith("urgente-"):
-            item = db.obtener_agenda_item_por_id(int(clave[len("urgente-"):]))
+        if clave.startswith(("urgente-", "inmediata-")):
+            item = db.obtener_agenda_item_por_id(int(clave.split("-", 1)[1]))
             if not item or not item.get("noticia_id"):
                 resultados.append(ResultadoFranja(fecha, clave, None, "sin_contenido"))
                 continue

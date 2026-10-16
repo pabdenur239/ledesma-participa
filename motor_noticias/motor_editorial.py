@@ -11,7 +11,13 @@ from .models import Estado, OrigenIngreso, RevisionEstado
 from .calidad_editorial import evaluar_calidad
 from .eventos import relacion_editorial, ventana_desde
 from .fechas import momento_vigencia
-from .scoring_editorial import CLASIFICACION_URGENTE, cargar_config as _cargar_config_scoring, evaluar_noticia
+from .scoring_editorial import (
+    CLASIFICACION_URGENTE,
+    cargar_config as _cargar_config_scoring,
+    es_inmediata,
+    evaluar_noticia,
+    penalizacion_repeticion,
+)
 
 # Estados de la propia noticia que congelan su espacio en la agenda: una vez
 # que un humano decidió (aprobó/rechazó) o la noticia ya se publicó, el
@@ -78,6 +84,34 @@ PROPORCION_MINIMA_CONTENIDO_PROPIO_DEFAULT = 0.7
 # contenido propio solo reemplaza a externas de prioridad provincial o
 # inferior (provincial / nacional / temática / entretenimiento).
 TERRITORIOS_PROTEGIDOS_MEZCLA = ("local", "departamental")
+
+
+CONFIG_INFORME_DIARIO_PATH = Path(__file__).resolve().parent.parent / "config" / "informe_diario.json"
+# Una publicación inmediata (urgente o no) hecha en las últimas horas libera
+# a la franja siguiente de cubrir el cupo con una noticia de relleno.
+HORAS_CUPO_INMEDIATA = 4
+# Solo se publica de inmediato lo reciente: un backlog viejo espera a su franja.
+HORAS_VENTANA_INMEDIATA = 6
+
+
+def informe_diario_en_meta_habilitado(path: Optional[Path] = None) -> bool:
+    """`config/informe_diario.json` → "publicar_en_meta" (default True). Desde
+    16/10/2026 es False: el informe "Clima + Dólar" ya no es una franja
+    rutinaria de Meta y su franja (07:30) pasa a la cascada normal."""
+    try:
+        with open(path or CONFIG_INFORME_DIARIO_PATH, encoding="utf-8") as f:
+            return bool(json.load(f).get("publicar_en_meta", True))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return True
+
+
+def franjas_cascada() -> tuple:
+    """Las franjas fijas que eligen la mejor noticia por scoring. Con el
+    informe diario fuera de Meta, 07:30 se suma a las 4 de siempre (siguen
+    siendo 6 en total con la institucional 20:30)."""
+    if informe_diario_en_meta_habilitado():
+        return HORARIOS_DEFAULT
+    return (HORA_INFORME_DIARIO,) + tuple(HORARIOS_DEFAULT)
 
 
 def _proporcion_minima_contenido_propio(path: Optional[Path] = None) -> float:
@@ -284,6 +318,7 @@ def _buscar_candidato_cascada(
     ahora: Optional[datetime] = None,
     comprometidas: Optional[list] = None,
     cache_eventos: Optional[dict] = None,
+    piso_base: Optional[int] = None,
 ) -> Optional[dict]:
     """Selección por scoring editorial único (2/10/2026, reemplaza a la
     cascada territorial rígida): reúne TODAS las candidatas aptas (ya sin
@@ -298,15 +333,23 @@ def _buscar_candidato_cascada(
     solo_prioritarios = _solo_territorios_prioritarios()
     ahora_utc = (ahora or datetime.now(timezone.utc)).astimezone(timezone.utc)
     minimo = _cargar_config_scoring()["umbrales"].get("minimo_franja", 0)
+    if piso_base is not None:
+        # Ya salió algo importante entre franjas: esta franja solo se cubre
+        # con otra noticia suficientemente relevante (no con relleno).
+        minimo = max(minimo, piso_base)
     ordenadas = []
+    cache_temas: dict = {}
     for noticia in db.candidatos_editoriales(usados, fecha_limite):
         evaluacion = evaluar_noticia(noticia, ahora)
         rango = _rango_candidata(noticia, solo_prioritarios, evaluacion["base"])
-        if rango is None or evaluacion["base"] < minimo:
+        if rango is None or evaluacion["base"] < minimo or evaluacion["clima_rutinario"]:
             # Mejor una franja vacía que contenido sin valor informativo.
             continue
+        penalizacion = penalizacion_repeticion(
+            noticia, evaluacion, comprometidas or [], ahora_utc, cache=cache_temas
+        )
         clave = (
-            -evaluacion["total"],
+            -(evaluacion["total"] - penalizacion),
             rango,
             conteo_categorias.get(noticia.get("categoria_tematica"), 0) if rango == _RANGO_TEMATICA else 0,
             "".join(chr(0x10FFFF - ord(c)) for c in (noticia.get("fecha_recoleccion") or "")),
@@ -337,6 +380,8 @@ def reservar_franja_informe_diario(
     ahora = (ahora or datetime.now(ZONA_JUJUY)).astimezone(ZONA_JUJUY)
     fecha = fecha or ahora.strftime("%Y-%m-%d")
     hora = HORA_INFORME_DIARIO
+    if not informe_diario_en_meta_habilitado():
+        return EntradaAgenda(fecha, hora, "normal", None, None, "deshabilitado")
 
     existente = db.obtener_agenda_item(fecha, hora)
     noticia_existente = db.obtener(existente["noticia_id"]) if existente and existente["noticia_id"] else None
@@ -429,10 +474,81 @@ def resolver_urgentes(
     return entradas
 
 
+def resolver_inmediatas(
+    db: Database,
+    fecha: str,
+    usados: set,
+    fecha_limite: str,
+    ahora: Optional[datetime] = None,
+    comprometidas: Optional[list] = None,
+    cache_eventos: Optional[dict] = None,
+) -> List[EntradaAgenda]:
+    """Circuito INMEDIATO no urgente (16/10/2026): una noticia relevante
+    (local/departamental sobre `inmediata_local`; provincial, nacional o
+    internacional muy importante sobre `inmediata_extraordinaria`) reciente
+    sale sin esperar la franja, con la identidad visual normal (el rojo es
+    solo de URGENTES). Reutiliza los mismos filtros de aptitud, deduplicación
+    por hecho y vigencia; se reserva con tipo "inmediata" y modifica `usados`,
+    así la franja posterior nunca la repite. La repetición temática reciente
+    resta puntaje (sin bloquear relevancia alta). Solo noticias de las
+    últimas `HORAS_VENTANA_INMEDIATA` horas (no se republica un backlog)."""
+    ahora_utc = (ahora or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if comprometidas is None:
+        comprometidas = db.noticias_comprometidas_desde(ventana_desde(ahora_utc))
+    config = _cargar_config_scoring()
+    solo_prioritarios = _solo_territorios_prioritarios()
+    reciente_desde = ahora_utc - timedelta(hours=HORAS_VENTANA_INMEDIATA)
+    cache_temas: dict = {}
+    candidatas = []
+    for noticia in db.candidatos_editoriales(usados, fecha_limite):
+        vigencia = momento_vigencia(noticia)
+        if vigencia is not None and vigencia < reciente_desde:
+            continue
+        evaluacion = evaluar_noticia(noticia, ahora_utc, config)
+        if _rango_candidata(noticia, solo_prioritarios, evaluacion["base"]) is None:
+            continue
+        if not es_inmediata(noticia, evaluacion, config):
+            continue
+        penalizacion = penalizacion_repeticion(noticia, evaluacion, comprometidas, ahora_utc, config, cache_temas)
+        umbral = config["umbrales"]["inmediata_local" if evaluacion["territorio"] in ("local", "departamental") else "inmediata_extraordinaria"]
+        if evaluacion["base"] - penalizacion < umbral:
+            continue
+        candidatas.append((-(evaluacion["total"] - penalizacion), noticia["id"], noticia))
+    candidatas.sort(key=lambda c: (c[0], c[1]))
+    entradas = []
+    for _, _, noticia in candidatas:
+        if noticia["id"] in usados or not _apta_para_circuito_automatico(
+            db, noticia, comprometidas, cache_eventos, ahora_utc
+        ):
+            continue
+        creada_en = datetime.now(timezone.utc).isoformat()
+        db.guardar_agenda_item(fecha, None, "inmediata", noticia["territorio"], noticia["id"], creada_en)
+        usados.add(noticia["id"])
+        comprometidas.append(noticia)
+        entradas.append(EntradaAgenda(fecha, None, "inmediata", noticia["territorio"], noticia["id"], "creado"))
+    return entradas
+
+
+def _hubo_inmediata_reciente(db: Database, fecha: str, ahora_utc: datetime) -> bool:
+    limite = ahora_utc - timedelta(hours=HORAS_CUPO_INMEDIATA)
+    for item in db.listar_agenda(fecha):
+        if item["tipo"] not in ("urgente", "inmediata") or not item.get("noticia_id"):
+            continue
+        try:
+            creada = datetime.fromisoformat(item.get("creada_en") or "")
+        except ValueError:
+            continue
+        if creada.tzinfo is None:
+            creada = creada.replace(tzinfo=timezone.utc)
+        if creada >= limite:
+            return True
+    return False
+
+
 def generar_agenda(
     db: Database,
     fecha: Optional[str] = None,
-    horarios=HORARIOS_DEFAULT,
+    horarios=None,
     ahora: Optional[datetime] = None,
 ) -> List[EntradaAgenda]:
     """Genera (o completa) la agenda editorial de un día: un candidato por
@@ -459,6 +575,9 @@ def generar_agenda(
     fecha = fecha or ahora.strftime("%Y-%m-%d")
     ahora_utc = ahora.astimezone(timezone.utc)
     fecha_limite = _fecha_limite_antiguedad(ahora_utc)
+    base_mezcla = len(horarios) if horarios is not None else len(HORARIOS_DEFAULT)
+    if horarios is None:
+        horarios = franjas_cascada()
 
     usados = db.noticias_ids_usadas_en_agenda()
     # Una noticia de medio ya reelaborada como contenido propio no vuelve a
@@ -473,6 +592,10 @@ def generar_agenda(
     entradas: List[EntradaAgenda] = list(
         resolver_urgentes(db, fecha, usados, fecha_limite, ahora_utc, comprometidas, cache_eventos)
     )
+    entradas += resolver_inmediatas(db, fecha, usados, fecha_limite, ahora_utc, comprometidas, cache_eventos)
+    piso_base = (
+        _cargar_config_scoring()["umbrales"]["importante"] if _hubo_inmediata_reciente(db, fecha, ahora_utc) else None
+    )
     # Cuenta, dentro de esta corrida, cuántas veces se usó cada categoría
     # temática de diversificación: alimenta `_buscar_candidato_tematico`
     # para preferir la menos usada (evitar monotonía sin cuota rígida).
@@ -484,7 +607,7 @@ def generar_agenda(
     # el día (empezando por las urgentes) para no agendar una nota propia
     # sobre un hecho que ya ocupa otra franja. Las urgentes no cuentan para
     # la proporción (quedan fuera de la mezcla por diseño).
-    objetivo_propio = math.ceil(_proporcion_minima_contenido_propio() * len(horarios))
+    objetivo_propio = math.ceil(_proporcion_minima_contenido_propio() * base_mezcla)
     propio_en_normales = 0
     titulos_en_agenda: List[str] = []
     for entrada_previa in entradas:
@@ -595,7 +718,7 @@ def generar_agenda(
         comprometidas_franja = [n for n in comprometidas if n.get("id") != id_existente_noticia]
         candidato = _buscar_candidato_cascada(
             db, usados_para_busqueda, fecha_limite, conteo_categorias_tematicas, ahora_utc,
-            comprometidas_franja, cache_eventos,
+            comprometidas_franja, cache_eventos, piso_base,
         )
 
         # Regla de mezcla editorial (>=50% contenido propio en franjas

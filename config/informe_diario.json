@@ -4,5 +4,7 @@
     "longitud": -64.7892,
     "timezone": "America/Argentina/Jujuy"
   },
-  "timeout_segundos": 10
+  "timeout_segundos": 10,
+  "publicar_en_meta": false,
+  "_nota_publicar_en_meta": "16/10/2026: el informe diario 'Clima + Dólar' ya no se publica como franja rutinaria en Meta (la franja 07:30 pasa a la cascada normal). La nota sigue generándose solo para el bloque de la web. El clima sale únicamente como noticia real (alerta/impacto) por el scoring editorial."
 }

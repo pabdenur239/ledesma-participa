@@ -2,6 +2,7 @@ import itertools
 import math
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -62,8 +63,12 @@ def _crear_noticia(
     return noticia
 
 
+# Estos tests cubren el esquema histórico (informe Clima + Dólar en 07:30): el informe se habilita explícitamente.
 class BaseAgendaTest(unittest.TestCase):
     def setUp(self):
+        patcher = patch("motor_noticias.motor_editorial.informe_diario_en_meta_habilitado", return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db = Database(Path(self.tmpdir.name) / "test.db")
 
@@ -643,7 +648,8 @@ class TestMezclaContenidoPropio(BaseAgendaTest):
         entradas = [e for e in self._agenda() if e.tipo == "normal"]
         self.assertEqual(self._propias_en(entradas), [])
 
-    def test_urgentes_no_cuentan_para_la_proporcion(self):
+    @patch("motor_noticias.motor_editorial._hubo_inmediata_reciente", return_value=False)  # aísla la mezcla del recorte de cupo por inmediata
+    def test_urgentes_no_cuentan_para_la_proporcion(self, _sin_cupo):
         _crear_noticia(self.db, "local", urgente=True, titulo="Urgente local corte de ruta")
         for _ in range(len(HORARIOS_DEFAULT)):
             _crear_noticia(self.db, "provincial")

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -33,8 +34,12 @@ def _informe(db: Database, fecha_iso: str, estado=Estado.PREPARADA.value, revisi
     return n
 
 
+# Estos tests cubren el esquema histórico (informe Clima + Dólar en 07:30): el informe se habilita explícitamente.
 class TestReservarInformeDiario(unittest.TestCase):
     def setUp(self):
+        patcher = patch("motor_noticias.motor_editorial.informe_diario_en_meta_habilitado", return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db = Database(Path(self.tmpdir.name) / "test.db")
 

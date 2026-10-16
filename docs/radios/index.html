@@ -47,6 +47,7 @@
 <a href="../categoria/cultura/">Cultura</a>
 <a href="../categoria/espectaculos/">Espectáculos</a>
 <a href="../radios/" class="activa" aria-current="page">Radios en vivo</a>
+<a href="../tv/">TV en vivo</a>
 <a href="../multimedia/">Multimedia</a>
 <a href="../guia-comercial/">Guía Comercial</a>
     </div>
@@ -56,7 +57,7 @@
 <main class="ancho">
   <p class="migas"><a href="../multimedia/">Multimedia</a></p>
   <h1 class="titulo-seccion">Radios en vivo</h1>
-  <div class="radios-filtros" role="group" aria-label="Filtrar por zona"><button type="button" class="chip-zona" data-zona="" aria-pressed="true">Todas</button><button type="button" class="chip-zona" data-zona="libertador" aria-pressed="false">Libertador</button><button type="button" class="chip-zona" data-zona="jujuy" aria-pressed="false">Jujuy</button></div>
+  <div class="radios-filtros" role="group" aria-label="Filtrar por zona"><button type="button" class="chip-zona" data-zona="" aria-pressed="true">Todas</button><button type="button" class="chip-zona" data-zona="libertador" aria-pressed="false">Libertador</button><button type="button" class="chip-zona" data-zona="jujuy" aria-pressed="false">Jujuy</button><button type="button" class="chip-zona" data-zona="argentina" aria-pressed="false">Argentina</button></div>
   <label class="radios-buscar"><span class="solo-lectores">Buscar radio</span>
     <input type="search" id="radios-buscar" placeholder="Buscar por nombre, dial o localidad" autocomplete="off"></label>
   <div class="grilla-radios" id="radios-lista"><article class="tarjeta-radio" data-zona="libertador" data-buscable="radio city ledesma libertador general san martín libertador">
@@ -68,6 +69,16 @@
     <p class="radio-estado radio-estado-vivo">EN VIVO</p>
     <button type="button" class="boton boton-escuchar" data-radio-id="radio-city-ledesma" data-stream="https://5cd577a3dd8ec.streamlock.net/cityledesma/live_1/playlist.m3u8" data-tipo="hls" data-nombre="Radio City Ledesma" data-dial="" aria-label="Escuchar en vivo Radio City Ledesma">&#9654; Escuchar en vivo</button>
     <p class="radio-enlaces"><a href="https://www.radiocityfm.com/" target="_blank" rel="noopener">Sitio web</a> · <a href="https://www.facebook.com/radiocityfmjujuy" target="_blank" rel="noopener">Facebook</a> · <a href="https://instagram.com/radiocityfm/" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.radiocityfm.com/player?radio=LD" target="_blank" rel="noopener">Reproductor oficial</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="libertador" data-buscable="fm orión fm 106.3 libertador general san martín libertador">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">FO</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">FM Orión</h2>
+    <p class="radio-dial">FM 106.3</p>
+    <p class="radio-localidad">Libertador General San Martín</p>
+    <p class="radio-estado radio-estado-caido">Transmisión no disponible temporalmente</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="fm-orion-106-3" data-stream="https://tolkien.republicahosting.net:1656/live" data-tipo="aac" data-nombre="FM Orión" data-dial="FM 106.3" aria-label="Escuchar en vivo FM Orión FM 106.3">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://fmorion.com.ar/" target="_blank" rel="noopener">Sitio web</a></p>
   </div>
 </article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="radio nacional jujuy (lra 22) am 790 san salvador de jujuy jujuy">
   <div class="radio-logo radio-logo-placa" aria-hidden="true">RN</div>
@@ -88,6 +99,66 @@
     <p class="radio-estado radio-estado-vivo">EN VIVO</p>
     <button type="button" class="boton boton-escuchar" data-radio-id="radio-city-jujuy" data-stream="https://5cd577a3dd8ec.streamlock.net/radiocity/live_1/playlist.m3u8" data-tipo="hls" data-nombre="Radio City Jujuy" data-dial="107.1 FM" aria-label="Escuchar en vivo Radio City Jujuy 107.1 FM">&#9654; Escuchar en vivo</button>
     <p class="radio-enlaces"><a href="https://www.radiocityfm.com/" target="_blank" rel="noopener">Sitio web</a> · <a href="https://www.facebook.com/radiocityfmjujuy" target="_blank" rel="noopener">Facebook</a> · <a href="https://instagram.com/radiocityfm/" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.radiocityfm.com/player?radio=SS" target="_blank" rel="noopener">Reproductor oficial</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="fm trópico fm 97.7 san salvador de jujuy jujuy">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">FT</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">FM Trópico</h2>
+    <p class="radio-dial">FM 97.7</p>
+    <p class="radio-localidad">San Salvador de Jujuy</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="fm-tropico-97-7" data-stream="https://radio.arcast.cloud:1300/stream" data-tipo="mp3" data-nombre="FM Trópico" data-dial="FM 97.7" aria-label="Escuchar en vivo FM Trópico FM 97.7">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.somosjujuy.com.ar/servicios/envivo" target="_blank" rel="noopener">Sitio web</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="lw8 radio jujuy am 630 san salvador de jujuy jujuy">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">LR</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">LW8 Radio Jujuy</h2>
+    <p class="radio-dial">AM 630</p>
+    <p class="radio-localidad">San Salvador de Jujuy</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="lw8-am-630" data-stream="https://radio.arcast.cloud:1280/stream" data-tipo="mp3" data-nombre="LW8 Radio Jujuy" data-dial="AM 630" aria-label="Escuchar en vivo LW8 Radio Jujuy AM 630">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.somosjujuy.com.ar/servicios/envivo" target="_blank" rel="noopener">Sitio web</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="radio jujuy fm 104.5 san pedro de jujuy jujuy">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">RJ</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">Radio Jujuy</h2>
+    <p class="radio-dial">FM 104.5</p>
+    <p class="radio-localidad">San Pedro de Jujuy</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="radio-jujuy-104-5" data-stream="https://stream.djroquesalazar.com.ar/8938/stream" data-tipo="aac" data-nombre="Radio Jujuy" data-dial="FM 104.5" aria-label="Escuchar en vivo Radio Jujuy FM 104.5">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://radiojujuy.com.ar/" target="_blank" rel="noopener">Sitio web</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="jujuy" data-buscable="la radio san pedro fm 92.3 san pedro de jujuy jujuy">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">LR</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">La Radio San Pedro</h2>
+    <p class="radio-dial">FM 92.3</p>
+    <p class="radio-localidad">San Pedro de Jujuy</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="la-radio-san-pedro-92-3" data-stream="https://server.streamcasthd.com/8154/stream" data-tipo="aac" data-nombre="La Radio San Pedro" data-dial="FM 92.3" aria-label="Escuchar en vivo La Radio San Pedro FM 92.3">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.laradiosanpedro.com.ar/" target="_blank" rel="noopener">Sitio web</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="argentina" data-buscable="radio 10 am 710 buenos aires argentina">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">R1</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">Radio 10</h2>
+    <p class="radio-dial">AM 710</p>
+    <p class="radio-localidad">Buenos Aires</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="radio-10" data-stream="https://radio10.stweb.tv/radio10/live/playlist.m3u8" data-tipo="hls" data-nombre="Radio 10" data-dial="AM 710" aria-label="Escuchar en vivo Radio 10 AM 710">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.radio10.com.ar/" target="_blank" rel="noopener">Sitio web</a></p>
+  </div>
+</article><article class="tarjeta-radio" data-zona="argentina" data-buscable="radio continental am 590 buenos aires argentina">
+  <div class="radio-logo radio-logo-placa" aria-hidden="true">RC</div>
+  <div class="radio-cuerpo">
+    <h2 class="radio-nombre">Radio Continental</h2>
+    <p class="radio-dial">AM 590</p>
+    <p class="radio-localidad">Buenos Aires</p>
+    <p class="radio-estado radio-estado-vivo">EN VIVO</p>
+    <button type="button" class="boton boton-escuchar" data-radio-id="radio-continental" data-stream="https://frontend.radiohdvivo.com/continental/live" data-tipo="mp3" data-nombre="Radio Continental" data-dial="AM 590" aria-label="Escuchar en vivo Radio Continental AM 590">&#9654; Escuchar en vivo</button>
+    <p class="radio-enlaces"><a href="https://www.continental.com.ar/" target="_blank" rel="noopener">Sitio web</a></p>
   </div>
 </article></div><p class="vacio" id="radios-sin-resultados" hidden>No hay radios para ese filtro.</p>
   <p class="radios-nota">Cada radio se escucha desde su transmisión oficial. Ledesma Participa no graba ni retransmite señales.</p>

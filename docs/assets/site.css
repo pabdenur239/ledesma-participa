@@ -293,3 +293,25 @@ body { overflow-x: hidden; }
 .mr-volumen input { width: 90px; accent-color: var(--dorado); }
 @media (max-width: 520px) { .mr-volumen { display: none; } }
 body.con-reproductor { padding-bottom: 76px; }
+
+
+/* Accesos principales de la portada y TV en vivo */
+.accesos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0 18px; }
+.acceso { display: flex; align-items: center; gap: 10px; padding: 12px; min-height: 56px; border-radius: var(--radio); background: var(--carbon); color: var(--blanco); border-left: 4px solid var(--dorado); text-decoration: none; }
+.acceso:hover, .acceso:focus-visible { outline: 2px solid var(--dorado); outline-offset: 1px; }
+.acceso-icono { font-size: 1.5rem; }
+.acceso-texto { display: flex; flex-direction: column; line-height: 1.2; }
+.acceso-texto strong { color: var(--dorado); font-size: .95rem; }
+.acceso-texto small { color: #cfcac0; font-size: .75rem; }
+@media (max-width: 720px) {
+  .accesos { grid-template-columns: repeat(2, 1fr); }
+  .acceso-texto small { display: none; }
+}
+.lista-tv { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 18px; }
+.boton-tv { background: var(--blanco); color: var(--texto); border: 1px solid var(--borde); cursor: pointer; min-height: 44px; }
+.boton-tv.activo { background: var(--carbon); color: var(--dorado); border-color: var(--carbon); }
+.reproductor-tv { background: var(--carbon); color: var(--blanco); border-radius: var(--radio); padding: 12px 14px; margin: 12px 0; }
+.tv-viendo { margin: 0 0 8px; font-weight: 700; color: var(--dorado); }
+.tv-marco { position: relative; aspect-ratio: 16 / 9; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
+.tv-marco iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+[hidden] { display: none !important; }

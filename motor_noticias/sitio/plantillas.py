@@ -178,20 +178,75 @@ def _cta_seguir_cabecera(config_sitio: Optional[dict]) -> str:
     return f'<div class="cabecera-seguir"><span>Seguí</span>{botones}</div>'
 
 
+# Navegación principal agrupada (16/10/2026): pocos accesos visibles y un solo
+# nivel de submenú. Las rutas son las de siempre (/categoria/<slug>/ y las
+# secciones de servicio); ninguna categoría se elimina: lo que no tiene lugar
+# propio cae en "Más", así nada queda inaccesible.
+NAV_VISIBLES = ("ultimas", "libertador", "ledesma", "jujuy", "policiales")
+# En el celular solo se ven estos; el resto de los visibles pasa a "Más".
+NAV_VISIBLES_MOVIL = ("ultimas", "libertador", "policiales")
+NAV_GRUPOS = (
+    ("en-vivo", "En vivo", ("radios", "tv", "multimedia", "videos")),
+    ("servicios", "Servicios", ("salud", "deportes", "servicios", "educacion", "guia-comercial")),
+)
+
+
+def _menu_navegacion(ruta_raiz, seccion_activa, nav, extras) -> str:
+    items = {}
+    for slug, etiqueta in nav:
+        items[slug] = (etiqueta, f"{ruta_raiz}categoria/{slug}/")
+    for slug, etiqueta, ruta in extras:
+        items[slug] = (etiqueta, f"{ruta_raiz}{ruta}")
+
+    def enlace(slug, clase=""):
+        etiqueta, href = items[slug]
+        marca = " activa" if slug == seccion_activa else ""
+        actual = ' aria-current="page"' if slug == seccion_activa else ""
+        clases = f' class="{(clase + marca).strip()}"' if (clase or marca) else ""
+        return f'<a href="{href}"{clases}{actual}>{escapar(etiqueta)}</a>'
+
+    en_grupo = {slug for _, _, miembros in NAV_GRUPOS for slug in miembros}
+    partes = []
+    for slug in NAV_VISIBLES:
+        if slug in items:
+            partes.append(enlace(slug, "" if slug in NAV_VISIBLES_MOVIL else "solo-escritorio"))
+
+    for clave, etiqueta, miembros in NAV_GRUPOS:
+        presentes = [m for m in miembros if m in items]
+        if not presentes:
+            continue
+        activo = ' class="activa"' if seccion_activa in presentes else ""
+        # "Servicios" solo se despliega en escritorio; en el celular sus
+        # enlaces viven dentro de "Más".
+        clase = "nav-grupo solo-escritorio" if clave == "servicios" else "nav-grupo"
+        partes.append(
+            f'<details class="{clase}"><summary{activo}>{escapar(etiqueta)}</summary>'
+            f'<div class="nav-menu">{"".join(enlace(m) for m in presentes)}</div></details>'
+        )
+
+    resto = [s for s in items if s not in NAV_VISIBLES and s not in en_grupo]
+    mas = []
+    for slug in NAV_VISIBLES:
+        if slug in items and slug not in NAV_VISIBLES_MOVIL:
+            mas.append(enlace(slug, "solo-movil"))
+    servicios = [m for _, _, miembros in NAV_GRUPOS[1:] for m in miembros if m in items]
+    mas += [enlace(m, "solo-movil") for m in servicios]
+    mas += [enlace(s) for s in resto]
+    if mas:
+        activo = ' class="activa"' if seccion_activa in resto else ""
+        partes.append(
+            f'<details class="nav-grupo nav-mas"><summary{activo}>Más</summary><div class="nav-menu">{"".join(mas)}</div></details>'
+        )
+    return "\n      ".join(partes)
+
+
 def encabezado_html(
     *, ruta_raiz: str, seccion_activa: Optional[str] = None, nav: Optional[Sequence[Tuple[str, str]]] = None,
     extras: Sequence[Tuple[str, str, str]] = (), config_sitio: Optional[dict] = None,
 ) -> str:
-    """Cabecera fija: logo + buscador + menú. Debajo, la barra de secciones
-    con desplazamiento horizontal (cómoda con el pulgar en el celular)."""
+    """Cabecera fija: logo + buscador + menú agrupado (ver NAV_GRUPOS)."""
     nav = nav if nav is not None else SECCIONES_NAV
-    items = []
-    for slug, etiqueta in nav:
-        activa = ' class="activa" aria-current="page"' if slug == seccion_activa else ""
-        items.append(f'<a href="{ruta_raiz}categoria/{slug}/"{activa}>{escapar(etiqueta)}</a>')
-    for slug, etiqueta, ruta in extras:
-        activa = ' class="activa" aria-current="page"' if slug == seccion_activa else ""
-        items.append(f'<a href="{ruta_raiz}{ruta}"{activa}>{escapar(etiqueta)}</a>')
+    menu = _menu_navegacion(ruta_raiz, seccion_activa, nav, extras)
     return f"""<header class="cabecera">
   <div class="ancho cabecera-fila">
     <a class="logo" href="{ruta_raiz}">LEDESMA <span>PARTICIPA</span></a>
@@ -200,10 +255,11 @@ def encabezado_html(
   </div>
   <nav class="nav" aria-label="Secciones">
     <div class="nav-pista">
-      {chr(10).join(items)}
+      {menu}
     </div>
   </nav>
 </header>
+<script src="{ruta_raiz}assets/menu.js" defer></script>
 """
 
 

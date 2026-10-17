@@ -43,7 +43,7 @@ def _get(url, timeout=20):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
-def cargar_portada(horas, ids):
+def cargar_portada(horas, ids, cuantas=2):
     d = json.loads(_get(API))
     todas = {}
     for n in [d.get("principal")] + list(d.get("urgentes") or []) + [n for s in d["secciones"] for n in s["noticias"]]:
@@ -73,7 +73,7 @@ def cargar_portada(horas, ids):
         if any(_es_mismo_hecho(n["titulo"], e["titulo"]) for e in elegidas):
             continue
         elegidas.append(n)
-        if len(elegidas) == 2:
+        if len(elegidas) == cuantas:
             return elegidas
     raise SystemExit("No hay 2 noticias aptas en la portada publica.")
 

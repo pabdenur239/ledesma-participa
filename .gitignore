@@ -35,3 +35,11 @@ data/reels/
 # guardan ahí como entregable local, no se versionan (pesan ~50 MB c/u).
 exports/android/*.apk
 exports/android/*.aab
+
+# Piloto audiovisual: modelos, muestras de voz y salidas (no se versionan)
+produccion_audiovisual/piloto_periodistas/modelos_voz/
+produccion_audiovisual/piloto_periodistas/muestras_voz/
+produccion_audiovisual/piloto_periodistas/muestras_voz_final/
+produccion_audiovisual/piloto_periodistas/muestras_voz_natural/
+produccion_audiovisual/piloto_periodistas/salidas/
+produccion_audiovisual/piloto_periodistas/__pycache__/

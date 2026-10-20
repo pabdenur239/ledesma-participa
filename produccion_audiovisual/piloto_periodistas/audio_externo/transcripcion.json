@@ -1,0 +1,221 @@
+{
+ "duracion": 17.946125,
+ "segmentos": [
+  {
+   "ini": 0.0,
+   "fin": 6.56,
+   "texto": "Atención en Jujuy. Rige una alerta amarilla por fuertes vientos y vientos sonda en distintas",
+   "palabras": [
+    {
+     "p": "Atención",
+     "ini": 0.0,
+     "fin": 0.62
+    },
+    {
+     "p": "en",
+     "ini": 0.62,
+     "fin": 0.88
+    },
+    {
+     "p": "Jujuy.",
+     "ini": 0.88,
+     "fin": 1.4
+    },
+    {
+     "p": "Rige",
+     "ini": 1.8,
+     "fin": 2.22
+    },
+    {
+     "p": "una",
+     "ini": 2.22,
+     "fin": 2.44
+    },
+    {
+     "p": "alerta",
+     "ini": 2.44,
+     "fin": 2.88
+    },
+    {
+     "p": "amarilla",
+     "ini": 2.88,
+     "fin": 3.4
+    },
+    {
+     "p": "por",
+     "ini": 3.4,
+     "fin": 3.62
+    },
+    {
+     "p": "fuertes",
+     "ini": 3.62,
+     "fin": 4.18
+    },
+    {
+     "p": "vientos",
+     "ini": 4.18,
+     "fin": 4.62
+    },
+    {
+     "p": "y",
+     "ini": 4.62,
+     "fin": 4.9
+    },
+    {
+     "p": "vientos",
+     "ini": 4.9,
+     "fin": 5.26
+    },
+    {
+     "p": "sonda",
+     "ini": 5.26,
+     "fin": 5.72
+    },
+    {
+     "p": "en",
+     "ini": 5.72,
+     "fin": 6.0
+    },
+    {
+     "p": "distintas",
+     "ini": 6.0,
+     "fin": 6.56
+    }
+   ]
+  },
+  {
+   "ini": 6.56,
+   "fin": 12.44,
+   "texto": "zonas de la provincia. Se recomienda extremar precauciones y mantenerse informado ante posibles",
+   "palabras": [
+    {
+     "p": "zonas",
+     "ini": 6.56,
+     "fin": 6.82
+    },
+    {
+     "p": "de",
+     "ini": 6.82,
+     "fin": 6.96
+    },
+    {
+     "p": "la",
+     "ini": 6.96,
+     "fin": 7.06
+    },
+    {
+     "p": "provincia.",
+     "ini": 7.06,
+     "fin": 7.7
+    },
+    {
+     "p": "Se",
+     "ini": 8.16,
+     "fin": 8.34
+    },
+    {
+     "p": "recomienda",
+     "ini": 8.34,
+     "fin": 8.92
+    },
+    {
+     "p": "extremar",
+     "ini": 8.92,
+     "fin": 9.48
+    },
+    {
+     "p": "precauciones",
+     "ini": 9.48,
+     "fin": 10.2
+    },
+    {
+     "p": "y",
+     "ini": 10.2,
+     "fin": 10.5
+    },
+    {
+     "p": "mantenerse",
+     "ini": 10.5,
+     "fin": 11.08
+    },
+    {
+     "p": "informado",
+     "ini": 11.08,
+     "fin": 11.68
+    },
+    {
+     "p": "ante",
+     "ini": 11.68,
+     "fin": 11.9
+    },
+    {
+     "p": "posibles",
+     "ini": 11.9,
+     "fin": 12.44
+    }
+   ]
+  },
+  {
+   "ini": 12.44,
+   "fin": 17.82,
+   "texto": "cambios en las condiciones. Seguimos actualizando la información en Ledesma Participa.",
+   "palabras": [
+    {
+     "p": "cambios",
+     "ini": 12.44,
+     "fin": 12.96
+    },
+    {
+     "p": "en",
+     "ini": 12.96,
+     "fin": 13.08
+    },
+    {
+     "p": "las",
+     "ini": 13.08,
+     "fin": 13.18
+    },
+    {
+     "p": "condiciones.",
+     "ini": 13.18,
+     "fin": 13.74
+    },
+    {
+     "p": "Seguimos",
+     "ini": 14.48,
+     "fin": 14.92
+    },
+    {
+     "p": "actualizando",
+     "ini": 14.92,
+     "fin": 15.58
+    },
+    {
+     "p": "la",
+     "ini": 15.58,
+     "fin": 15.68
+    },
+    {
+     "p": "información",
+     "ini": 15.68,
+     "fin": 16.18
+    },
+    {
+     "p": "en",
+     "ini": 16.18,
+     "fin": 16.62
+    },
+    {
+     "p": "Ledesma",
+     "ini": 16.62,
+     "fin": 17.1
+    },
+    {
+     "p": "Participa.",
+     "ini": 17.1,
+     "fin": 17.82
+    }
+   ]
+  }
+ ]
+}

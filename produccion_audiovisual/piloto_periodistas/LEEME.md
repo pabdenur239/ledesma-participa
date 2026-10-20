@@ -14,3 +14,10 @@ Lee la portada publica (https://ledesmaparticipa.com.ar/api/portada.json, solo l
    - `--audios-dir CARPETA` con `apertura`, `titular`, `desarrollo`, `cierre` (.wav/.mp3): sincronia exacta.
    - `--audio ARCHIVO` con toda la locucion en orden: limites estimados por palabras.
 3. Con `--id` (misma noticia) + `--audios-dir`/`--audio` se genera el MP4 final con subtitulos. No publica.
+
+## Flujo vigente: audio externo aprobado + musica por categoria (sin TTS local)
+Presentadores: Valentina Vega / Mateo Ferrer (recortes de `assets/presentadores/valentina y mateo.png`). Audio: MP3 externo aprobado en `audio_externo/` (no se versiona).
+1. Transcribir (solo para sincronizar subtitulos): `venv_xtts\Scripts\python.exe produccion_audiovisual\piloto_periodistas\transcribir_audio.py AUDIO transcripcion.json`
+2. Render: `.venv\Scripts\python.exe produccion_audiovisual\piloto_periodistas\generar_piloto_voz_externa.py --audio AUDIO --transcripcion transcripcion.json --id ID_NOTICIA --presentador valentina|mateo [--musica auto|policial|...|none]`
+   Salida 1080x1920, 25 fps, duracion = audio; `salidas/<fecha>/`. No publica.
+3. Musica: camas propias en `assets/musica/<categoria>.mp3` (regenerables con `generar_camas_musicales.py`); categoria por palabras clave y nivel/ducking/fades en `config_musica.json` (mezcla en `mezcla_musical.py`).

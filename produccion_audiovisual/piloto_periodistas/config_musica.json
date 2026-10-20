@@ -1,0 +1,18 @@
+{
+  "pistas": {
+    "policial": "assets/musica/policial.mp3",
+    "politica": "assets/musica/politica.mp3",
+    "clima_servicios": "assets/musica/clima_servicios.mp3",
+    "sociedad": "assets/musica/sociedad.mp3",
+    "deportes": "assets/musica/deportes.mp3",
+    "urgente": "assets/musica/urgente.mp3"
+  },
+  "mezcla": {"musica_db_bajo_voz": -8, "ducking_db": 3, "fade_in_s": 1.0, "fade_out_s": 1.5},
+  "categoria_por_defecto": "sociedad",
+  "palabras_clave": {
+    "policial": ["polic", "choque", "accidente", "vuelco", "siniestro", "incendio", "robo", "detenid", "operativo"],
+    "politica": ["gobierno", "gobernador", "legislatura", "intendente", "concejo", "elecciones", "diputad", "senad", "ministr", "politic"],
+    "clima_servicios": ["alerta", "viento", "zonda", "lluvia", "tormenta", "temperatur", "clima", "corte de", "servicio", "tarifa", "colectivo", "agua", "energ"],
+    "deportes": ["deport", "futbol", "torneo", "gimnasia", "partido", "liga", "campeon", "atletismo"]
+  }
+}

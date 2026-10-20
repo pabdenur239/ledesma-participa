@@ -43,3 +43,9 @@ produccion_audiovisual/piloto_periodistas/muestras_voz_final/
 produccion_audiovisual/piloto_periodistas/muestras_voz_natural/
 produccion_audiovisual/piloto_periodistas/salidas/
 produccion_audiovisual/piloto_periodistas/__pycache__/
+produccion_audiovisual/piloto_periodistas/audio_externo/*.mp3
+produccion_audiovisual/piloto_periodistas/audio_externo/*.wav
+produccion_audiovisual/piloto_periodistas/assets/presentadores/mateo.jpg
+produccion_audiovisual/piloto_periodistas/assets/presentadores/valentina.jpg
+produccion_audiovisual/piloto_periodistas/**/*.mp4
+produccion_audiovisual/piloto_periodistas/**/*.wav

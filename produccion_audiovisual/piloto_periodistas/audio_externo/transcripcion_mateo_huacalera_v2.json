@@ -1,0 +1,208 @@
+{
+ "duracion": 15.229375,
+ "segmentos": [
+  {
+   "ini": 0.0,
+   "fin": 1.46,
+   "texto": "Último momento en Jujuy.",
+   "palabras": [
+    {
+     "p": "Último",
+     "ini": 0.0,
+     "fin": 0.44
+    },
+    {
+     "p": "momento",
+     "ini": 0.44,
+     "fin": 0.74
+    },
+    {
+     "p": "en",
+     "ini": 0.74,
+     "fin": 1.0
+    },
+    {
+     "p": "Jujuy.",
+     "ini": 1.0,
+     "fin": 1.46
+    }
+   ]
+  },
+  {
+   "ini": 1.92,
+   "fin": 7.1,
+   "texto": "Un conductor alcolizado provocó un choque múltiplo en Huacalera que involucró a tres vehículos.",
+   "palabras": [
+    {
+     "p": "Un",
+     "ini": 1.92,
+     "fin": 2.08
+    },
+    {
+     "p": "conductor",
+     "ini": 2.08,
+     "fin": 2.48
+    },
+    {
+     "p": "alcolizado",
+     "ini": 2.48,
+     "fin": 3.2
+    },
+    {
+     "p": "provocó",
+     "ini": 3.2,
+     "fin": 3.8
+    },
+    {
+     "p": "un",
+     "ini": 3.8,
+     "fin": 3.9
+    },
+    {
+     "p": "choque",
+     "ini": 3.9,
+     "fin": 4.22
+    },
+    {
+     "p": "múltiplo",
+     "ini": 4.22,
+     "fin": 4.76
+    },
+    {
+     "p": "en",
+     "ini": 4.76,
+     "fin": 4.86
+    },
+    {
+     "p": "Huacalera",
+     "ini": 4.86,
+     "fin": 5.4
+    },
+    {
+     "p": "que",
+     "ini": 5.4,
+     "fin": 5.62
+    },
+    {
+     "p": "involucró",
+     "ini": 5.62,
+     "fin": 6.16
+    },
+    {
+     "p": "a",
+     "ini": 6.16,
+     "fin": 6.26
+    },
+    {
+     "p": "tres",
+     "ini": 6.26,
+     "fin": 6.54
+    },
+    {
+     "p": "vehículos.",
+     "ini": 6.54,
+     "fin": 7.1
+    }
+   ]
+  },
+  {
+   "ini": 7.7,
+   "fin": 11.48,
+   "texto": "Dos personas fueron trasladadas al hospital para recibir atención médica.",
+   "palabras": [
+    {
+     "p": "Dos",
+     "ini": 7.7,
+     "fin": 7.84
+    },
+    {
+     "p": "personas",
+     "ini": 7.84,
+     "fin": 8.34
+    },
+    {
+     "p": "fueron",
+     "ini": 8.34,
+     "fin": 8.62
+    },
+    {
+     "p": "trasladadas",
+     "ini": 8.62,
+     "fin": 9.24
+    },
+    {
+     "p": "al",
+     "ini": 9.24,
+     "fin": 9.42
+    },
+    {
+     "p": "hospital",
+     "ini": 9.42,
+     "fin": 9.76
+    },
+    {
+     "p": "para",
+     "ini": 9.76,
+     "fin": 10.08
+    },
+    {
+     "p": "recibir",
+     "ini": 10.08,
+     "fin": 10.48
+    },
+    {
+     "p": "atención",
+     "ini": 10.48,
+     "fin": 10.92
+    },
+    {
+     "p": "médica.",
+     "ini": 10.92,
+     "fin": 11.48
+    }
+   ]
+  },
+  {
+   "ini": 11.94,
+   "fin": 15.08,
+   "texto": "Seguimos actualizando la información en Ledesma Participa.",
+   "palabras": [
+    {
+     "p": "Seguimos",
+     "ini": 11.94,
+     "fin": 12.3
+    },
+    {
+     "p": "actualizando",
+     "ini": 12.3,
+     "fin": 12.96
+    },
+    {
+     "p": "la",
+     "ini": 12.96,
+     "fin": 13.06
+    },
+    {
+     "p": "información",
+     "ini": 13.06,
+     "fin": 13.58
+    },
+    {
+     "p": "en",
+     "ini": 13.58,
+     "fin": 13.98
+    },
+    {
+     "p": "Ledesma",
+     "ini": 13.98,
+     "fin": 14.4
+    },
+    {
+     "p": "Participa.",
+     "ini": 14.4,
+     "fin": 15.08
+    }
+   ]
+  }
+ ]
+}

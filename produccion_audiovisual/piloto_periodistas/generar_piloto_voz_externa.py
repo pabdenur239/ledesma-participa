@@ -6,6 +6,7 @@ La duracion del video = duracion exacta del audio. NO publica nada.
 """
 import argparse
 import json
+import math
 import re
 import subprocess
 import sys
@@ -22,10 +23,12 @@ sys.path.insert(0, str(AQUI.parents[1]))
 import generar_noticia_presentador as gnp  # noqa: E402
 import generar_piloto as gp  # noqa: E402
 import generar_resumen_visual as g  # noqa: E402
-import animacion_periodista as an  # noqa: E402
 import mezcla_musical as mm  # noqa: E402
 import seleccion_editorial as se  # noqa: E402
-import tono_editorial as te  # noqa: E402
+
+for _s in (sys.stdout, sys.stderr):  # consola de Windows (cp1252): no depender de PYTHONUTF8
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
 
 W, H, FPS = g.W, g.H, g.FPS
 CORRECCIONES = [(r"(?i)\bvientos sonda\b", "viento Zonda"), (r"(?i)\bsonda\b", "Zonda"), (r"(?i)\bzonda\b", "Zonda"),
@@ -99,6 +102,18 @@ def plan_visual(tr, hay_foto):
     return plan
 
 
+def camara_retrato(ret, t, total):
+    """Presentador ESTATICO: solo movimiento de camara continuo (zoom-in leve + paneo lento) sobre el retrato oficial.
+    No toca rostro, ojos, boca, cabeza ni cuerpo: es un recorte con la misma relacion de aspecto, sin deformar."""
+    p = min(max(t / max(total, 0.1), 0.0), 1.0)
+    z = 1.0 + 0.08 * g.ease(p)
+    w, h = ret.size
+    cw, ch = w / z, h / z
+    x0 = (w - cw) * (0.5 + 0.25 * math.sin(t * 0.3))
+    y0 = (h - ch) * 0.35
+    return ret.crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch))).resize((W, gnp.PANEL_H), Image.LANCZOS)
+
+
 _FONDOS = {}
 
 
@@ -165,8 +180,6 @@ def main():
     ap.add_argument("--presentador", default="valentina", choices=list(gnp.PRES))
     ap.add_argument("--horas", type=int, default=240)
     ap.add_argument("--musica", default="auto", help="auto | clima_servicios|policial|politica|sociedad|deportes|urgente | none")
-    ap.add_argument("--tono", default="auto", help="auto | positiva|neutra|seria|triste|urgente|policial (solo con --visual auto)")
-    ap.add_argument("--envolvente", default="audio", choices=["audio", "palabras"], help="palabras = prueba sin voz")
     ap.add_argument("--visual", default="clasico", choices=["clasico", "auto"],
                     help="clasico = disenio aprobado; auto = alterna periodista / imagen de la nota / dividido")
     a = ap.parse_args()
@@ -187,10 +200,11 @@ def main():
     ret = gnp.retrato(a.presentador)
     plan = plan_visual(tr, foto is not None) if a.visual == "auto" else None
     fotos = [foto] + [f for f in (g.descargar_imagen(u) for u in se.imagenes_extra(n)) if f is not None] if foto is not None else []
-    tono = (te.clasificar(n) if a.tono == "auto" else a.tono) if a.visual == "auto" else None
-    if tono:
-        env = an.envolvente_palabras([(w["ini"], w["fin"]) for s_ in tr["segmentos"] for w in s_["palabras"]]) if a.envolvente == "palabras"             else an.envolvente_audio(gnp._decodificar(a.audio, 24000), 24000)
     ctx = {"fotos": fotos, "n": n, "ret": ret, "foto": foto, "blur": blur, "pres": a.presentador}
+    reloj = {"t": 0.0}
+    if a.visual == "auto":  # presentador a panel completo (dur<100): camara continua sobre el retrato estatico
+        panel_original = gnp.panel_retrato
+        gnp.panel_retrato = lambda r, t_, dur: camara_retrato(r, reloj["t"], total) if dur < 100 else panel_original(r, t_, dur)
     final = carpeta / ("valentina_alerta_jujuy.mp4" if a.presentador == "valentina" else f"{a.presentador}_noticia.mp4")
     audio_in, mezcla = str(a.audio), None
     if a.musica != "none":
@@ -204,9 +218,8 @@ def main():
     for i in range(int(round(total * FPS))):
         t = i / FPS
         s = next((x for x in seg if x["ini"] <= t < x["fin"]), seg[-1])
-        if tono:
-            ctx["ret"] = an.animar(ret, a.presentador, t, env, te.PARAMETROS[tono])
-        pil = frame_auto(t, plan, ctx, total, seg) if plan else gnp.frame(t, s, total, ctx)
+        reloj["t"] = t
+        pil =frame_auto(t, plan, ctx, total, seg) if plan else gnp.frame(t, s, total, ctx)
         pil = apertura_overlay(pil, t)
         cue = next((c for c in cues if c[0] <= t < c[1]), None)
         if cue:
@@ -217,7 +230,7 @@ def main():
         raise RuntimeError("ffmpeg fallo")
     meta = {"presentadora": gnp.PRES[a.presentador]["nombre"], "voz": f"externa aprobada: {Path(a.audio).name}",
             "video": gp.verificar(final), "duracion_audio_s": round(total, 2),
-            "tono_facial": tono, "imagenes": len(fotos), "animacion": "parpadeo+habla(envolvente)+cabeza/respiracion" if tono else None,
+            "imagenes": len(fotos), "animacion_facial": None, "presentador_movimiento": "retrato estatico + zoom/paneo de camara" if plan else "clasico",
             "secuencia_visual": [(round(a_, 1), round(b_, 1), m) for a_, b_, m in plan] if plan else "clasico", "musica": mezcla,
             "noticia": {"id": n["id"], "titulo": n["titulo"], "url": n["url"], "fecha": n["fecha_iso"]}}
     (carpeta / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")

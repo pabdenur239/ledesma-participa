@@ -15,6 +15,9 @@ import wave
 from datetime import datetime
 from pathlib import Path
 
+if not sys.flags.utf8_mode:  # Windows: equivale a PYTHONUTF8=1 sin que el usuario lo defina (consola cp1252, open() sin encoding)
+    raise SystemExit(subprocess.call([sys.executable, "-X", "utf8", *sys.argv], env={**os.environ, "PYTHONUTF8": "1"}))
+
 AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI))
 
@@ -84,7 +87,7 @@ def main():
     ruta_tr.write_text(json.dumps(tr, ensure_ascii=False, indent=1), encoding="utf-8")
 
     cmd = [sys.executable, str(AQUI / "generar_piloto_voz_externa.py"), "--audio", str(audio), "--transcripcion", str(ruta_tr),
-           "--id", str(n["id"]), "--presentador", pres, "--horas", str(max(a.horas, 240)), "--visual", "auto", "--envolvente", "palabras" if a.sin_voz else "audio",
+           "--id", str(n["id"]), "--presentador", pres, "--horas", str(max(a.horas, 240)), "--visual", "auto",
            "--musica", "none" if a.sin_voz else cat]
     r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
     sys.stdout.write(r.stdout[-1500:])

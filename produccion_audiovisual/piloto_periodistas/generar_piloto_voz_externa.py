@@ -22,7 +22,10 @@ sys.path.insert(0, str(AQUI.parents[1]))
 import generar_noticia_presentador as gnp  # noqa: E402
 import generar_piloto as gp  # noqa: E402
 import generar_resumen_visual as g  # noqa: E402
+import animacion_periodista as an  # noqa: E402
 import mezcla_musical as mm  # noqa: E402
+import seleccion_editorial as se  # noqa: E402
+import tono_editorial as te  # noqa: E402
 
 W, H, FPS = g.W, g.H, g.FPS
 CORRECCIONES = [(r"(?i)\bvientos sonda\b", "viento Zonda"), (r"(?i)\bsonda\b", "Zonda"), (r"(?i)\bzonda\b", "Zonda"),
@@ -76,6 +79,84 @@ def apertura_overlay(pil, t, dur=1.8):
     return Image.blend(pil, marca, a)
 
 
+# ---------------------------------------------------------------- composicion visual automatica (--visual auto)
+def plan_visual(tr, hay_foto):
+    """Lista de (ini, fin, modo) con modo pres | imagen | dividido. Sin imagen: periodista todo el video."""
+    t_tit, t_cie, total = fases(tr)
+    pal = [w for s in tr["segmentos"] for w in s["palabras"]]
+    fines = [w["fin"] for w in pal if w["p"].endswith((".", "?", "!"))]
+    t1 = max(fines[0] if fines else 3.0, 3.0)
+    t1 = min(t1, total * 0.3)
+    medio = t_cie - t1
+    if not hay_foto or medio < 3.0:
+        return [(0.0, total + 0.01, "pres")]
+    plan = [(0.0, t1, "pres")]
+    div = min(medio * 0.4, 5.0) if medio >= 7.0 else 0.0
+    plan.append((t1, t_cie - div, "imagen"))
+    if div:
+        plan.append((t_cie - div, t_cie, "dividido"))
+    plan.append((t_cie, total + 0.01, "pres"))
+    return plan
+
+
+_FONDOS = {}
+
+
+def _fondo_desenfocado(foto, w, h):
+    k = (id(foto), w, h)
+    if k not in _FONDOS:
+        _FONDOS[k] = foto.resize((w, h), Image.BILINEAR).filter(ImageFilter.GaussianBlur(24))
+    return _FONDOS[k]
+
+
+def panel_imagen(foto, lt, dur, w, h):
+    """Imagen completa (relacion de aspecto intacta, sin recorte) sobre fondo desenfocado, con zoom/paneo suave."""
+    p = g.ease(min(max(lt / max(dur, 0.1), 0.0), 1.0))
+    esc = min(w / foto.width, h / foto.height) * (1.0 + 0.06 * p)
+    iw, ih = int(foto.width * esc), int(foto.height * esc)
+    im = foto.resize((iw, ih), Image.LANCZOS)
+    lienzo = _fondo_desenfocado(foto, w, h).copy()
+    x = (w - iw) // 2 + int((0.5 - p) * 24 if iw > w else 0)
+    lienzo.paste(im, (x, (h - ih) // 2))
+    return lienzo
+
+
+def panel_carrusel(fotos, lt, dur, w, h):
+    """1 imagen: zoom/paneo. 2-3: se alternan en partes iguales con fundido suave de 0,5 s."""
+    k = len(fotos)
+    if k == 1:
+        return panel_imagen(fotos[0], lt, dur, w, h)
+    tramo = dur / k
+    i = min(int(lt / tramo), k - 1)
+    cur = panel_imagen(fotos[i], lt - i * tramo, tramo, w, h)
+    if i > 0 and lt - i * tramo < 0.5:
+        ant = panel_imagen(fotos[i - 1], tramo, tramo, w, h)
+        return Image.blend(ant, cur, g.ease((lt - i * tramo) / 0.5))
+    return cur
+
+
+def frame_auto(t, plan, ctx, total, seg):
+    modo = next((m for a_, b_, m in plan if a_ <= t < b_), "pres")
+    ini = next((a_ for a_, b_, m in plan if a_ <= t < b_), 0.0)
+    fin = next((b_ for a_, b_, m in plan if a_ <= t < b_), total)
+    s = next((x for x in seg if x["ini"] <= t < x["fin"]), seg[-1])
+    base = gnp.frame(t, s, total, {**ctx, "foto": None})  # periodista + panel inferior (titular / CTA)
+    if modo == "pres":
+        return base
+    d = ImageDraw.Draw(base, "RGBA")
+    y, h = gnp.PANEL_Y, gnp.PANEL_H
+    if modo == "imagen":
+        base.paste(panel_carrusel(ctx["fotos"], t - ini, fin - ini, W, h), (0, y))
+    else:  # dividido: periodista arriba, imagen abajo
+        mitad = h // 2
+        pres = gnp.panel_retrato(ctx["ret"], t, 999).crop((0, 70, W, 70 + mitad))
+        base.paste(pres, (0, y))
+        base.paste(panel_carrusel(ctx["fotos"][:1], t - ini, fin - ini, W, mitad), (0, y + mitad))
+        d.rectangle([0, y + mitad - 3, W, y + mitad + 3], fill=g.DORADO + (255,))
+    d.rectangle([0, y, W, y + h], outline=g.DORADO + (255,), width=8)
+    return base
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--audio", required=True)
@@ -84,6 +165,10 @@ def main():
     ap.add_argument("--presentador", default="valentina", choices=list(gnp.PRES))
     ap.add_argument("--horas", type=int, default=240)
     ap.add_argument("--musica", default="auto", help="auto | clima_servicios|policial|politica|sociedad|deportes|urgente | none")
+    ap.add_argument("--tono", default="auto", help="auto | positiva|neutra|seria|triste|urgente|policial (solo con --visual auto)")
+    ap.add_argument("--envolvente", default="audio", choices=["audio", "palabras"], help="palabras = prueba sin voz")
+    ap.add_argument("--visual", default="clasico", choices=["clasico", "auto"],
+                    help="clasico = disenio aprobado; auto = alterna periodista / imagen de la nota / dividido")
     a = ap.parse_args()
 
     tr = json.load(open(a.transcripcion, encoding="utf-8"))
@@ -100,7 +185,12 @@ def main():
     foto = g.descargar_imagen(n.get("imagen"))
     blur = foto.resize((W, gnp.PANEL_H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(24)) if foto is not None else None
     ret = gnp.retrato(a.presentador)
-    ctx = {"n": n, "ret": ret, "foto": foto, "blur": blur, "pres": a.presentador}
+    plan = plan_visual(tr, foto is not None) if a.visual == "auto" else None
+    fotos = [foto] + [f for f in (g.descargar_imagen(u) for u in se.imagenes_extra(n)) if f is not None] if foto is not None else []
+    tono = (te.clasificar(n) if a.tono == "auto" else a.tono) if a.visual == "auto" else None
+    if tono:
+        env = an.envolvente_palabras([(w["ini"], w["fin"]) for s_ in tr["segmentos"] for w in s_["palabras"]]) if a.envolvente == "palabras"             else an.envolvente_audio(gnp._decodificar(a.audio, 24000), 24000)
+    ctx = {"fotos": fotos, "n": n, "ret": ret, "foto": foto, "blur": blur, "pres": a.presentador}
     final = carpeta / ("valentina_alerta_jujuy.mp4" if a.presentador == "valentina" else f"{a.presentador}_noticia.mp4")
     audio_in, mezcla = str(a.audio), None
     if a.musica != "none":
@@ -114,7 +204,9 @@ def main():
     for i in range(int(round(total * FPS))):
         t = i / FPS
         s = next((x for x in seg if x["ini"] <= t < x["fin"]), seg[-1])
-        pil = gnp.frame(t, s, total, ctx)
+        if tono:
+            ctx["ret"] = an.animar(ret, a.presentador, t, env, te.PARAMETROS[tono])
+        pil = frame_auto(t, plan, ctx, total, seg) if plan else gnp.frame(t, s, total, ctx)
         pil = apertura_overlay(pil, t)
         cue = next((c for c in cues if c[0] <= t < c[1]), None)
         if cue:
@@ -124,7 +216,9 @@ def main():
     if p.wait() != 0:
         raise RuntimeError("ffmpeg fallo")
     meta = {"presentadora": gnp.PRES[a.presentador]["nombre"], "voz": f"externa aprobada: {Path(a.audio).name}",
-            "video": gp.verificar(final), "duracion_audio_s": round(total, 2), "musica": mezcla,
+            "video": gp.verificar(final), "duracion_audio_s": round(total, 2),
+            "tono_facial": tono, "imagenes": len(fotos), "animacion": "parpadeo+habla(envolvente)+cabeza/respiracion" if tono else None,
+            "secuencia_visual": [(round(a_, 1), round(b_, 1), m) for a_, b_, m in plan] if plan else "clasico", "musica": mezcla,
             "noticia": {"id": n["id"], "titulo": n["titulo"], "url": n["url"], "fecha": n["fecha_iso"]}}
     (carpeta / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))

@@ -41,3 +41,10 @@ Presentadores: Valentina Vega / Mateo Ferrer (recortes de `assets/presentadores/
   - Logs: `produccion_audiovisual/piloto_periodistas/salidas/cola/logs/programador.log` (rota a 2 MB). Cola/registro: `salidas/cola/`.
 - VPS: copiar el repo y correr `python -X utf8 produccion_audiovisual/piloto_periodistas/programador_audiovisual.py loop` bajo systemd; mismas variables de entorno.
 - Urgentes fuera de Libertador/Ledesma (alcance provincial) solo si el hecho es explicitamente grave (fatal, incendio, ruta cortada, alerta naranja/roja, etc.).
+
+## Registro unico anti-duplicados (imagenes + Reels)
+
+- `motor_noticias/registro_publicaciones.py`: un solo registro (`data/registro_publicaciones.json`, o `$LEDESMA_REGISTRO_PUBLICACIONES`; el sistema de imagenes lo ubica junto a su base de datos). Guarda ID, URL normalizada, titulo normalizado, fecha/hora, formato (imagen|reel), plataforma y estado.
+- Ambos sistemas lo consultan antes de publicar (ID -> URL -> titulo normalizado) y lo escriben al publicar. Una noticia ya publicada en un formato no sale en el otro (`omitida_por_duplicado`).
+- Actualizacion real: solo si el texto trae informacion nueva comprobable (>=6 palabras clave nuevas y >=40 %, marca de parte oficial/cambio de estado/confirmacion/ampliacion, >=1 h despues); un titulo o redaccion distintos no alcanzan. Queda vinculada (`actualiza_a`).
+- IMPORTANTE: ambos sistemas deben apuntar al MISMO archivo. Mientras el motor de imagenes corra en el VPS y los videos en esta PC, hay que alojar el registro en un lugar comun (o mover los videos al VPS). Siembra inicial desde la base del motor: `python -m motor_noticias.registro_publicaciones importar --db data/ledesma_participa.db`.

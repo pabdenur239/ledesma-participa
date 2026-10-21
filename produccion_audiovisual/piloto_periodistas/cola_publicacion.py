@@ -9,11 +9,13 @@ import json
 import os
 import re
 import unicodedata
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
+sys.path.insert(0, str(AQUI.parents[1]))
 ESTADOS = ("generado", "pendiente_revision", "aprobado", "publicado", "error")
 TIPOS = ("programado_manana", "programado_tarde", "urgente")
 TZ = timezone(timedelta(hours=-3))  # Argentina (sin horario de verano)
@@ -66,6 +68,17 @@ def es_duplicado(n, reg=None, permitir_ids=(), horas=96, ahora_=None, umbral=0.7
         return False, ""
     reg = registro() if reg is None else reg
     ahora_ = ahora_ or ahora()
+    # Registro UNICO compartido con el sistema de imagenes/posts: ID, URL (fuente) o titulo normalizado.
+    try:
+        from motor_noticias import registro_publicaciones as rp
+        ev = rp.evaluar(n["id"], n.get("fuente_url") or n.get("url"), n["titulo"], n.get("bajada"), formato_propio="reel", ahora_=ahora_)
+        if ev["duplicado"] is not None:
+            return True, ev["motivo"]
+        if ev["actualiza_a"]:  # actualizacion sustancial comprobable: se permite y queda vinculada a la original
+            n["actualiza_a"] = ev["actualiza_a"]
+            return False, ""
+    except Exception:
+        pass  # si el registro compartido no esta disponible, rige el registro propio de abajo
     urls = {u for u in (n.get("url"), n.get("fuente_url")) if u}
     for r in reg:
         if r.get("noticia_id") == n["id"]:
@@ -100,7 +113,7 @@ def encolar(n, tipo, presentador, mp4, texto_redes, hashtags, categoria, estado=
     item = {"id": uuid.uuid4().hex[:12], "noticia_id": n["id"], "url": n.get("url"), "fuente_url": n.get("fuente_url"),
             "fuente": n.get("fuente_nombre"), "titulo": n["titulo"], "categoria": categoria, "presentador": presentador,
             "tipo": tipo, "generado_en": t, "ruta_mp4": str(mp4) if mp4 else None, "texto_redes": texto_redes,
-            "hashtags": hashtags, "estado": estado, "error": error,
+            "hashtags": hashtags, "estado": estado, "error": error, "actualiza_a": n.get("actualiza_a"),
             "historial": [{"estado": "generado", "en": t}] + ([{"estado": estado, "en": t}] if estado != "generado" else [])}
     c = cola()
     c.append(item)

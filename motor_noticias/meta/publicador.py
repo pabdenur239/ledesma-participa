@@ -20,6 +20,7 @@ from typing import NamedTuple, Optional
 from ..db import Database
 from ..dedupe import es_mismo_contenido, palabras_clave, refieren_a_hecho_distinto
 from ..models import Estado, OrigenIngreso, RevisionEstado
+from .. import registro_publicaciones
 from .cliente import ClienteMetaGraphAPI, ErrorClienteMeta
 from .contenido import generar_caption_instagram
 from .preparacion import ErrorPreparacionFacebook, preparar_publicacion, preparar_publicacion_story
@@ -456,6 +457,7 @@ def _publicar_noticia_en_clave(
             ),
         )
 
+    actualiza_a = None
     # Segunda capa — solo si esta noticia todavía no se publicó por ningún
     # lado: compara por fingerprint de contenido (URL normalizada o
     # palabras clave del título) contra OTRAS noticias (id distinto) que
@@ -463,8 +465,28 @@ def _publicar_noticia_en_clave(
     # Nunca se aplica a la institucional (ver `es_institucional` arriba).
     if noticia["estado"] != Estado.PUBLICADA.value and not es_institucional:
         duplicado = _buscar_duplicado_ya_publicado(db, noticia, ahora_utc)
+        if duplicado is None:
+            # Registro UNICO compartido con el sistema audiovisual (Reels): ID, URL o titulo normalizado.
+            try:
+                ev = registro_publicaciones.evaluar(
+                    noticia["id"], noticia.get("url_normalizada"), noticia.get("titulo_original"),
+                    noticia.get("texto_original"), formato_propio="imagen", base=db.path.parent,
+                )
+            except Exception:  # un fallo del registro nunca debe frenar la publicacion normal
+                logger.exception("Registro unico de publicaciones no disponible; se sigue con el gate propio.")
+                ev = {"duplicado": None, "actualiza_a": None}
+            actualiza_a = ev["actualiza_a"]
+            if ev["duplicado"] is not None:
+                duplicado = {"id": ev["duplicado"]["noticia_id"], "registro": ev["motivo"]}
+                for red in ("facebook", "instagram"):
+                    registro_publicaciones.registrar(
+                        noticia["id"], noticia.get("url_normalizada"), noticia.get("titulo_original"),
+                        noticia.get("texto_original"), "imagen", red, "omitida_por_duplicado", motivo=ev["motivo"],
+                        base=db.path.parent,
+                    )
         if duplicado is not None:
-            detalle = f"misma noticia ya publicada como noticia #{duplicado['id']}"
+            detalle = f"misma noticia ya publicada como noticia #{duplicado['id']}" + (
+                f" ({duplicado['registro']})" if duplicado.get("registro") else "")
             logger.info(
                 "Franja %s %s bloqueada por duplicado: noticia #%s ~ noticia #%s ya publicada.",
                 fecha, clave, noticia["id"], duplicado["id"],
@@ -534,6 +556,15 @@ def _publicar_noticia_en_clave(
 
     if any(r.estado == "publicado" for r in resultados_red):
         db.actualizar_estado_noticia(noticia["id"], Estado.PUBLICADA.value)
+        for r in resultados_red:  # registro unico: lo que sale en imagen no puede salir luego como Reel
+            if r.estado == "publicado" and r.red_social in ("facebook", "instagram"):
+                try:
+                    registro_publicaciones.registrar(
+                        noticia["id"], noticia.get("url_normalizada"), noticia.get("titulo_original"),
+                        noticia.get("texto_original"), "imagen", r.red_social, "publicado", actualiza_a=actualiza_a, base=db.path.parent,
+                    )
+                except Exception:
+                    logger.exception("No se pudo anotar la publicacion en el registro unico.")
 
     # -- Instagram Story: independiente del feed (no depende de que Facebook
     # o Instagram feed hayan publicado), pero reutiliza la misma noticia ya

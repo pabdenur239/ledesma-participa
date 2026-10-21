@@ -36,12 +36,14 @@ class Prueba(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["LEDESMA_COLA_DIR"] = self.tmp.name
+        os.environ["LEDESMA_REGISTRO_PUBLICACIONES"] = str(Path(self.tmp.name) / "registro_publicaciones.json")
         pm.CONFIG = Path(__file__)  # no es JSON -> publicacion desactivada: las pruebas jamas publican
         self.llamadas = []
 
     def tearDown(self):
         pm.CONFIG = Path(__file__)  # no existe como JSON -> publicacion desactivada
         os.environ.pop("LEDESMA_COLA_DIR", None)
+        os.environ.pop("LEDESMA_REGISTRO_PUBLICACIONES", None)
         self.tmp.cleanup()
 
     def gen(self, n, tipo, sin_voz):

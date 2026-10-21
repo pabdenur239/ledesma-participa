@@ -201,6 +201,17 @@ def procesar(n, tipo, sin_voz=False, generar=producir, log=print):
     if _errores(n, tipo) >= MAX_ERRORES:
         log(f"  omitida {n['id']}: {MAX_ERRORES} errores previos")
         return None
+    dup, motivo_dup = cp.es_duplicado(n)
+    if dup:  # ultima barrera contra el registro unico compartido
+        log(f"  omitida {n['id']}: omitida_por_duplicado ({motivo_dup})")
+        try:
+            from motor_noticias import registro_publicaciones as rp
+            for red in ("facebook", "instagram"):
+                rp.registrar(n["id"], n.get("fuente_url") or n.get("url"), n["titulo"], n.get("bajada"), "reel", red,
+                             "omitida_por_duplicado", motivo=motivo_dup)
+        except Exception:
+            pass
+        return None
     pres, cat = _presentador_categoria(n)
     texto, tags = texto_redes(n, urgente=tipo == "urgente")
     try:

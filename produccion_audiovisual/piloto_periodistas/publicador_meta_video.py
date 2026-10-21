@@ -143,6 +143,12 @@ def publicar(item_id, cliente=None, ahora_=None, log=print):
             r["verificado"] = bool(cliente.verificar_publicacion(r["id"]))
             r.update(estado="publicado", publicado_en=cp.ahora().isoformat(timespec="seconds"))
             log(f"  {red}: publicado id={r['id']} verificado={r['verificado']}")
+            try:  # registro unico: ni el sistema de imagenes ni otro video podran volver a publicar esta noticia
+                from motor_noticias import registro_publicaciones as rp
+                rp.registrar(item["noticia_id"], item.get("fuente_url") or item.get("url"), item["titulo"], item.get("texto_redes"),
+                             "reel", red, "publicado", actualiza_a=item.get("actualiza_a"))
+            except Exception as e:
+                log(f"  AVISO: no se pudo anotar en el registro unico: {redactar(e)}")
         except Exception as e:
             r.update(estado="error", error=redactar(e))
             fallo = fallo or f"{red}: {r['error']}"

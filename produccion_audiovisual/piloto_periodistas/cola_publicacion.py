@@ -108,8 +108,8 @@ def encolar(n, tipo, presentador, mp4, texto_redes, hashtags, categoria, estado=
     return item
 
 
-_PERMITIDAS = {"generado": {"pendiente_revision", "error"}, "pendiente_revision": {"aprobado", "error"},
-               "aprobado": {"publicado", "error", "pendiente_revision"}, "error": {"pendiente_revision"}, "publicado": set()}
+_PERMITIDAS = {"generado": {"pendiente_revision", "aprobado", "error"}, "pendiente_revision": {"aprobado", "error"},
+               "aprobado": {"publicado", "error", "pendiente_revision"}, "error": {"pendiente_revision", "aprobado"}, "publicado": set()}
 
 
 def cambiar_estado(item_id, nuevo, nota=None):

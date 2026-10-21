@@ -36,9 +36,11 @@ class Prueba(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["LEDESMA_COLA_DIR"] = self.tmp.name
+        pm.CONFIG = Path(__file__)  # no es JSON -> publicacion desactivada: las pruebas jamas publican
         self.llamadas = []
 
     def tearDown(self):
+        pm.CONFIG = Path(__file__)  # no existe como JSON -> publicacion desactivada
         os.environ.pop("LEDESMA_COLA_DIR", None)
         self.tmp.cleanup()
 
@@ -51,6 +53,8 @@ class Prueba(unittest.TestCase):
         self.assertFalse(pa.evaluar_urgencia(NORMAL, AHORA)[0])
         self.assertFalse(pa.evaluar_urgencia(MANTENIMIENTO, AHORA)[0])
         self.assertFalse(pa.evaluar_urgencia(POLITICA, AHORA)[0])
+        leve = nota(96012, "Siniestro vial en barrio Coronel Arias: un auto volcó", "Ocurrió en la capital jujeña.", "provincial")
+        self.assertFalse(pa.evaluar_urgencia(leve, AHORA)[0])  # vuelco leve fuera de Ledesma: no es urgente
         self.assertFalse(pa.evaluar_urgencia(VIEJA, AHORA)[0])  # urgente por tema pero antigua
 
     def test_programada_normal(self):
@@ -87,11 +91,45 @@ class Prueba(unittest.TestCase):
         self.assertLess(len(pa.texto_redes(URGENTE, True)[0]), len(pa.texto_redes(NORMAL)[0]) + 200)
         it = cp.encolar(URGENTE, "urgente", "mateo", "x.mp4", t, tags, "policial")
         self.assertEqual(it["estado"], "pendiente_revision")
-        self.assertTrue(pm.publicar(it)["dry_run"])
-        with self.assertRaises(PermissionError):
-            pm.publicar(it, dry_run=False)  # desactivada y sin aprobar
         with self.assertRaises(ValueError):
-            cp.cambiar_estado(it["id"], "publicado")  # no se salta la revision
+            cp.cambiar_estado(it["id"], "publicado")  # no se salta la aprobacion
+
+    def test_publicacion_automatica_idempotente(self):
+        class Fake:
+            _access_token = "tok"
+            def __init__(self, ig_falla=True):
+                self.ig_falla, self.fb, self.ig = ig_falla, 0, 0
+            def publicar_reel_facebook(self, ruta, desc, dry_run=True):
+                self.fb += 1
+                return "fbv1"
+            def publicar_reel_instagram(self, url, cap, dry_run=True):
+                self.ig += 1
+                if self.ig_falla:
+                    raise RuntimeError("fallo access_token=SECRETO123")
+                return "ig1"
+            def verificar_publicacion(self, i):
+                return True
+            def _peticion_get_json(self, url, params):
+                return {"source": "https://cdn/v.mp4"}
+        cfg = Path(self.tmp.name) / "cfg.json"
+        cfg.write_text('{"publicacion_automatica": true, "max_intentos": 3}')
+        pm.CONFIG = cfg
+        pm._reel_instagram_resumable = lambda c, ruta, cap, e=0: c.publicar_reel_instagram(None, cap)
+        mp4 = Path(self.tmp.name) / "v.mp4"
+        mp4.write_bytes(b"x")
+        it = cp.encolar(URGENTE, "urgente", "mateo", mp4, "t", ["#a"], "policial", estado="generado")
+        cp.cambiar_estado(it["id"], "aprobado")
+        f = Fake()
+        r = pm.publicar(it["id"], f, log=lambda *a: None)
+        self.assertEqual((r["estado"], f.fb, f.ig), ("error", 1, 1))
+        self.assertNotIn("SECRETO123", str(r))  # secretos redactados
+        f.ig_falla = False
+        later = cp.ahora() + timedelta(hours=1)
+        pm.reintentar_pendientes(f, later, log=lambda *a: None)
+        r = {i["id"]: i for i in cp.cola()}[it["id"]]
+        self.assertEqual((r["estado"], f.fb, f.ig), ("publicado", 1, 2))  # Facebook NO se repite
+        pm.reintentar_pendientes(f, later + timedelta(hours=1), log=lambda *a: None)
+        self.assertEqual((f.fb, f.ig), (1, 2))  # nada se vuelve a publicar
 
 
 if __name__ == "__main__":

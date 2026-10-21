@@ -9,6 +9,7 @@ Uso (desde la raiz del repo):
 Opciones de tick/loop: --sin-voz (prueba sin gastar ElevenLabs).
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -39,6 +40,8 @@ URG_MEDIA = (r"alerta (amarilla|meteorol)|corte de (energ[ií]a|luz|agua|gas) (i
              r"falla (el[eé]ctrica|en el suministro)|interrupci[oó]n del (servicio|suministro)|corte (de calle|vial)|calle cortada|"
              r"cortes? de tr[aá]nsito|rescate|operativo de emergencia|asalto|robo (violento|a mano armada)|decreto de emergencia|"
              r"emergencia (h[ií]drica|sanitaria|clim)|suspenden (las )?clases")
+URG_GRAVE = (r"fatal|grave|muri[oó]|fallec|incendio|explosi[oó]n|derrumbe|inundaci|desborde|temporal|alerta (naranja|roja)|"
+             r"corte (total )?de (la )?ruta|ruta (cortada|bloqueada)|evacuaci|balacera|tiroteo|v[ií]ctimas? m[uú]ltiples|m[uú]ltiples v[ií]ctimas")
 URG_NO = (r"tareas (programadas|de mantenimiento)|mantenimiento|programad[oa]s?|cronograma|opini[oó]n|columna|declar|dijo|afirm|"
           r"balotaje|campa[nñ]a|candidat|elecciones|torneo|liga|ni(ñ|n)[oa]s?\b|menor(es)?\b|desaparec|abus|femicid|"
           r"promoci|sorteo|descuento|espect[aá]culo|show|recital|festival|homenaje|aniversario|capacitaci|inaugur|celebr[ae]")
@@ -63,6 +66,10 @@ def evaluar_urgencia(n, ahora_=None):
         return False, f"territorio {terr}"
     if re.search(_norm(URG_NO), texto):
         return False, "tema rutinario/excluido"
+    if terr == "provincial":  # fuera de Libertador/Ledesma solo hechos de gravedad explicita
+        if re.search(_norm(URG_GRAVE), texto):
+            return True, "hecho grave de alcance provincial"
+        return False, "provincial sin gravedad explicita"
     if re.search(_norm(URG_FUERTE), texto):
         return True, f"hecho urgente fuerte ({terr})"
     if terr in ("local", "departamental") and re.search(_norm(URG_MEDIA), texto):
@@ -139,7 +146,7 @@ def _hashtag(t):
 def texto_redes(n, urgente=False):
     """(texto, hashtags). Solo datos de la propia nota; urgentes: mas corto y directo."""
     bajada = re.sub(r"\s+", " ", n.get("bajada") or "").strip()
-    frases = [f for f in re.split(r"(?<=[.!?])\s+", bajada) if f]
+    frases = [f for f in re.split(r"(?<=[.!?])\s+", bajada) if f and not f.endswith(("…", "..."))]  # sin frases cortadas por la fuente
     ctx, tope = [], (150 if urgente else 260)
     for f in frases[:1 if urgente else 2]:
         if len(" ".join(ctx + [f])) <= tope:
@@ -152,7 +159,7 @@ def texto_redes(n, urgente=False):
         tags.append("#LibertadorGeneralSanMartin")
     if n.get("territorio") in ("local", "departamental"):
         tags.append("#DepartamentoLedesma")
-    if loc and _hashtag(loc) not in tags and loc.lower() not in ("jujuy",):
+    if loc and "libertador" not in loc.lower() and _hashtag(loc) not in tags and loc.lower() not in ("jujuy",):
         tags.append(_hashtag(loc))
     cat = _norm(n.get("categoria_etiqueta") or "")
     texto_busq = _norm(n["titulo"])
@@ -202,9 +209,20 @@ def procesar(n, tipo, sin_voz=False, generar=producir, log=print):
         log(f"  ERROR generando {n['id']}: {e}")
         return cp.encolar(n, tipo, pres, None, texto, tags, cat, estado="error", error=str(e)[:400])
     cp.registrar_uso(n, tipo)
-    it = cp.encolar(n, tipo, pres, mp4, texto, tags, cat, estado="pendiente_revision")
-    log(f"  OK {tipo}: noticia {n['id']} -> {mp4} [pendiente_revision]")
-    return it
+    import publicador_meta_video as pm
+    if not pm.config()["publicacion_automatica"]:  # modo seguro: sin publicacion automatica queda para revision
+        it = cp.encolar(n, tipo, pres, mp4, texto, tags, cat, estado="pendiente_revision")
+        log(f"  OK {tipo}: noticia {n['id']} -> {mp4} [pendiente_revision]")
+        return it
+    it = cp.encolar(n, tipo, pres, mp4, texto, tags, cat, estado="generado")
+    cp.cambiar_estado(it["id"], "aprobado", "automatico")
+    log(f"  OK {tipo}: noticia {n['id']} -> {mp4} [aprobado, publicando]")
+    try:
+        return pm.publicar(it["id"], log=log)
+    except Exception as e:
+        log(f"  ERROR publicando {it['id']}: {pm.redactar(e)}")
+        cp.cambiar_estado(it["id"], "error", pm.redactar(e))
+        return it
 
 
 def ventana_vigente(ahora_):
@@ -227,6 +245,12 @@ def tick(noticias=None, ahora_=None, sin_voz=False, generar=producir, log=print,
         import seleccion_editorial as se
         noticias = se.leer_portada()
     hechos = []
+    if not simular:
+        import publicador_meta_video as pm
+        try:
+            pm.reintentar_pendientes(ahora_=ahora_, log=log)
+        except Exception as e:
+            log(f"  ERROR en reintentos: {pm.redactar(e)}")
     n, motivo = detectar_urgente(noticias, ahora_=ahora_)
     log(f"[{ahora_:%Y-%m-%d %H:%M}] urgente: {('noticia ' + str(n['id']) + ' - ' + motivo) if n else motivo}")
     if n and not simular:
@@ -242,6 +266,44 @@ def tick(noticias=None, ahora_=None, sin_voz=False, generar=producir, log=print,
     return [h for h in hechos if h]
 
 
+def _log_a_archivo():
+    """stdout/stderr -> salidas/cola/logs/programador.log (rotado por tamano); mensajes sin secretos."""
+    import publicador_meta_video as pm
+    d = cp.carpeta() / "logs"
+    d.mkdir(exist_ok=True)
+    ruta = d / "programador.log"
+    if ruta.exists() and ruta.stat().st_size > 2_000_000:
+        ruta.replace(d / "programador.log.1")
+
+    class Salida:
+        def __init__(self):
+            self.f = open(ruta, "a", encoding="utf-8", buffering=1)
+
+        def write(self, t):
+            if t.strip():
+                self.f.write(f"{cp.ahora():%Y-%m-%d %H:%M:%S} {pm.redactar(t.rstrip())}\n")
+            return len(t)
+
+        def flush(self):
+            self.f.flush()
+
+    sys.stdout = sys.stderr = Salida()
+
+
+def _tomar_lock():
+    """Una sola instancia: archivo con pid; se ignora si ese proceso ya no existe."""
+    lock = cp.carpeta() / "programador.lock"
+    try:
+        pid = int(lock.read_text())
+        r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, errors="replace")
+        if pid != os.getpid() and str(pid) in r.stdout:
+            return False
+    except Exception:
+        pass
+    lock.write_text(str(os.getpid()))
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["tick", "loop", "simular", "cola", "aprobar", "rechazar"])
@@ -251,6 +313,8 @@ def main():
     a = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if a.cmd in ("tick", "loop"):
+        _log_a_archivo()
     if a.cmd == "cola":
         for it in cp.cola():
             print(it["id"], it["estado"], it["tipo"], it["noticia_id"], it["presentador"], it["titulo"][:60], "|", it["ruta_mp4"])
@@ -262,6 +326,10 @@ def main():
     elif a.cmd == "tick":
         tick(sin_voz=a.sin_voz)
     else:
+        if not _tomar_lock():
+            print("Ya hay un programador corriendo; salgo.")
+            return
+        print(f"programador iniciado (pid {os.getpid()}), cada {a.cada}s", flush=True)
         while True:
             try:
                 tick(sin_voz=a.sin_voz)

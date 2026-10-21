@@ -1,0 +1,6 @@
+{
+  "publicacion_automatica": true,
+  "max_intentos": 4,
+  "espera_reintento_min": 15,
+  "espera_url_video_s": 240
+}

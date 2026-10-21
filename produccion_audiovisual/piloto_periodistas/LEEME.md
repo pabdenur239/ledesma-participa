@@ -30,3 +30,14 @@ Presentadores: Valentina Vega / Mateo Ferrer (recortes de `assets/presentadores/
 - Todo MP4 queda `pendiente_revision`. `... cola`, `... aprobar ID`, `... rechazar ID` para revisar.
 - `publicador_meta_video.py`: preparado para Facebook/Instagram con el cliente Meta existente, DESACTIVADO (requiere `LEDESMA_VIDEO_PUBLICAR=1`, estado `aprobado` y `dry_run=False`). Instagram necesita URL publica del MP4.
 - Pruebas: `python -m unittest tests.test_programacion_audiovisual`.
+
+## Ejecucion automatica y publicacion en Meta (activa)
+
+- Cada MP4 nuevo pasa solo `generado -> aprobado -> publicado` (Reel en Facebook + Reel en Instagram, subiendo el archivo directo; usa las variables `META_*` ya existentes). Interruptor: `config_publicacion.json` (`"publicacion_automatica": false` vuelve al modo `pendiente_revision`).
+- Si una red falla: estado `error` con el motivo (sin secretos); se reintenta solo la red que falto (hasta 4 intentos, cada 15 min); lo ya publicado no se repite. Si el proceso muere en plena publicacion, esa red queda `incierto` y no se reintenta sola.
+- Windows: tarea programada `LedesmaParticipa-Videos` (usuario actual; al iniciar sesion y como vigilante cada 10 min; instancia unica; sin ventana). Requiere la PC encendida con la sesion iniciada, y `ELEVENLABS_API_KEY` + `META_*` como variables de entorno de usuario.
+  - Detener: `Stop-ScheduledTask LedesmaParticipa-Videos` (para que no reinicie: `Disable-ScheduledTask LedesmaParticipa-Videos`).
+  - Iniciar: `Start-ScheduledTask LedesmaParticipa-Videos`. Estado: `Get-ScheduledTask LedesmaParticipa-Videos` y `... cola`.
+  - Logs: `produccion_audiovisual/piloto_periodistas/salidas/cola/logs/programador.log` (rota a 2 MB). Cola/registro: `salidas/cola/`.
+- VPS: copiar el repo y correr `python -X utf8 produccion_audiovisual/piloto_periodistas/programador_audiovisual.py loop` bajo systemd; mismas variables de entorno.
+- Urgentes fuera de Libertador/Ledesma (alcance provincial) solo si el hecho es explicitamente grave (fatal, incendio, ruta cortada, alerta naranja/roja, etc.).

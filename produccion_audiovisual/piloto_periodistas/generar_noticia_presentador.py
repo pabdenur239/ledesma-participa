@@ -199,10 +199,15 @@ def frame(t, s, seg_total, ctx):
     d.rectangle([0, 1090, W, 1430], fill=(7, 26, 46, 245))
     d.rectangle([0, 1090, W, 1102], fill=g.DORADO + (255,))
     tag, _ = g.etiqueta(n)
-    cw = int(d.textlength(tag, font=g.fnt(44))) + 60
+    nombre = PRES[ctx["pres"]]["nombre"].upper()
+    nw = int(d.textlength(nombre, font=g.fnt(34)))
+    ft = 44
+    while ft > 28 and int(d.textlength(tag, font=g.fnt(ft))) + 60 + 60 + 30 > W - 60 - nw:  # la etiqueta no debe tapar el nombre
+        ft -= 2
+    cw = int(d.textlength(tag, font=g.fnt(ft))) + 60
     d.rectangle([60, 1130, 60 + cw, 1200], fill=g.DORADO + (255,))
-    d.text((60 + cw // 2, 1165), tag, font=g.fnt(44), fill=g.AZUL, anchor="mm")
-    d.text((W - 60, 1165), PRES[ctx["pres"]]["nombre"].upper(), font=g.fnt(34), fill=g.DORADO, anchor="rm")
+    d.text((60 + cw // 2, 1165), tag, font=g.fnt(ft), fill=g.AZUL, anchor="mm")
+    d.text((W - 60, 1165), nombre, font=g.fnt(34), fill=g.DORADO, anchor="rm")
     if s["clave"] == "cierre":
         d.text((60, 1250), "Ampliá la información en", font=g.fnt(50, False), fill=g.BLANCO)
         d.text((60, 1315), "ledesmaparticipa.com.ar", font=g.fnt(60), fill=g.DORADO)

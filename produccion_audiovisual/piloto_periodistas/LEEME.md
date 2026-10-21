@@ -21,3 +21,12 @@ Presentadores: Valentina Vega / Mateo Ferrer (recortes de `assets/presentadores/
 2. Render: `.venv\Scripts\python.exe produccion_audiovisual\piloto_periodistas\generar_piloto_voz_externa.py --audio AUDIO --transcripcion transcripcion.json --id ID_NOTICIA --presentador valentina|mateo [--musica auto|policial|...|none]`
    Salida 1080x1920, 25 fps, duracion = audio; `salidas/<fecha>/`. No publica.
 3. Musica: camas propias en `assets/musica/<categoria>.mp3` (regenerables con `generar_camas_musicales.py`); categoria por palabras clave y nivel/ducking/fades en `config_musica.json` (mezcla en `mezcla_musical.py`).
+
+## Programacion automatica, urgentes y cola de revision (sin publicacion)
+
+- `programador_audiovisual.py tick` hace una pasada: detecta urgentes (video adicional) y, si es la ventana de ~10:00 o ~19:00 (hora Argentina, hasta 3 h de gracia), genera UN video programado. `loop --cada 300` queda corriendo; `simular` solo muestra que haria.
+- Ejecucion portable (local o VPS), sin tocar tareas del sistema: `python produccion_audiovisual/piloto_periodistas/programador_audiovisual.py loop` o llamar `tick` cada 5-10 min desde cron/Programador de tareas/systemd timer. `--sin-voz` evita gastar ElevenLabs.
+- Estado persistente en `salidas/cola/` (no se versiona, o `$LEDESMA_COLA_DIR`): `registro_videos.json` (noticias usadas, anti-duplicados) y `cola_publicacion.json` (MP4, texto, hashtags, estado).
+- Todo MP4 queda `pendiente_revision`. `... cola`, `... aprobar ID`, `... rechazar ID` para revisar.
+- `publicador_meta_video.py`: preparado para Facebook/Instagram con el cliente Meta existente, DESACTIVADO (requiere `LEDESMA_VIDEO_PUBLICAR=1`, estado `aprobado` y `dry_run=False`). Instagram necesita URL publica del MP4.
+- Pruebas: `python -m unittest tests.test_programacion_audiovisual`.

@@ -54,6 +54,7 @@ def main():
     ap.add_argument("--id", type=int, help="forzar una noticia (por defecto: seleccion automatica)")
     ap.add_argument("--horas", type=int, default=48)
     ap.add_argument("--sin-voz", action="store_true")
+    ap.add_argument("--max-palabras", type=int, default=62, help="tope de palabras del guion (no se rellena si la nota es corta)")
     a = ap.parse_args()
 
     n, motivo = se.seleccionar(a.horas, a.id)
@@ -63,7 +64,7 @@ def main():
         raise SystemExit("Falta ELEVENLABS_API_KEY. Configurala SOLO en tu entorno local (PowerShell):\n"
                          "  [Environment]::SetEnvironmentVariable('ELEVENLABS_API_KEY','<tu clave>','User')  y abri una terminal nueva.\n"
                          "No la pegues en codigo ni en archivos del repo.")
-    texto, _ = se.guion_automatico(n)
+    texto, _ = se.guion_automatico(n, a.max_palabras)
     carpeta = AQUI / "salidas" / ("auto_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
     carpeta.mkdir(parents=True)
     (carpeta / "guion.txt").write_text(texto, encoding="utf-8")

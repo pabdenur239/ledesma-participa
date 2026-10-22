@@ -71,6 +71,7 @@ PIE_HTML_PLANTILLA = """
       <a href="{ruta_raiz}privacy.html">Privacidad</a>
       <a href="{ruta_raiz}data-deletion.html">Eliminación de datos</a>
     </p>
+    {linea_responsable}
     <p class="pie-nota">Sitio generado automáticamente a partir de las publicaciones de Ledesma Participa. Contacto: {email}</p>
   </div>
 </footer>
@@ -85,7 +86,10 @@ def cierre_html(*, ruta_raiz: str, config_sitio: dict) -> str:
         enlaces.append(f'<a href="{escapar(config_sitio["facebook_url"])}" rel="noopener" target="_blank">Facebook</a>')
     if config_sitio.get("instagram_url"):
         enlaces.append(f'<a href="{escapar(config_sitio["instagram_url"])}" rel="noopener" target="_blank">Instagram</a>')
+    titular = config_sitio.get("titular_responsable", "")
+    linea_responsable = f'<p class="pie-responsable">Titular / Responsable: {escapar(titular)}</p>' if titular else ""
     return PIE_HTML_PLANTILLA.format(
+        linea_responsable=linea_responsable,
         descripcion=escapar(config_sitio.get("descripcion", "")),
         enlaces_sociales="\n      ".join(enlaces),
         ruta_raiz=ruta_raiz,
@@ -248,6 +252,8 @@ def pagina_contacto(*, ruta_raiz: str, config_sitio: dict, url_base: str) -> str
     email = config_sitio.get("email_contacto", "")
     sitio = (config_sitio.get("base_url_produccion") or "").rstrip("/") + "/"
     nombre = config_sitio.get("nombre", "Ledesma Participa")
+    titular = config_sitio.get("titular_responsable", "")
+    linea_titular = f"<li><strong>Titular / Responsable:</strong> {escapar(titular)}</li>\n    " if titular else ""
     partes = [
         cabecera_html(
             titulo_pagina="Contacto — Ledesma Participa",
@@ -262,7 +268,7 @@ def pagina_contacto(*, ruta_raiz: str, config_sitio: dict, url_base: str) -> str
   {escapar(nombre)}, podés comunicarte a través del correo indicado.</p>
   <ul>
     <li><strong>Medio:</strong> {escapar(nombre)}</li>
-    <li><strong>Correo:</strong> <a href="mailto:{escapar(email)}">{escapar(email)}</a></li>
+    {linea_titular}<li><strong>Correo:</strong> <a href="mailto:{escapar(email)}">{escapar(email)}</a></li>
     <li><strong>Sitio:</strong> <a href="{escapar(sitio)}">{escapar(sitio)}</a></li>
   </ul>
 </main>""",

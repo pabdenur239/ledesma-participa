@@ -38,13 +38,16 @@ PANEL_Y, PANEL_H = 190, 900
 
 
 def cuerpo_noticia(n):
-    """Texto completo desde nuestra propia pagina de la nota (parrafo de contenido)."""
+    """Texto periodistico de la nota: SOLO el contenedor <div class="noticia-cuerpo"> de nuestra pagina
+    (nunca menu, pie, enlaces ni textos legales). Si no se puede aislar, usa la bajada de la portada."""
     try:
         h = g._get(n["url"]).decode("utf-8", "replace")
-        ps = [html.unescape(re.sub(r"<[^>]+>", "", p)).strip() for p in re.findall(r"<p[^>]*>(.*?)</p>", h, re.S)]
-        ps = [p for p in ps if len(p) > 80 and not p.lower().startswith(("fuente", "informaci", "las noticias"))]
-        if ps:
-            return " ".join(ps[:2])
+        m = re.search(r'<div class="noticia-cuerpo">(.*?)</div>', h, re.S)
+        if m:
+            ps = [html.unescape(re.sub(r"<[^>]+>", "", p)).strip() for p in re.findall(r"<p[^>]*>(.*?)</p>", m.group(1), re.S)]
+            ps = [re.sub(r"\s+", " ", p) for p in ps if p]
+            if ps:
+                return " ".join(ps[:3])
     except Exception:
         pass
     return n["bajada"] or ""

@@ -105,20 +105,33 @@ def presentador_para(n):
 
 
 def guion_automatico(n, max_palabras=62):
-    """Locucion de 15-30 s armada SOLO con titulo y texto de la propia nota (sin agregar hechos)."""
+    """Locucion de 15-30 s armada SOLO con titulo y texto de la propia nota (sin agregar hechos).
+    Devuelve (texto, cuerpo); el texto = noticia + cierre de plantilla (validacion_guion.cierre_institucional)."""
+    texto, cuerpo, _ = guion_validado(n, max_palabras)
+    return texto, cuerpo
+
+
+def guion_validado(n, max_palabras=62):
+    """-> (texto, cuerpo, (ok, motivos)). La validacion se hace sobre la noticia SIN el cierre institucional."""
+    import validacion_guion as vg
     cuerpo = gnp.cuerpo_noticia(n)
     titulo = gp._limpiar(n["titulo"]).strip().rstrip(".")
     frases = [f.strip() for f in re.split(r"(?<=[.!?])\s+", gp._limpiar(cuerpo)) if f.strip()]
-    cierre = "Ampliá la información en Ledesma Participa."
+    cierre = vg.cierre_institucional()
     out, pal = [], len(titulo.split()) + len(cierre.split())
     for f in frases:
-        if not re.search(r"[.!?]$", f) or f.lower().rstrip(".") == titulo.lower():
+        if f.lower().rstrip(".") == titulo.lower():
             continue
-        if pal + len(f.split()) > max_palabras:
+        if pal + len(f.split()) > max_palabras and out:
             break
         out.append(f)
         pal += len(f.split())
-    return f"{titulo}. " + " ".join(out) + (" " if out else "") + cierre, cuerpo
+    # una frase incompleta/contaminada se conserva para que la validacion la detecte (no se descarta en silencio)
+    try:
+        res = vg.validar_guion(titulo, out)
+    except Exception as e:  # validador defectuoso: el Reel NO sale (solo afecta a videos)
+        res = (False, [f"error del validador: {e}"])
+    return f"{titulo}. " + " ".join(out) + (" " if out else "") + cierre, cuerpo, res
 
 
 if __name__ == "__main__":

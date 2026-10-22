@@ -26,6 +26,9 @@ import seleccion_editorial as se  # noqa: E402
 import voz_elevenlabs as ve  # noqa: E402
 
 
+CODIGO_GUION_INVALIDO = 3
+
+
 def _transcripcion(palabras):
     """[(palabra, ini, fin)] -> estructura que consume generar_piloto_voz_externa (una 'frase' por segmento)."""
     segs, cur = [], []
@@ -64,10 +67,14 @@ def main():
         raise SystemExit("Falta ELEVENLABS_API_KEY. Configurala SOLO en tu entorno local (PowerShell):\n"
                          "  [Environment]::SetEnvironmentVariable('ELEVENLABS_API_KEY','<tu clave>','User')  y abri una terminal nueva.\n"
                          "No la pegues en codigo ni en archivos del repo.")
-    texto, _ = se.guion_automatico(n, a.max_palabras)
+    texto, _, (ok, motivos) = se.guion_validado(n, a.max_palabras)
     carpeta = AQUI / "salidas" / ("auto_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
     carpeta.mkdir(parents=True)
     (carpeta / "guion.txt").write_text(texto, encoding="utf-8")
+    if not ok:  # ANTES de sintetizar audio o renderizar: no se gasta ElevenLabs ni se produce el Reel
+        (carpeta / "guion_rechazado.json").write_text(json.dumps({"noticia_id": n["id"], "motivos": motivos, "texto": texto}, ensure_ascii=False, indent=1), encoding="utf-8")
+        print("GUION_INVALIDO:", "; ".join(motivos))
+        raise SystemExit(CODIGO_GUION_INVALIDO)
     print(f"Noticia {n['id']}: {n['titulo']} | {n['fuente_nombre']} | {pres} | {cat} | {motivo}\nLocucion: {texto}")
 
     audio = carpeta / "locucion.mp3"

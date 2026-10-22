@@ -181,6 +181,8 @@ def producir(n, tipo, sin_voz=False):
            "--max-palabras", "100" if tipo == "urgente" else "62"] + (["--sin-voz"] if sin_voz else [])
     r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
     m = re.search(r"MP4:\s*(.+\.mp4)", r.stdout)
+    if r.returncode == 3:  # guion rechazado por validacion_guion: no se genera ni se publica
+        raise RuntimeError("guion_invalido: " + (re.search(r"GUION_INVALIDO:\s*(.+)", r.stdout) or [0, "sin detalle"])[1][:350])
     if r.returncode != 0 or not m:
         raise RuntimeError((r.stderr or r.stdout)[-400:] or "fallo la generacion")
     return Path(m.group(1).strip())

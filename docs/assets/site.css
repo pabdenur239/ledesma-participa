@@ -349,3 +349,6 @@ body.con-reproductor { padding-bottom: 76px; }
   .nav-mas .nav-menu { left: 8px; right: 8px; }
   .nav-menu a { white-space: normal; }
 }
+.aviso-app { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 8px 12px; background: #f5f1e6; border: 1px solid var(--borde); border-radius: var(--radio); font-size: .88rem; }
+.aviso-app p { margin: 0; flex: 1 1 200px; }
+.aviso-app-boton { background: var(--carbon); color: var(--dorado); font-weight: 700; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }

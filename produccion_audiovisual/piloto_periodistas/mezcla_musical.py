@@ -2,6 +2,7 @@
 categoria_musical(noticia) -> clave de config_musica.json | mezclar(voz, categoria, salida) -> stats"""
 import json
 import re
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import subprocess
 from pathlib import Path
 

@@ -1,6 +1,7 @@
 """Genera las camas musicales propias (sintesis local con numpy, sin licencias de terceros).
 Una pista fija por categoria en assets/musica/. Uso: .venv\Scripts\python.exe produccion_audiovisual\piloto_periodistas\generar_camas_musicales.py
 Deterministico: siempre produce las mismas pistas."""
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import subprocess
 import sys
 import wave

@@ -1,5 +1,6 @@
 """Transcribe un audio externo (solo para sincronizar subtitulos; NO genera voz).
 Uso (entorno con faster-whisper): python transcribir_audio.py AUDIO SALIDA.json"""
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import glob, json, subprocess, sys
 import numpy as np
 from faster_whisper import WhisperModel

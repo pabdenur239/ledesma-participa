@@ -11,6 +11,7 @@ Opciones de tick/loop: --sin-voz (prueba sin gastar ElevenLabs).
 import argparse
 import os
 import re
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import subprocess
 import sys
 import time

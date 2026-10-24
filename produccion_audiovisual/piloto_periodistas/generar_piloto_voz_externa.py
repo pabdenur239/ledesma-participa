@@ -8,6 +8,7 @@ import argparse
 import json
 import math
 import re
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import subprocess
 import sys
 from datetime import datetime

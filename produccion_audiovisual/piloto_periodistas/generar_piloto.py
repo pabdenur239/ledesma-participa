@@ -15,6 +15,7 @@ import json
 import re
 import shutil
 import sqlite3
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import subprocess
 import sys
 import wave

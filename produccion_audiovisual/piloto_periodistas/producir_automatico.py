@@ -9,6 +9,7 @@ Requiere ELEVENLABS_API_KEY. --sin-voz = prueba del flujo visual SIN locucion (p
 import argparse
 import json
 import os
+import sin_consola  # noqa: F401  (Windows: subprocesos sin ventana de consola)
 import subprocess
 import sys
 import wave

@@ -352,3 +352,10 @@ body.con-reproductor { padding-bottom: 76px; }
 .aviso-app { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 8px 12px; background: #f5f1e6; border: 1px solid var(--borde); border-radius: var(--radio); font-size: .88rem; }
 .aviso-app p { margin: 0; flex: 1 1 200px; }
 .aviso-app-boton { background: var(--carbon); color: var(--dorado); font-weight: 700; padding: 6px 12px; border-radius: 6px; text-decoration: none; white-space: nowrap; }
+
+/* Sección especial El Niño */
+.el-nino-banner { display: block; padding: 16px; border-radius: var(--radio); background: var(--carbon); color: var(--dorado); border-left: 4px solid var(--dorado); text-decoration: none; text-align: center; font-size: 1.05rem; }
+.el-nino-banner:hover, .el-nino-banner:focus-visible { outline: 2px solid var(--dorado); outline-offset: 1px; }
+.el-nino section { margin: 1.4rem 0; }
+.el-nino-pron { padding: 12px; border-left: 4px solid var(--dorado); margin: 10px 0; }
+.aviso-el-nino { padding: 12px; background: #fff4d6; border-left: 4px solid var(--dorado); }

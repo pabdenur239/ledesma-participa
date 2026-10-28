@@ -60,7 +60,7 @@
    "ambito": "localidad",
    "sitio": "https://www.facebook.com/elbajando",
    "activa": false,
-   "motivo_inactiva": "Solo Facebook; no hay stream propio y no se integra Facebook sin acceso oficial.",
+   "motivo_inactiva": "Tiene app Android oficial (com.locucionar.fmbajando1015) y Facebook; no se halló URL de audio directa ni canal embebible.",
    "informativa": true
   },
   {
@@ -80,9 +80,9 @@
    "frecuencia": "FM 99.1",
    "localidad": "Libertador General San Martín",
    "ambito": "localidad",
-   "sitio": "https://radioarg.com/del-valle/",
+   "sitio": "https://www.youtube.com/@radiodelvalle99.1",
    "activa": false,
-   "motivo_inactiva": "Stream solo vía directorio de terceros (radioarg/instant.audio, responde 403 a uso externo); sin fuente oficial.",
+   "motivo_inactiva": "Emite por YouTube (canal oficial UCqjYCj_9BESi3fkrY_WvrGg) y app Android com.radiodelvalle (Grupo Shock/Shockmedia), pero al 2026-10-28 el embed en vivo del canal no estaba disponible y no se halló URL de audio directa. Activar como tipo youtube cuando transmita.",
    "informativa": true
   },
   {
@@ -102,9 +102,9 @@
    "frecuencia": "FM 105.1",
    "localidad": "Libertador General San Martín",
    "ambito": "localidad",
-   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "sitio": "https://fmledesma.radio12345.com/",
    "activa": false,
-   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite.",
+   "motivo_inactiva": "Reproductor oficial en Radio12345/Listen2MyRadio; su URL de stream (uk18freenew.listen2myradio.com, mount ice_3713_stream_201003670) responde HTML de 1 byte en vez de audio al 2026-10-28 (señal caída). Reactivar si vuelve a emitir audio.",
    "informativa": true
   },
   {
@@ -114,7 +114,7 @@
    "localidad": "Libertador General San Martín",
    "ambito": "localidad",
    "activa": false,
-   "motivo_inactiva": "No se encontró sitio, stream ni redes oficiales verificables; solo se muestra nombre y dial.",
+   "motivo_inactiva": "Según directorios transmite por video en vivo de Facebook; no se halló página oficial verificable.",
    "informativa": true
   },
   {

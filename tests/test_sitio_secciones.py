@@ -16,12 +16,22 @@ class SeccionesTest(unittest.TestCase):
     def test_radios_activas_son_validas_e_incluyen_orion(self):
         activas = secciones.radios_activas()
         todas = [r for lista in activas.values() for r in lista]
-        self.assertEqual(len(todas), 10)
+        self.assertEqual(len(todas), 11)
         orion = [r for r in activas["localidad"] if r["id"] == "fm-orion-106-3"]
         self.assertEqual(len(orion), 1)
         for r in todas:
             if r["tipo"] == "audio":
                 self.assertTrue(r["fuente"].startswith("https://"))
+
+    def test_radios_locales_libertador_completas_sin_1047(self):
+        with tempfile.TemporaryDirectory() as d:
+            html = secciones.pagina_radio(ruta_raiz="", config_sitio=CONFIG_SITIO, url_base="https://x.test/radio/")
+        dials = ["88.3", "89.5", "92.5", "93.3", "96.9", "99.1", "101.5", "101.9", "105.1", "106.3"]
+        pos = [html.index("FM " + x + " ·") for x in dials]
+        self.assertEqual(pos, sorted(pos))
+        self.assertNotIn("104.7", html)
+        self.assertEqual(html.count("Solo informativa"), 8)
+        self.assertIn("Ver/Escuchar en vivo", html)
 
     def test_radio_inactiva_o_insegura_no_se_muestra(self):
         with tempfile.TemporaryDirectory() as d:

@@ -1,5 +1,5 @@
 {
- "_doc": "Padrón de radios de 'Radio en vivo'. Para agregar una radio, sumar un objeto a 'radios' (sin tocar código). ambito: localidad|departamento|provincia|nacional. tipo: audio (URL https directa de stream, la propia emisora la publica) | youtube (ID de canal oficial, embed live_stream). Si 'activa' es false, no se muestra en la web y 'motivo_inactiva' documenta por qué. Verificado 2026-10-16.",
+ "_doc": "Padrón de radios de 'Radio en vivo'. Para agregar una radio, sumar un objeto a 'radios' (sin tocar código). ambito: localidad|departamento|provincia|nacional. tipo: audio (URL https directa de stream, la propia emisora la publica) | youtube (ID de canal oficial, embed live_stream). Si 'activa' es false, no se muestra en la web y 'motivo_inactiva' documenta por qué. Verificado 2026-10-16. Campo 'informativa': true muestra la radio (nombre, dial, localidad) sin botón en vivo cuando no hay señal oficial verificada. Radios locales de Libertador verificadas 2026-10-28.",
  "ambitos": [
   {
    "id": "localidad",
@@ -37,8 +37,9 @@
    "localidad": "Libertador General San Martín",
    "ambito": "localidad",
    "sitio": "https://www.fmimagen925.com/",
-   "activa": false,
-   "motivo_inactiva": "Su sitio oficial no expone un reproductor ni URL de stream utilizable fuera de su propia web/app."
+   "activa": true,
+   "tipo": "audio",
+   "fuente": "https://streaming01.shockmedia.com.ar:10515/stream"
   },
   {
    "id": "radio-ciudad-101-9",
@@ -48,7 +49,8 @@
    "ambito": "localidad",
    "sitio": "https://www.ivoox.com/podcast-un-nuevo-dia_sq_f1731584_1.html",
    "activa": false,
-   "motivo_inactiva": "Solo se verificó un podcast en iVoox; no hay señal en vivo oficial."
+   "motivo_inactiva": "Sin señal en vivo oficial verificable (solo un podcast en iVoox).",
+   "informativa": true
   },
   {
    "id": "fm-bajando-cana-101-5",
@@ -58,17 +60,19 @@
    "ambito": "localidad",
    "sitio": "https://www.facebook.com/elbajando",
    "activa": false,
-   "motivo_inactiva": "Solo Facebook; no hay stream propio y no se integra Facebook sin acceso oficial."
+   "motivo_inactiva": "Solo Facebook; no hay stream propio y no se integra Facebook sin acceso oficial.",
+   "informativa": true
   },
   {
    "id": "radio-municipal-libertador-88-3",
-   "nombre": "Radio Municipal FM Libertador",
+   "nombre": "Radio Libertador",
    "frecuencia": "FM 88.3",
    "localidad": "Libertador General San Martín",
    "ambito": "localidad",
    "sitio": "https://municipiolgsmjujuy.gob.ar/",
    "activa": false,
-   "motivo_inactiva": "El sitio municipal lista la emisora pero no publica reproductor ni stream."
+   "motivo_inactiva": "El sitio municipal lista la emisora pero no publica reproductor ni stream.",
+   "informativa": true
   },
   {
    "id": "radio-del-valle-99-1",
@@ -78,7 +82,8 @@
    "ambito": "localidad",
    "sitio": "https://radioarg.com/del-valle/",
    "activa": false,
-   "motivo_inactiva": "Stream solo vía directorio de terceros (radioarg/instant.audio, responde 403 a uso externo); sin fuente oficial."
+   "motivo_inactiva": "Stream solo vía directorio de terceros (radioarg/instant.audio, responde 403 a uso externo); sin fuente oficial.",
+   "informativa": true
   },
   {
    "id": "fm-activa-96-9",
@@ -86,9 +91,10 @@
    "frecuencia": "FM 96.9",
    "localidad": "Libertador General San Martín",
    "ambito": "localidad",
-   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "sitio": "https://fmactiva969x.radio12345.com/",
    "activa": false,
-   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+   "motivo_inactiva": "Su página (fmactiva969x.radio12345.com) no entrega audio: la URL de stream devuelve HTML, no audio. Sin señal verificada.",
+   "informativa": true
   },
   {
    "id": "fm-ledesma-105-1",
@@ -98,17 +104,18 @@
    "ambito": "localidad",
    "sitio": "https://jujuy360.com/radios-de-jujuy/",
    "activa": false,
-   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite.",
+   "informativa": true
   },
   {
-   "id": "fm-sinfonia",
+   "id": "fm-sinfonia-89-5",
    "nombre": "FM Sinfonía",
-   "frecuencia": "",
-   "localidad": "Ledesma (por validar)",
-   "ambito": "departamento",
-   "sitio": "https://jujuy360.com/radios-de-jujuy/",
+   "frecuencia": "FM 89.5",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
    "activa": false,
-   "motivo_inactiva": "Sin transmisión online oficial verificable (solo figura en directorios de terceros o redes sociales); no se enlaza ni se reemite."
+   "motivo_inactiva": "No se encontró sitio, stream ni redes oficiales verificables; solo se muestra nombre y dial.",
+   "informativa": true
   },
   {
    "id": "radio-ciudad-87-9",
@@ -378,6 +385,17 @@
    "sitio": "https://www.cadena3.com/",
    "activa": false,
    "motivo_inactiva": "Sin stream ni canal de YouTube en vivo oficial verificable."
+  },
+  {
+   "id": "radio-play-93-3",
+   "nombre": "Radio Play",
+   "frecuencia": "FM 93.3",
+   "localidad": "Libertador General San Martín",
+   "ambito": "localidad",
+   "sitio": "https://www.fmimagen925.com/radio-play",
+   "activa": false,
+   "informativa": true,
+   "motivo_inactiva": "Su reproductor oficial (Shockmedia) existe pero el servidor de audio responde 401 (no autorizado) al 2026-10-28; sin señal verificada."
   }
  ]
 }

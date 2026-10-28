@@ -265,6 +265,8 @@ img { max-width: 100%; display: block; }
 .radio { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 10px; padding: 12px 14px; }
 .radio h3 { margin: 0; font-size: 1rem; }
 .radio p { margin: 2px 0 0; font-size: 0.8rem; color: var(--texto-suave); }
+.estado-radio { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--borde); color: var(--texto-suave); white-space: nowrap; }
+.estado-radio.en-vivo { color: #fff; background: #1f8a4c; border-color: #1f8a4c; margin-left: 6px; vertical-align: middle; }
 .radio.sonando { border-color: var(--marca-naranja); box-shadow: 0 0 0 2px rgba(232, 99, 28, 0.25); }
 .boton-radio, .boton-tv, .boton-contacto {
   background: var(--marca-naranja); color: #fff; border: 0; border-radius: 8px; padding: 10px 14px;

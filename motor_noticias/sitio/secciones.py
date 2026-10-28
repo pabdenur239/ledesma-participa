@@ -41,36 +41,57 @@ def _pagina(*, titulo, descripcion, url_canonica, ruta_raiz, config_sitio, cuerp
 
 # ---------------------------------------------------------------- Radio
 
+def _dial(r: dict) -> float:
+    m = re.search(r"\d+(?:\.\d+)?", r.get("frecuencia") or "")
+    return float(m.group()) if m else 9999.0
+
+
+def _es_en_vivo(r: dict) -> bool:
+    if not r.get("activa"):
+        return False
+    if r.get("tipo") == "audio":
+        return _es_https(r.get("fuente"))
+    if r.get("tipo") == "youtube":
+        return bool(re.fullmatch(r"UC[\w-]{22}", r.get("fuente") or ""))
+    return False
+
+
 def radios_activas(config_dir: Optional[Path] = None) -> dict:
-    """{ambito: [radios activas con fuente válida]} respetando el orden del padrón."""
+    """{ambito: [radios con señal en vivo válida]} (padrón; localidad ordenada por dial)."""
+    return _radios_por_ambito(config_dir, solo_en_vivo=True)
+
+
+def _radios_por_ambito(config_dir: Optional[Path], solo_en_vivo: bool) -> dict:
     datos = _cargar("radios.json", config_dir)
     por_ambito: dict = {a["id"]: [] for a in datos.get("ambitos", [])}
     for r in datos.get("radios", []):
-        if not r.get("activa"):
-            continue
-        if r.get("tipo") == "audio" and not _es_https(r.get("fuente")):
-            continue
-        if r.get("tipo") == "youtube" and not re.fullmatch(r"UC[\w-]{22}", r.get("fuente") or ""):
-            continue
-        if r.get("tipo") not in ("audio", "youtube"):
-            continue
-        por_ambito.setdefault(r.get("ambito"), []).append(r)
+        if _es_en_vivo(r) or (not solo_en_vivo and r.get("informativa")):
+            por_ambito.setdefault(r.get("ambito"), []).append(r)
+    if "localidad" in por_ambito:
+        por_ambito["localidad"].sort(key=_dial)
     return por_ambito
 
 
 def _tarjeta_radio(r: dict) -> str:
+    detalle = f'{escapar(r.get("frecuencia", ""))} · {escapar(r.get("localidad", ""))}'
+    if not _es_en_vivo(r):
+        return (
+            f'<article class="radio radio-info-solo" data-nombre="{escapar(r["nombre"])}">'
+            f'<div class="radio-info"><h3>{escapar(r["nombre"])}</h3><p>{detalle}</p></div>'
+            '<span class="estado-radio">Solo informativa</span></article>'
+        )
     return (
         f'<article class="radio" data-radio-tipo="{escapar(r["tipo"])}" data-fuente="{escapar(r["fuente"])}" data-nombre="{escapar(r["nombre"])}">'
-        f'<div class="radio-info"><h3>{escapar(r["nombre"])}</h3>'
-        f'<p>{escapar(r.get("frecuencia", ""))} · {escapar(r.get("localidad", ""))}</p></div>'
-        f'<button type="button" class="boton-radio" aria-label="Escuchar {escapar(r["nombre"])}">▶ Escuchar</button>'
+        f'<div class="radio-info"><h3>{escapar(r["nombre"])} <span class="estado-radio en-vivo">EN VIVO</span></h3>'
+        f'<p>{detalle}</p></div>'
+        f'<button type="button" class="boton-radio" aria-label="Ver o escuchar en vivo {escapar(r["nombre"])}">▶ Ver/Escuchar en vivo</button>'
         '</article>'
     )
 
 
 def pagina_radio(*, ruta_raiz: str, config_sitio: dict, url_base: str, config_dir: Optional[Path] = None) -> str:
     datos = _cargar("radios.json", config_dir)
-    activas = radios_activas(config_dir)
+    activas = _radios_por_ambito(config_dir, solo_en_vivo=False)
     bloques = []
     for ambito in datos.get("ambitos", []):
         radios = activas.get(ambito["id"], [])
